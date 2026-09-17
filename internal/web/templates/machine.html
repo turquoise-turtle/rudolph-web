@@ -1,0 +1,57 @@
+{{define "content"}}
+{{with .Machine}}
+<section class="grid">
+<dl>
+  <dt>Machine ID</dt><dd><code>{{.MachineID}}</code></dd>
+  <dt>Hostname</dt><dd>{{orDash .Hostname}}</dd>
+  <dt>Serial</dt><dd>{{orDash .SerialNum}}</dd>
+  <dt>Model</dt><dd>{{orDash .ModelIdentifier}}</dd>
+  <dt>macOS</dt><dd>{{orDash .OSVersion}} ({{orDash .OSBuild}})</dd>
+  <dt>Santa</dt><dd>{{orDash .SantaVersion}}</dd>
+  <dt>Client mode</dt><dd>{{.ClientMode}}</dd>
+  <dt>Primary user</dt><dd>{{orDash .PrimaryUser}}</dd>
+  <dt>SIP status</dt><dd>{{orDash .SIPStatus}}</dd>
+  <dt>Last seen</dt><dd>{{ts .LastSeen}}</dd>
+</dl>
+<dl>
+  <dt>Last preflight</dt><dd>{{if .Sync}}{{ts .Sync.PreflightAt}}{{else}}never{{end}}</dd>
+  <dt>Last postflight</dt><dd>{{if .Sync}}{{ts .Sync.PostflightAt}}{{else}}never{{end}}</dd>
+  <dt>Last sync type</dt><dd>{{if .Sync}}{{orDash .Sync.LastSyncType}}{{else}}—{{end}}</dd>
+  <dt>Rules processed</dt><dd>{{if .Sync}}{{.Sync.RulesProcessed}}{{else}}—{{end}}</dd>
+</dl>
+<dl>
+  <dt>Binary rules</dt><dd>{{.RuleCounts.Binary}}</dd>
+  <dt>Certificate rules</dt><dd>{{.RuleCounts.Certificate}}</dd>
+  <dt>Team ID rules</dt><dd>{{.RuleCounts.TeamID}}</dd>
+  <dt>Signing ID rules</dt><dd>{{.RuleCounts.SigningID}}</dd>
+  <dt>CDHash rules</dt><dd>{{.RuleCounts.CDHash}}</dd>
+  <dt>Compiler rules</dt><dd>{{.RuleCounts.Compiler}}</dd>
+  <dt>Transitive rules</dt><dd>{{.RuleCounts.Transitive}}</dd>
+</dl>
+</section>
+<p><a href="{{eventsForMachineURL .MachineID}}">Events for this machine</a></p>
+{{end}}
+<h2>Machine-specific rules</h2>
+{{if .Rules}}
+<div class="scroll">
+<table>
+<thead><tr><th>Type</th><th>Policy</th><th>Identifier</th><th>Custom message</th><th>Description</th><th>Expires</th></tr></thead>
+<tbody>
+{{range .Rules}}
+<tr data-row>
+  <td>{{.RuleType}}</td>
+  <td>{{.Policy}}</td>
+  <td><code>{{.Identifier}}</code>{{with .CELExpr}}<br><code class="cel">{{.}}</code>{{end}}</td>
+  <td>{{.CustomMessage}}</td>
+  <td>{{.Description}}</td>
+  <td>{{ts .ExpiresAt}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+</div>
+{{else}}
+<p>No machine-specific rules.</p>
+{{end}}
+{{template "pager" .Pager}}
+{{end}}

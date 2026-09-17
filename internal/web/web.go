@@ -1,0 +1,225 @@
+// Package web serves rudolph-web's server-rendered pages.
+package web
+
+import (
+	"bytes"
+	"embed"
+	"errors"
+	"fmt"
+	"html/template"
+	"io/fs"
+	"log/slog"
+	"net/http"
+	"net/url"
+	"strings"
+	"time"
+
+	"github.com/turquoise-turtle/rudolph-web/internal/auth"
+	"github.com/turquoise-turtle/rudolph-web/internal/store"
+)
+
+// DefaultPageSize is used when Options.PageSize is zero.
+const DefaultPageSize = 50
+
+//go:embed templates/*.html
+var templateFS embed.FS
+
+//go:embed static
+var staticFS embed.FS
+
+// Options configures the web handler.
+type Options struct {
+	Auth     *auth.Authenticator
+	Store    store.Reader
+	PageSize int              // 1..store.MaxPageSize; 0 means DefaultPageSize
+	Now      func() time.Time // optional; for tests
+	Logger   *slog.Logger     // optional
+}
+
+type server struct {
+	auth     *auth.Authenticator
+	store    store.Reader
+	pageSize int
+	now      func() time.Time
+	log      *slog.Logger
+	pages    map[string]*template.Template
+}
+
+// New returns the complete application handler: auth routes, static assets
+// and role-protected pages, wrapped with security headers and cross-origin
+// protection for unsafe methods.
+func New(opts Options) (http.Handler, error) {
+	if opts.Auth == nil {
+		return nil, errors.New("web: Auth is required")
+	}
+	if opts.Store == nil {
+		return nil, errors.New("web: Store is required")
+	}
+	if opts.PageSize == 0 {
+		opts.PageSize = DefaultPageSize
+	}
+	if opts.PageSize < 1 || opts.PageSize > store.MaxPageSize {
+		return nil, fmt.Errorf("web: PageSize must be 1..%d", store.MaxPageSize)
+	}
+	if opts.Now == nil {
+		opts.Now = time.Now
+	}
+	if opts.Logger == nil {
+		opts.Logger = slog.Default()
+	}
+	pages, err := parseTemplates()
+	if err != nil {
+		return nil, err
+	}
+	s := &server{
+		auth:     opts.Auth,
+		store:    opts.Store,
+		pageSize: opts.PageSize,
+		now:      opts.Now,
+		log:      opts.Logger,
+		pages:    pages,
+	}
+
+	mux := http.NewServeMux()
+	opts.Auth.Mount(mux)
+
+	static, err := fs.Sub(staticFS, "static")
+	if err != nil {
+		return nil, err
+	}
+	fileServer := http.StripPrefix("/static/", http.FileServerFS(static))
+	mux.Handle("GET /static/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "public, max-age=3600")
+		fileServer.ServeHTTP(w, r)
+	}))
+
+	viewer := func(h http.HandlerFunc) http.Handler { return opts.Auth.Require(auth.RoleViewer, h) }
+	mux.Handle("GET /{$}", viewer(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/machines", http.StatusFound)
+	}))
+	mux.Handle("GET /machines", viewer(s.machines))
+	mux.Handle("GET /machines/{id}", viewer(s.machineDetail))
+	mux.Handle("GET /rules", viewer(s.rules))
+	mux.Handle("GET /events", viewer(s.events))
+	mux.Handle("GET /events/top-blocked", viewer(s.topBlocked))
+	mux.Handle("GET /admin", opts.Auth.Require(auth.RoleAdmin, http.HandlerFunc(s.admin)))
+
+	csp := strings.Join([]string{
+		"default-src 'none'",
+		"script-src 'none'",
+		"style-src 'self'",
+		"img-src 'self'",
+		// Logout POSTs to self and is then redirected to Entra's end-session endpoint.
+		"form-action 'self' " + opts.Auth.IssuerOrigin(),
+		"frame-ancestors 'none'",
+		"base-uri 'none'",
+	}, "; ")
+	return http.NewCrossOriginProtection().Handler(securityHeaders(csp, mux)), nil
+}
+
+func securityHeaders(csp string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("Content-Security-Policy", csp)
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "same-origin")
+		h.Set("Strict-Transport-Security", "max-age=31536000")
+		h.Set("Cache-Control", "no-store")
+		next.ServeHTTP(w, r)
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Rendering
+
+type layoutData struct {
+	Title   string
+	Nav     string
+	User    auth.Session
+	IsAdmin bool
+	Page    any
+}
+
+var funcs = template.FuncMap{
+	"ts": func(t time.Time) string {
+		if t.IsZero() {
+			return "—"
+		}
+		return t.UTC().Format("2006-01-02 15:04:05") + " UTC"
+	},
+	"machineURL": func(id string) string { return "/machines/" + url.PathEscape(id) },
+	"eventsForMachineURL": func(id string) string {
+		return "/events?" + url.Values{"machine": {id}}.Encode()
+	},
+	"orDash": func(s string) string {
+		if s == "" {
+			return "—"
+		}
+		return s
+	},
+}
+
+func parseTemplates() (map[string]*template.Template, error) {
+	base, err := template.New("layout.html").Funcs(funcs).ParseFS(templateFS, "templates/layout.html")
+	if err != nil {
+		return nil, err
+	}
+	names, err := fs.Glob(templateFS, "templates/*.html")
+	if err != nil {
+		return nil, err
+	}
+	pages := map[string]*template.Template{}
+	for _, name := range names {
+		short := strings.TrimSuffix(strings.TrimPrefix(name, "templates/"), ".html")
+		if short == "layout" {
+			continue
+		}
+		t, err := template.Must(base.Clone()).ParseFS(templateFS, name)
+		if err != nil {
+			return nil, err
+		}
+		pages[short] = t
+	}
+	return pages, nil
+}
+
+func (s *server) render(w http.ResponseWriter, r *http.Request, status int, page, title, nav string, data any) {
+	sess, _ := auth.SessionFromContext(r.Context())
+	var buf bytes.Buffer
+	err := s.pages[page].ExecuteTemplate(&buf, "layout.html", layoutData{
+		Title: title, Nav: nav, User: sess, IsAdmin: sess.HasRole(auth.RoleAdmin), Page: data,
+	})
+	if err != nil {
+		s.log.Error("render failed", "page", page, "err", err)
+		http.Error(w, "Internal error.", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(status)
+	_, _ = buf.WriteTo(w)
+}
+
+func (s *server) renderError(w http.ResponseWriter, r *http.Request, status int, msg string) {
+	s.render(w, r, status, "error", http.StatusText(status), "", struct {
+		Status  int
+		Message string
+	}{status, msg})
+}
+
+// storeError maps data-layer errors to responses without leaking details.
+func (s *server) storeError(w http.ResponseWriter, r *http.Request, err error) {
+	switch {
+	case errors.Is(err, store.ErrInvalidCursor):
+		s.renderError(w, r, http.StatusBadRequest, "This page link is invalid or has expired. Start again from the first page.")
+	case errors.Is(err, store.ErrInvalidArgument):
+		s.renderError(w, r, http.StatusBadRequest, "Invalid filter.")
+	case errors.Is(err, store.ErrNotFound):
+		s.renderError(w, r, http.StatusNotFound, "Not found.")
+	case errors.Is(err, store.ErrUnavailable):
+		s.renderError(w, r, http.StatusServiceUnavailable, "The data store is not available.")
+	default:
+		s.log.Error("store error", "path", r.URL.Path, "err", err)
+		s.renderError(w, r, http.StatusInternalServerError, "Something went wrong while reading data.")
+	}
+}

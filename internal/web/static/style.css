@@ -1,0 +1,35 @@
+:root { --fg: #1d2330; --muted: #5d6675; --bg: #fff; --line: #dfe3ea; --accent: #0b5cad; --block: #a3261b; --allow: #1f6f3a; --head: #f4f6f9; }
+@media (prefers-color-scheme: dark) {
+  :root { --fg: #e4e8ee; --muted: #9aa3b1; --bg: #14171c; --line: #2b313a; --accent: #6cb1ff; --block: #ff8a80; --allow: #7fd49b; --head: #1c2027; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--fg); background: var(--bg); }
+a { color: var(--accent); }
+.top { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--head); }
+.brand { font-weight: 700; text-decoration: none; color: var(--fg); }
+.top nav { display: flex; flex-wrap: wrap; gap: 16px; }
+.top nav a { text-decoration: none; }
+.top nav a[aria-current="page"] { font-weight: 600; text-decoration: underline; }
+.user { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+.user form { margin: 0; }
+main { padding: 16px; max-width: 1400px; }
+h1 { font-size: 20px; margin: 4px 0 12px; }
+h2 { font-size: 16px; margin: 20px 0 8px; }
+.filters { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: end; margin-bottom: 8px; }
+.filters label { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); }
+input, select, button { font: inherit; padding: 4px 6px; }
+.hint, .muted { color: var(--muted); font-size: 12px; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { background: var(--head); font-weight: 600; white-space: nowrap; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+td.block { color: var(--block); }
+td.allow { color: var(--allow); }
+code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; }
+dt { color: var(--muted); }
+dd { margin: 0; }
+.pager { display: flex; gap: 16px; margin: 12px 0; }
+.error { color: var(--block); }

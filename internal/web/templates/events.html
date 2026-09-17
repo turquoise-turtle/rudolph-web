@@ -1,0 +1,39 @@
+{{define "content"}}
+<form class="filters" method="get" action="/events">
+  <label>Machine ID <input name="machine" value="{{.Filter.MachineID}}" autocomplete="off"></label>
+  <label>Decision
+    <select name="decision">
+      <option value="">Any</option>
+      {{range .Decisions}}<option value="{{.}}"{{if eq . $.Filter.Decision}} selected{{end}}>{{.}}</option>{{end}}
+    </select>
+  </label>
+  <label>Team ID <input name="team_id" value="{{.Filter.TeamID}}" autocomplete="off"></label>
+  <button type="submit">Filter</button>
+  <a href="/events">Clear</a>
+</form>
+{{if .Events}}
+<div class="scroll">
+<table>
+<thead><tr><th>Time</th><th>Machine</th><th>Decision</th><th>File</th><th>SHA-256</th><th>User</th><th>Team ID</th><th>Signing ID</th><th>CDHash</th></tr></thead>
+<tbody>
+{{range .Events}}
+<tr data-row>
+  <td>{{ts .ExecutionTime}}</td>
+  <td><a href="{{machineURL .MachineID}}">{{.MachineID}}</a></td>
+  <td class="{{if .Decision.IsBlock}}block{{else}}allow{{end}}">{{.Decision}}</td>
+  <td>{{.FileName}}<br><span class="muted">{{.FilePath}}</span></td>
+  <td><code>{{.FileSHA256}}</code></td>
+  <td>{{.ExecutingUser}}</td>
+  <td>{{.TeamID}}</td>
+  <td>{{.SigningID}}</td>
+  <td><code>{{.CDHash}}</code></td>
+</tr>
+{{end}}
+</tbody>
+</table>
+</div>
+{{else}}
+<p>No events match.</p>
+{{end}}
+{{template "pager" .Pager}}
+{{end}}

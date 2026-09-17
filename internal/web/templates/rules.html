@@ -1,0 +1,39 @@
+{{define "content"}}
+<form class="filters" method="get" action="/rules">
+  <label>Type
+    <select name="type">
+      <option value="">Any</option>
+      {{range .RuleTypes}}<option value="{{.}}"{{if eq . $.Filter.RuleType}} selected{{end}}>{{.}}</option>{{end}}
+    </select>
+  </label>
+  <label>Policy
+    <select name="policy">
+      <option value="">Any</option>
+      {{range .Policies}}<option value="{{.}}"{{if eq . $.Filter.Policy}} selected{{end}}>{{.}}</option>{{end}}
+    </select>
+  </label>
+  <button type="submit">Filter</button>
+  <a href="/rules">Clear</a>
+</form>
+{{if .Rules}}
+<div class="scroll">
+<table>
+<thead><tr><th>Type</th><th>Policy</th><th>Identifier</th><th>Custom message</th><th>Description</th></tr></thead>
+<tbody>
+{{range .Rules}}
+<tr data-row>
+  <td>{{.RuleType}}</td>
+  <td>{{.Policy}}</td>
+  <td><code>{{.Identifier}}</code>{{with .CELExpr}}<br><code class="cel">{{.}}</code>{{end}}</td>
+  <td>{{.CustomMessage}}{{with .CustomURL}}<br><span class="muted">{{.}}</span>{{end}}</td>
+  <td>{{.Description}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+</div>
+{{else}}
+<p>No rules match.</p>
+{{end}}
+{{template "pager" .Pager}}
+{{end}}

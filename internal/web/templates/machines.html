@@ -1,0 +1,33 @@
+{{define "content"}}
+<form class="filters" method="get" action="/machines">
+  <label>Serial prefix <input name="serial" value="{{.Filter.SerialPrefix}}" autocomplete="off"></label>
+  <label>Hostname prefix <input name="hostname" value="{{.Filter.HostnamePrefix}}" autocomplete="off"></label>
+  <button type="submit">Filter</button>
+  <a href="/machines">Clear</a>
+</form>
+<p class="hint">Use one filter at a time.</p>
+{{if .Machines}}
+<div class="scroll">
+<table>
+<thead><tr><th>Hostname</th><th>Serial</th><th>Model</th><th>macOS</th><th>Santa</th><th>Mode</th><th>Primary user</th><th>Last seen</th></tr></thead>
+<tbody>
+{{range .Machines}}
+<tr data-row>
+  <td><a href="{{machineURL .MachineID}}">{{orDash .Hostname}}</a></td>
+  <td>{{.SerialNum}}</td>
+  <td>{{.ModelIdentifier}}</td>
+  <td>{{.OSVersion}}</td>
+  <td>{{.SantaVersion}}</td>
+  <td>{{.ClientMode}}</td>
+  <td>{{.PrimaryUser}}</td>
+  <td>{{ts .LastSeen}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+</div>
+{{else}}
+<p>No machines match.</p>
+{{end}}
+{{template "pager" .Pager}}
+{{end}}

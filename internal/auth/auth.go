@@ -344,3 +344,13 @@ func (a *Authenticator) logout(w http.ResponseWriter, r *http.Request) {
 	}
 	http.Redirect(w, r, target, http.StatusSeeOther)
 }
+
+// IssuerOrigin returns the scheme://host of the issuer, for use in a
+// Content-Security-Policy form-action directive.
+func (a *Authenticator) IssuerOrigin() string {
+	u, err := url.Parse(a.cfg.Issuer)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
+}

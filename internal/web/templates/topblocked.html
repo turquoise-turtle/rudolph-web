@@ -1,0 +1,34 @@
+{{define "content"}}
+<form class="filters" method="get" action="/events/top-blocked">
+  <label>Window
+    <select name="window">
+      {{range .Windows}}<option value="{{.}}"{{if eq . $.Window}} selected{{end}}>Last {{.}}</option>{{end}}
+    </select>
+  </label>
+  <button type="submit">Show</button>
+</form>
+<p class="hint">Blocked executions since {{ts .Since}}.</p>
+{{if .Binaries}}
+<div class="scroll">
+<table>
+<thead><tr><th>File</th><th>SHA-256</th><th>Team ID</th><th>Signing ID</th><th>Blocks</th><th>Machines</th><th>Last blocked</th></tr></thead>
+<tbody>
+{{range .Binaries}}
+<tr data-row>
+  <td>{{.FileName}}</td>
+  <td><code>{{.FileSHA256}}</code></td>
+  <td>{{.TeamID}}</td>
+  <td>{{.SigningID}}</td>
+  <td class="num">{{.BlockCount}}</td>
+  <td class="num">{{.MachineCount}}</td>
+  <td>{{ts .LastBlocked}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+</div>
+{{else}}
+<p>No blocked executions in this window.</p>
+{{end}}
+{{template "pager" .Pager}}
+{{end}}
