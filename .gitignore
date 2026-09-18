@@ -3,3 +3,13 @@
 *.zip
 bootstrap
 .env
+
+# Build output (scripts/build.sh)
+/build/
+
+# Terraform working directories and state. Environments other than the example are local.
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+crash.log
