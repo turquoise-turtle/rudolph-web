@@ -9,8 +9,6 @@ package fake
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"math"
 	"sort"
@@ -45,13 +43,22 @@ type Store struct {
 	faaEvents    []store.FileAccessEvent
 	calls        []Call
 	err          error
+
+	// cursors authenticates page cursors with a per-store key, as the real
+	// implementation will with a key derived from the application secret.
+	cursors *store.CursorCodec
 }
 
 var _ store.Reader = (*Store)(nil)
 
 // New returns an empty store.
 func New() *Store {
+	codec, err := store.NewCursorCodec(store.RandomCursorKey())
+	if err != nil {
+		panic(err)
+	}
 	return &Store{
+		cursors:      codec,
 		machines:     map[string]store.Machine{},
 		syncStates:   map[string]store.SyncState{},
 		globalRules:  map[string]store.Rule{},
@@ -159,7 +166,7 @@ func (s *Store) ListMachines(_ context.Context, f store.MachineFilter, p store.P
 		}
 		keyed = append(keyed, keyedItem[store.Machine]{key: k, item: m})
 	}
-	return paginate(keyed, fingerprint("ListMachines", "", f), p)
+	return paginate(s.cursors, keyed, fingerprint("ListMachines", "", f), p)
 }
 
 // GetMachine implements store.MachineReader.
@@ -191,7 +198,7 @@ func (s *Store) ListMachineRules(_ context.Context, machineID string, p store.Pa
 	for k, r := range s.machineRules[machineID] {
 		keyed = append(keyed, keyedItem[store.Rule]{key: k, item: r})
 	}
-	return paginate(keyed, fingerprint("ListMachineRules", machineID, nil), p)
+	return paginate(s.cursors, keyed, fingerprint("ListMachineRules", machineID, nil), p)
 }
 
 // ListGlobalRules implements store.RuleReader.
@@ -208,7 +215,7 @@ func (s *Store) ListGlobalRules(_ context.Context, f store.RuleFilter, p store.P
 		}
 		keyed = append(keyed, keyedItem[store.Rule]{key: k, item: r})
 	}
-	return paginate(keyed, fingerprint("ListGlobalRules", "", f), p)
+	return paginate(s.cursors, keyed, fingerprint("ListGlobalRules", "", f), p)
 }
 
 // ListExecutionEvents implements store.EventReader.
@@ -228,7 +235,7 @@ func (s *Store) ListExecutionEvents(_ context.Context, f store.EventFilter, p st
 		k := fmt.Sprintf("%020d|%08d", uint64(math.MaxInt64-e.ExecutionTime.UnixNano()), i)
 		keyed = append(keyed, keyedItem[store.ExecutionEvent]{key: k, item: e})
 	}
-	return paginate(keyed, fingerprint("ListExecutionEvents", "", f), p)
+	return paginate(s.cursors, keyed, fingerprint("ListExecutionEvents", "", f), p)
 }
 
 // TopBlockedBinaries implements store.EventReader.
@@ -263,7 +270,7 @@ func (s *Store) TopBlockedBinaries(_ context.Context, f store.TopBlockedFilter, 
 		k := fmt.Sprintf("%010d|%s", math.MaxInt32-b.BlockCount, sha)
 		keyed = append(keyed, keyedItem[store.BlockedBinary]{key: k, item: *b})
 	}
-	return paginate(keyed, fingerprint("TopBlockedBinaries", "", f.Since.UTC().Format("2006-01-02T15:04:05.999999999Z")), p)
+	return paginate(s.cursors, keyed, fingerprint("TopBlockedBinaries", "", f.Since.UTC().Format("2006-01-02T15:04:05.999999999Z")), p)
 }
 
 // ListFileAccessEvents implements store.EventReader.
@@ -281,7 +288,7 @@ func (s *Store) ListFileAccessEvents(_ context.Context, f store.FileAccessEventF
 		k := fmt.Sprintf("%020d|%08d", uint64(math.MaxInt64-e.AccessTime.UnixNano()), i)
 		keyed = append(keyed, keyedItem[store.FileAccessEvent]{key: k, item: e})
 	}
-	return paginate(keyed, fingerprint("ListFileAccessEvents", "", f), p)
+	return paginate(s.cursors, keyed, fingerprint("ListFileAccessEvents", "", f), p)
 }
 
 func ruleKey(r store.Rule) string {
@@ -293,16 +300,11 @@ type keyedItem[T any] struct {
 	item T
 }
 
-type cursor struct {
-	Query string `json:"q"`
-	After string `json:"k"`
-}
-
 func fingerprint(method, machineID string, filter any) string {
 	return fmt.Sprintf("%s|%s|%#v", method, machineID, filter)
 }
 
-func paginate[T any](items []keyedItem[T], query string, p store.PageRequest) (store.Page[T], error) {
+func paginate[T any](codec *store.CursorCodec, items []keyedItem[T], query string, p store.PageRequest) (store.Page[T], error) {
 	if p.Limit < 1 || p.Limit > store.MaxPageSize {
 		return store.Page[T]{}, fmt.Errorf("%w: limit %d outside 1..%d", store.ErrInvalidArgument, p.Limit, store.MaxPageSize)
 	}
@@ -310,15 +312,11 @@ func paginate[T any](items []keyedItem[T], query string, p store.PageRequest) (s
 
 	start := 0
 	if p.Cursor != "" {
-		raw, err := base64.RawURLEncoding.Strict().DecodeString(p.Cursor)
+		after, err := codec.Decode(query, p.Cursor)
 		if err != nil {
-			return store.Page[T]{}, store.ErrInvalidCursor
+			return store.Page[T]{}, err
 		}
-		var c cursor
-		if err := json.Unmarshal(raw, &c); err != nil || c.Query != query {
-			return store.Page[T]{}, store.ErrInvalidCursor
-		}
-		start = sort.Search(len(items), func(i int) bool { return items[i].key > c.After })
+		start = sort.Search(len(items), func(i int) bool { return items[i].key > after })
 	}
 
 	end := min(start+p.Limit, len(items))
@@ -327,8 +325,11 @@ func paginate[T any](items []keyedItem[T], query string, p store.PageRequest) (s
 		page.Items = append(page.Items, it.item)
 	}
 	if end < len(items) {
-		raw, _ := json.Marshal(cursor{Query: query, After: items[end-1].key})
-		page.NextCursor = base64.RawURLEncoding.EncodeToString(raw)
+		cursor, err := codec.Encode(query, items[end-1].key)
+		if err != nil {
+			return store.Page[T]{}, err
+		}
+		page.NextCursor = cursor
 	}
 	return page, nil
 }
