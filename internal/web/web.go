@@ -87,10 +87,17 @@ func New(opts Options) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	fileServer := http.StripPrefix("/static/", http.FileServerFS(static))
-	mux.Handle("GET /static/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// Only known files are served, one path segment deep: no directory
+	// listings, no redirects into the tree.
+	mux.Handle("GET /static/{file}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		name := r.PathValue("file")
+		data, err := fs.ReadFile(static, name)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
 		w.Header().Set("Cache-Control", "public, max-age=3600")
-		fileServer.ServeHTTP(w, r)
+		http.ServeContent(w, r, name, time.Time{}, bytes.NewReader(data))
 	}))
 
 	viewer := func(h http.HandlerFunc) http.Handler { return opts.Auth.Require(auth.RoleViewer, h) }
@@ -114,7 +121,18 @@ func New(opts Options) (http.Handler, error) {
 		"frame-ancestors 'none'",
 		"base-uri 'none'",
 	}, "; ")
-	return http.NewCrossOriginProtection().Handler(securityHeaders(csp, mux)), nil
+	// Unsafe methods must come from this site. Behind CloudFront or a custom
+	// domain the Lambda sees its own host, so the browser-visible origin (the
+	// redirect URL's) is trusted as well; every other cross-origin request is
+	// rejected. The header middleware wraps the protection, so rejections
+	// carry the same headers as any other response.
+	protection := http.NewCrossOriginProtection()
+	if o := opts.Auth.RedirectOrigin(); o != "" {
+		if err := protection.AddTrustedOrigin(o); err != nil {
+			return nil, fmt.Errorf("web: trusted origin: %w", err)
+		}
+	}
+	return securityHeaders(csp, protection.Handler(mux)), nil
 }
 
 func securityHeaders(csp string, next http.Handler) http.Handler {
