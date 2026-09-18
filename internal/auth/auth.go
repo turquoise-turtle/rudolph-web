@@ -60,9 +60,15 @@ type Authenticator struct {
 	log    *slog.Logger
 	client *http.Client
 
-	mu       sync.Mutex
-	provider *providerState
+	mu               sync.Mutex
+	provider         *providerState
+	discoveryErr     error
+	discoveryRetryAt time.Time
 }
+
+// discoveryFailureTTL briefly caches a discovery failure, so a provider
+// outage costs one request per interval instead of one per sign-in attempt.
+const discoveryFailureTTL = 5 * time.Second
 
 type providerState struct {
 	oauth2     oauth2.Config
@@ -118,10 +124,34 @@ func (a *Authenticator) Mount(mux *http.ServeMux) {
 
 func (a *Authenticator) getProvider() (*providerState, error) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.provider != nil {
-		return a.provider, nil
+	if p := a.provider; p != nil {
+		a.mu.Unlock()
+		return p, nil
 	}
+	if err := a.discoveryErr; err != nil && a.now().Before(a.discoveryRetryAt) {
+		a.mu.Unlock()
+		return nil, err
+	}
+	a.mu.Unlock()
+
+	// Discovery runs without the lock held, so a slow or unreachable provider
+	// does not queue every other request behind it.
+	p, err := a.discover()
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if err != nil {
+		a.discoveryErr, a.discoveryRetryAt = err, a.now().Add(discoveryFailureTTL)
+		return nil, err
+	}
+	a.discoveryErr = nil
+	if a.provider == nil {
+		a.provider = p
+	}
+	return a.provider, nil
+}
+
+func (a *Authenticator) discover() (*providerState, error) {
 	ctx, cancel := context.WithTimeout(oidc.ClientContext(context.Background(), a.client), 10*time.Second)
 	defer cancel()
 	p, err := oidc.NewProvider(ctx, a.cfg.Issuer) // checks discovery issuer == cfg.Issuer
@@ -140,7 +170,7 @@ func (a *Authenticator) getProvider() (*providerState, error) {
 	// with the credentials in the form body, sending the code and the secret
 	// twice.
 	endpoint.AuthStyle = oauth2.AuthStyleInHeader
-	a.provider = &providerState{
+	return &providerState{
 		oauth2: oauth2.Config{
 			ClientID:     a.cfg.ClientID,
 			ClientSecret: a.cfg.ClientSecret,
@@ -154,8 +184,7 @@ func (a *Authenticator) getProvider() (*providerState, error) {
 			Now:                  a.now,
 		}),
 		endSession: extra.EndSession,
-	}
-	return a.provider, nil
+	}, nil
 }
 
 type flowState struct {

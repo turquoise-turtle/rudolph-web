@@ -38,6 +38,16 @@ v1 is read-only. `/admin` is a placeholder for future write actions and needs th
   `Limit = page size` and passes an opaque cursor through the URL. There are no scans,
   and handlers never fetch everything and slice it in memory. The tests enforce
   this through the call-recording fake.
+- **Authenticated cursors.** A cursor carries the position to resume from with a
+  fingerprint of the query that produced it, authenticated with HMAC-SHA256
+  (`store.CursorCodec`). A cursor cannot be minted by hand, edited to skip ahead or
+  to point at another partition, or replayed against a different query or filter;
+  anything that fails verification is `store.ErrInvalidCursor`, which the web layer
+  renders as 400. The fake signs with a per-process random key. The DynamoDB
+  implementation will carry the marshalled `LastEvaluatedKey` as the position and
+  derive its key with `store.DeriveCursorKey` (HKDF-SHA256 over the session cookie
+  key, with a cursor-specific info string), so every instance signs alike and the
+  cursor key stays independent of the cookie key.
 - **Server-rendered.** It uses `net/http` and `html/template`, with contextual
   auto-escaping on all data and no `template.HTML` on data. It has no JavaScript,
   and the CSP includes `script-src 'none'`.
@@ -72,6 +82,18 @@ The read models follow Rudolph's single-table DynamoDB layout (`PK`/`SK`):
 The DynamoDB implementation comes after Rudolph's storage changes land.
 Until then, `cmd/lambda` serves 503 for data pages.
 
+Two things that implementation will need:
+
+- **Machine filters.** Hostname prefix search needs an index keyed on `DataType`
+  with `Hostname` as the sort key, and serial prefix search needs the serial index
+  keyed the same way; Rudolph's current serial index only matches exactly. At most
+  one prefix may be set per query, since each maps to a different index.
+- **Top blocked binaries.** Ranking by block count cannot come from one bounded
+  query over raw events, so this view assumes a precomputed aggregate (for example
+  a per-day, per-binary counter item updated on event upload) that can be read in
+  key order and paginated. Its next links carry the window start, so later pages
+  read exactly the window the first page did.
+
 ## Authentication and authorization
 
 - Microsoft Entra ID, single tenant, uses the OIDC authorization code flow with PKCE (S256),
@@ -88,9 +110,18 @@ Until then, `cmd/lambda` serves 503 for data pages.
   - `Rudolph.Viewer` grants the read pages.
   - `Rudolph.Admin` grants the admin-only routes and includes Viewer.
   - Signing in without a role works, but every page returns 403.
-- Logout is `POST /auth/logout`. It is protected against cross-origin requests by
-  `http.CrossOriginProtection`. It clears the cookie and redirects to Entra's
+- Logout is `POST /auth/logout`. It clears the cookie and redirects to Entra's
   `end_session_endpoint`.
+- Unsafe requests are checked by `http.CrossOriginProtection`. Behind CloudFront or
+  another custom domain the Lambda sees its own host, so the origin of
+  `RUDOLPH_WEB_REDIRECT_URL` is registered as a trusted origin; every other
+  cross-origin request is rejected with 403. Set the redirect URL to the host
+  users actually visit.
+- Every response, including redirects, 403s, 404s and cross-origin rejections,
+  carries the same headers: CSP (`default-src`, `script-src`, `frame-ancestors`
+  and `base-uri` all `'none'`; `form-action` limited to self and the Entra origin),
+  HSTS, `Referrer-Policy`, `X-Content-Type-Options: nosniff` and
+  `Cache-Control: no-store`. Only the embedded stylesheet is cacheable.
 
 Role changes take effect at the next sign-in, which is at most one session TTL later.
 
@@ -103,6 +134,10 @@ Role changes take effect at the next sign-in, which is at most one session TTL l
 3. Under **App roles**, add `Rudolph.Viewer` and `Rudolph.Admin` for Users/Groups.
    Assign them in Enterprise applications → Users and groups. You can require
    assignment so that unassigned users cannot sign in at all.
+4. If you set `RUDOLPH_WEB_POST_LOGOUT_REDIRECT_URL`, register that exact URL as a
+   front-channel logout / post-logout redirect URI on the app registration.
+   Entra ignores an unregistered `post_logout_redirect_uri` and leaves the user on
+   its own signed-out page.
 
 ## Configuration
 

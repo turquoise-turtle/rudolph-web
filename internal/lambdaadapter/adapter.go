@@ -22,7 +22,7 @@ func New(h http.Handler) Handler {
 	return func(ctx context.Context, ev events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 		req, err := toRequest(ctx, ev)
 		if err != nil {
-			return events.APIGatewayV2HTTPResponse{StatusCode: http.StatusBadRequest, Body: "bad request"}, nil
+			return badRequest(), nil
 		}
 		w := &responseWriter{header: http.Header{}}
 		h.ServeHTTP(w, req)
@@ -43,20 +43,28 @@ func toRequest(ctx context.Context, ev events.APIGatewayV2HTTPRequest) (*http.Re
 	if method == "" {
 		method = http.MethodGet
 	}
-	path := ev.RawPath
-	if path == "" {
-		path = "/"
+	rawPath := ev.RawPath
+	if rawPath == "" {
+		rawPath = "/"
 	}
-	u, err := url.Parse(path)
+	if !strings.HasPrefix(rawPath, "/") {
+		return nil, fmt.Errorf("path %q is not absolute", rawPath)
+	}
+	// The path is never parsed as a URL reference: "//evil.example/x" is a
+	// path, not a host. Parsing it under a placeholder authority keeps any
+	// percent-encoding intact, and the authority is then dropped.
+	u, err := url.Parse("http://lambda" + rawPath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("parse path: %w", err)
 	}
+	u.Scheme, u.Host, u.User, u.Fragment, u.OmitHost = "", "", nil, "", false
 	u.RawQuery = ev.RawQueryString
 
-	req, err := http.NewRequestWithContext(ctx, method, u.String(), bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, method, "/", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
+	req.URL = u
 	req.RequestURI = u.RequestURI()
 	for k, v := range ev.Headers {
 		req.Header.Set(k, v)
@@ -126,4 +134,23 @@ func isText(contentType string) bool {
 	ct := strings.ToLower(contentType)
 	return ct == "" || strings.HasPrefix(ct, "text/") ||
 		strings.Contains(ct, "json") || strings.Contains(ct, "xml") || strings.Contains(ct, "javascript")
+}
+
+// badRequest is returned when an event cannot be turned into a request. It
+// carries the same baseline security headers as the application's responses,
+// since it is produced before the handler runs.
+func badRequest() events.APIGatewayV2HTTPResponse {
+	return events.APIGatewayV2HTTPResponse{
+		StatusCode: http.StatusBadRequest,
+		Headers: map[string]string{
+			"Content-Type":              "text/plain; charset=utf-8",
+			"Content-Security-Policy":   "default-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+			"X-Content-Type-Options":    "nosniff",
+			"X-Frame-Options":           "DENY",
+			"Referrer-Policy":           "same-origin",
+			"Strict-Transport-Security": "max-age=31536000",
+			"Cache-Control":             "no-store",
+		},
+		Body: "bad request\n",
+	}
 }
