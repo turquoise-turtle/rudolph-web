@@ -59,13 +59,15 @@ v1 is read-only. `/admin` is a placeholder for future write actions and needs th
 |---|---|
 | `cmd/local` | Local HTTP server using the in-memory fake store seeded with demo data |
 | `cmd/lambda` | Lambda entrypoint (Function URL / API Gateway HTTP API) |
-| `internal/config` | Loads and validates configuration from environment variables |
+| `internal/config` | Loads and validates configuration from environment variables, with the secrets optionally from SSM |
+| `internal/awsssm` | Reads and caches SecureString parameters for the Lambda |
 | `internal/auth` | OIDC login/callback/logout, encrypted cookies, role middleware |
 | `internal/web` | Routes, handlers, templates, security headers |
 | `internal/store` | Read models and data-access interfaces |
 | `internal/store/fake` | In-memory implementation that records calls (tests + local dev) |
 | `internal/lambdaadapter` | Payload format 2.0 event ⇄ `http.Handler` |
 | `internal/testutil/fakeidp` | Test-only fake Entra-like OIDC provider |
+| `deployments` | Terraform module, example environment and static checks on both |
 
 ### Data layer
 
@@ -145,12 +147,19 @@ Role changes take effect at the next sign-in, which is at most one session TTL l
 |---|---|---|
 | `RUDOLPH_WEB_TENANT_ID` | yes | Entra tenant ID (GUID) |
 | `RUDOLPH_WEB_CLIENT_ID` | yes | Application (client) ID |
-| `RUDOLPH_WEB_CLIENT_SECRET` | yes | Client secret (planned move to SSM Parameter Store) |
+| `RUDOLPH_WEB_CLIENT_SECRET` | yes* | Client secret |
 | `RUDOLPH_WEB_REDIRECT_URL` | yes | `https://<host>/auth/callback` (`http://localhost…` allowed for dev) |
-| `RUDOLPH_WEB_COOKIE_KEY` | yes | 32 random bytes, base64 (std or url-safe): `openssl rand -base64 32` |
+| `RUDOLPH_WEB_COOKIE_KEY` | yes* | 32 random bytes, base64 (std or url-safe): `openssl rand -base64 32` |
 | `RUDOLPH_WEB_POST_LOGOUT_REDIRECT_URL` | no | Where Entra sends the browser after logout |
 | `RUDOLPH_WEB_SESSION_TTL` | no | Go duration, 5m–12h, default `1h` |
 | `RUDOLPH_WEB_ADDR` | no | Listen address for `cmd/local`, default `127.0.0.1:8080` |
+| `RUDOLPH_WEB_CLIENT_SECRET_SSM_PARAMETER` | no | SSM parameter holding the client secret, instead of the variable above |
+| `RUDOLPH_WEB_COOKIE_KEY_SSM_PARAMETER` | no | SSM parameter holding the cookie key, instead of the variable above |
+
+\* Each secret has exactly one source. Set the plain variable, as local development does, or name a
+SecureString parameter with its `*_SSM_PARAMETER` variable; setting both is an error. `cmd/lambda`
+reads the parameters once per cold start and caches them, so the deployed function carries no secret
+in its environment. See [docs/deploy.md](docs/deploy.md).
 
 ## Running locally
 
@@ -170,12 +179,23 @@ accept these cookies there. Safari may not.
 
 Local mode serves demo data from the in-memory fake store.
 
-## Building for Lambda
+## Deploying
+
+`deployments/` holds Terraform for one arm64 Lambda behind a Function URL, optionally fronted by
+CloudFront with a custom domain, plus a CloudWatch log group with retention, an execution role
+scoped to reading two SSM parameters and querying Rudolph's table, and nothing else.
 
 ```sh
-GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -tags lambda.norpc -o bootstrap ./cmd/lambda
-zip rudolph-web.zip bootstrap   # runtime: provided.al2023, architecture: arm64
+export ENV=prod
+make init-env      # create deployments/environments/prod from the example
+make deploy        # test, build the arm64 zip, terraform init and apply
 ```
+
+[docs/deploy.md](docs/deploy.md) covers the prerequisites, the Entra app registration, creating the
+two SecureString parameters, the first deploy, and how to roll the cookie key and the client secret.
+`make build` alone produces `build/package/rudolph_web_deployment.zip`
+(runtime `provided.al2023`, architecture `arm64`), and `make tf-check` runs `terraform fmt -check`,
+`init -backend=false` and `validate` without touching an AWS account.
 
 ## Tests
 
@@ -194,3 +214,7 @@ The tests cover the following:
 - Handler output against the fake store, including pagination, filters and escaping.
 - A query-budget guard.
 - The Lambda adapter.
+- The SSM-backed secret loading, against a fake fetcher.
+- The Terraform, through HCL-parsing static checks in `deployments/terraform_test.go`: least
+  privilege on the role, no secret anywhere in the configuration, and the Function URL and
+  CloudFront wiring.
