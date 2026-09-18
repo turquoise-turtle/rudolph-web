@@ -30,6 +30,15 @@ type TokenRequest struct {
 	RedirectURI  string
 	ClientID     string
 	ClientSecret string
+
+	// Where the client authenticated. ClientID/ClientSecret above hold the
+	// effective credentials (Basic auth wins); these record each location
+	// separately so tests can assert credentials were sent in one place only.
+	BasicAuth        bool   // an Authorization: Basic header was present
+	BasicClientID    string // client ID from the Basic header
+	BasicSecret      string // client secret from the Basic header
+	FormClientID     string // client_id form parameter
+	FormClientSecret string // client_secret form parameter
 }
 
 type pendingCode struct {
@@ -135,9 +144,13 @@ func (p *IDP) token(w http.ResponseWriter, r *http.Request) {
 		RedirectURI:  r.PostForm.Get("redirect_uri"),
 		ClientID:     r.PostForm.Get("client_id"),
 		ClientSecret: r.PostForm.Get("client_secret"),
+
+		FormClientID:     r.PostForm.Get("client_id"),
+		FormClientSecret: r.PostForm.Get("client_secret"),
 	}
 	if id, secret, ok := r.BasicAuth(); ok {
 		req.ClientID, req.ClientSecret = id, secret
+		req.BasicAuth, req.BasicClientID, req.BasicSecret = true, id, secret
 	}
 
 	p.mu.Lock()

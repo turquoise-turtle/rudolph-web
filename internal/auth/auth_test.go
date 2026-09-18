@@ -673,3 +673,70 @@ func flipChar(s string, i int) string {
 	}
 	return string(b)
 }
+
+// After sign-in the browser must never be sent back into the auth routes
+// (e.g. straight into logout or a stale callback), including via spellings a
+// browser or the router resolves to /auth/... (dot segments, which browsers
+// remove from a Location, including %2e; percent-encoded letters, which
+// ServeMux decodes when matching).
+func TestLogin_ReturnToMustNotPointIntoAuthRoutes(t *testing.T) {
+	for _, returnTo := range []string{
+		"/auth/logout",
+		"/auth/login?return_to=/auth/logout",
+		"/auth/callback?code=stale&state=stale",
+		"/./auth/callback?code=stale",
+		"/machines/../auth/logout",
+		"/%2e/auth/callback",
+		"/%61uth/callback?code=stale", // ServeMux routes this to /auth/callback
+	} {
+		t.Run(returnTo, func(t *testing.T) {
+			e := newEnv(t)
+			ar := e.startLogin(t, returnTo)
+			rec := e.callback(t, ar, e.idp.SignIDToken(e.idp.Claims(ar.params.Get("nonce"), auth.RoleViewer)))
+			if rec.Code != http.StatusFound {
+				t.Fatalf("status %d, want 302; body %q", rec.Code, rec.Body.String())
+			}
+			if got := rec.Header().Get("Location"); got != "/" {
+				t.Fatalf("redirected to %q after login, want / (return_to into /auth/ must be ignored)", got)
+			}
+		})
+	}
+
+	// A normal page is still honoured.
+	e := newEnv(t)
+	ar := e.startLogin(t, "/authors-page?x=1")
+	rec := e.callback(t, ar, e.idp.SignIDToken(e.idp.Claims(ar.params.Get("nonce"), auth.RoleViewer)))
+	if got := rec.Header().Get("Location"); got != "/authors-page?x=1" {
+		t.Errorf("return_to /authors-page?x=1 redirected to %q", got)
+	}
+}
+
+// A bogus authorization code must cost exactly one token request, with the
+// client credentials sent in exactly one place (no auth-style auto-detection
+// retry that re-sends the code and the secret a second way).
+func TestCallback_InvalidCodeMakesSingleTokenRequest(t *testing.T) {
+	e := newEnv(t)
+	ar := e.startLogin(t, "/viewer")
+	q := url.Values{"code": {"bogus-code-that-the-idp-never-issued"}, "state": {ar.params.Get("state")}}
+	rec := e.do(t, http.MethodGet, "/auth/callback?"+q.Encode(), ar.flowCookie)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status %d, want 401; body %q", rec.Code, rec.Body.String())
+	}
+	if c := responseCookie(rec, auth.SessionCookieName); c != nil && c.Value != "" {
+		t.Fatal("session cookie set for an invalid code")
+	}
+
+	reqs := e.idp.TokenRequests()
+	if len(reqs) != 1 {
+		t.Fatalf("token endpoint called %d times for one invalid code, want exactly 1: %+v", len(reqs), reqs)
+	}
+	r := reqs[0]
+	if r.ClientID != clientID || r.ClientSecret != clientSecret {
+		t.Errorf("token request authenticated as %q/%q, want the configured client", r.ClientID, r.ClientSecret)
+	}
+	inHeader := r.BasicAuth
+	inForm := r.FormClientSecret != ""
+	if inHeader == inForm {
+		t.Errorf("client secret sent in header=%v and form=%v, want exactly one", inHeader, inForm)
+	}
+}
