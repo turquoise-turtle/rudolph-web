@@ -1,7 +1,9 @@
-// Package config loads rudolph-web settings from environment variables.
+// Package config loads rudolph-web settings from environment variables, with
+// the two secrets optionally coming from SSM Parameter Store instead.
 package config
 
 import (
+	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -23,6 +25,12 @@ const (
 	EnvCookieKey             = "RUDOLPH_WEB_COOKIE_KEY"
 	EnvSessionTTL            = "RUDOLPH_WEB_SESSION_TTL"
 	EnvAddr                  = "RUDOLPH_WEB_ADDR"
+
+	// Names of SSM Parameter Store parameters holding the secrets. When one of
+	// these is set the matching plain variable must be unset, and the value is
+	// read once, at cold start.
+	EnvClientSecretSSMParameter = "RUDOLPH_WEB_CLIENT_SECRET_SSM_PARAMETER"
+	EnvCookieKeySSMParameter    = "RUDOLPH_WEB_COOKIE_KEY_SSM_PARAMETER"
 )
 
 const (
@@ -113,6 +121,64 @@ func FromEnv(getenv func(string) string) (Config, error) {
 		return Config{}, fmt.Errorf("config: %w", errors.Join(errs...))
 	}
 	return c, nil
+}
+
+// A ParameterFetcher reads a single decrypted parameter value by name. The
+// implementation used in production is internal/awsssm; it caches values for
+// the life of the process, so a warm Lambda never calls SSM again.
+type ParameterFetcher interface {
+	GetParameter(ctx context.Context, name string) (string, error)
+}
+
+// Load reads the same configuration as FromEnv, except that the client secret
+// and the cookie key come from SSM Parameter Store when their
+// *_SSM_PARAMETER variables name a parameter. That keeps secrets out of the
+// Lambda's environment, which is visible to anyone who can describe the
+// function. Local development keeps using the plain variables, and fetch may
+// then be nil.
+//
+// A secret may have exactly one source: setting both the plain variable and
+// its *_SSM_PARAMETER variable is an error rather than a silent preference.
+// Like FromEnv, errors name variables and parameters but never values.
+func Load(ctx context.Context, getenv func(string) string, fetch ParameterFetcher) (Config, error) {
+	resolved := map[string]string{}
+	var errs []error
+	for _, s := range []struct{ value, parameter string }{
+		{EnvClientSecret, EnvClientSecretSSMParameter},
+		{EnvCookieKey, EnvCookieKeySSMParameter},
+	} {
+		name := strings.TrimSpace(getenv(s.parameter))
+		if name == "" {
+			continue
+		}
+		if strings.TrimSpace(getenv(s.value)) != "" {
+			errs = append(errs, fmt.Errorf("%s and %s are both set; use exactly one", s.value, s.parameter))
+			continue
+		}
+		if fetch == nil {
+			errs = append(errs, fmt.Errorf("%s is set but no parameter store is configured", s.parameter))
+			continue
+		}
+		v, err := fetch.GetParameter(ctx, name)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s: reading %s: %w", s.parameter, name, err))
+			continue
+		}
+		if strings.TrimSpace(v) == "" {
+			errs = append(errs, fmt.Errorf("%s: parameter %s is empty", s.parameter, name))
+			continue
+		}
+		resolved[s.value] = strings.TrimSpace(v)
+	}
+	if len(errs) > 0 {
+		return Config{}, fmt.Errorf("config: %w", errors.Join(errs...))
+	}
+	return FromEnv(func(k string) string {
+		if v, ok := resolved[k]; ok {
+			return v
+		}
+		return getenv(k)
+	})
 }
 
 // Issuer is the Entra ID v2.0 issuer for the tenant.
