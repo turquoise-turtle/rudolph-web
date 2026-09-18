@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"path"
 	"strings"
 	"sync"
 	"time"
@@ -27,6 +28,10 @@ const (
 	CallbackPath = "/auth/callback"
 	LogoutPath   = "/auth/logout"
 )
+
+// authPathPrefix is the route prefix owned by this package; return_to must
+// never point into it.
+const authPathPrefix = "/auth"
 
 // flowTTL bounds how long a user may take at the IdP.
 const flowTTL = 10 * time.Minute
@@ -129,12 +134,18 @@ func (a *Authenticator) getProvider() (*providerState, error) {
 	if err := p.Claims(&extra); err != nil {
 		return nil, fmt.Errorf("auth: oidc discovery claims: %w", err)
 	}
+	endpoint := p.Endpoint()
+	// Entra ID accepts HTTP Basic client authentication. Saying so explicitly
+	// avoids x/oauth2's auto-detection, which retries a failed token request
+	// with the credentials in the form body, sending the code and the secret
+	// twice.
+	endpoint.AuthStyle = oauth2.AuthStyleInHeader
 	a.provider = &providerState{
 		oauth2: oauth2.Config{
 			ClientID:     a.cfg.ClientID,
 			ClientSecret: a.cfg.ClientSecret,
 			RedirectURL:  a.cfg.RedirectURL,
-			Endpoint:     p.Endpoint(),
+			Endpoint:     endpoint,
 			Scopes:       []string{oidc.ScopeOpenID, "profile"},
 		},
 		verifier: p.Verifier(&oidc.Config{
@@ -163,14 +174,24 @@ func randomToken() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-// safeReturnTo accepts only same-origin absolute paths.
+// safeReturnTo accepts only same-origin absolute paths that do not lead back
+// into the auth routes.
+//
+// The check is made on the normalised path: browsers resolve dot segments
+// (including percent-encoded ones) before requesting a Location, and ServeMux
+// decodes percent-encoded characters when matching, so "/./auth/callback",
+// "/machines/../auth/logout" and "/%61uth/callback" all end up at /auth/.
 func safeReturnTo(s string) string {
-	if !strings.HasPrefix(s, "/") || strings.HasPrefix(s, "//") || strings.HasPrefix(s, "/\\") ||
-		strings.HasPrefix(s, "/auth/") || strings.ContainsAny(s, "\\\r\n\t") {
+	if !strings.HasPrefix(s, "/") || strings.HasPrefix(s, "//") || strings.ContainsAny(s, "\\\r\n\t") {
 		return "/"
 	}
 	u, err := url.Parse(s)
 	if err != nil || u.Scheme != "" || u.Host != "" || u.User != nil {
+		return "/"
+	}
+	// u.Path is percent-decoded; path.Clean resolves . and .. segments.
+	clean := path.Clean("/" + strings.TrimPrefix(u.Path, "/"))
+	if clean == authPathPrefix || strings.HasPrefix(clean, authPathPrefix+"/") {
 		return "/"
 	}
 	return s
@@ -349,6 +370,18 @@ func (a *Authenticator) logout(w http.ResponseWriter, r *http.Request) {
 // Content-Security-Policy form-action directive.
 func (a *Authenticator) IssuerOrigin() string {
 	u, err := url.Parse(a.cfg.Issuer)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
+}
+
+// RedirectOrigin returns the scheme://host of the configured redirect URL.
+// Behind CloudFront or another custom domain the Lambda sees its own host, so
+// this is the origin browsers actually send, and the only cross-host origin
+// the app trusts for unsafe requests.
+func (a *Authenticator) RedirectOrigin() string {
+	u, err := url.Parse(a.cfg.RedirectURL)
 	if err != nil || u.Scheme == "" || u.Host == "" {
 		return ""
 	}
