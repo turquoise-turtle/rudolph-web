@@ -233,6 +233,32 @@ func TestDecodeMachinePartition_ConfiguredModeIsSeparateFromReported(t *testing.
 	}
 }
 
+// Rudolph skips a machine config attribute it cannot decode and applies the global value instead
+// (machineconfiguration/decode.go), so the machine page must not fail on one either.
+func TestDecodeMachinePartition_MistypedConfigAttributeInherits(t *testing.T) {
+	for name, bad := range map[string]types.AttributeValue{
+		"string":      &types.AttributeValueMemberS{Value: "LOCKDOWN"},
+		"bool":        &types.AttributeValueMemberBOOL{Value: true},
+		"not integer": &types.AttributeValueMemberN{Value: "2.5"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			config := clone(row(t, "Machine#"+machineB, "Config"))
+			config["ClientMode"] = bad
+			config["PK"] = &types.AttributeValueMemberS{Value: "Machine#" + machineA}
+			got, err := dynamo.DecodeMachinePartition(append(rowsWithPK(t, "Machine#"+machineA), config))
+			if err != nil {
+				t.Fatalf("a mistyped config attribute broke the machine page: %v", err)
+			}
+			if got.ConfiguredClientMode != "" {
+				t.Errorf("configured mode %q, want \"\" (Rudolph applies the global config)", got.ConfiguredClientMode)
+			}
+			if got.MachineID != machineA {
+				t.Errorf("machine %q", got.MachineID)
+			}
+		})
+	}
+}
+
 // A machine config without ClientMode inherits the global one: shown as not configured.
 func TestDecodeMachinePartition_ConfigWithoutClientMode(t *testing.T) {
 	config := clone(row(t, "Machine#"+machineB, "Config"))
@@ -263,9 +289,11 @@ func TestDecodeMachinePartition_Encodings(t *testing.T) {
 				t.Errorf("SIPStatus %q, want reduced (0x10)", m.SIPStatus)
 			}
 		}},
-		{"no SIP status reported", func(it item) { delete(it, "SIPStatus") }, func(t *testing.T, m store.MachineDetail) {
-			if m.SIPStatus != "" {
-				t.Errorf("SIPStatus %q, want empty", m.SIPStatus)
+		// sip_status is a plain proto3 uint32, so Santa leaves a 0 out of its preflight and Rudolph stores no
+		// attribute: on a real fleet, a missing SIPStatus is a Mac with every protection on.
+		{"SIP status left out because it is 0", func(it item) { delete(it, "SIPStatus") }, func(t *testing.T, m store.MachineDetail) {
+			if m.SIPStatus != "enabled" {
+				t.Errorf("SIPStatus %q, want enabled", m.SIPStatus)
 			}
 		}},
 		{"lockdown", func(it item) { it["ClientMode"] = n(2) }, func(t *testing.T, m store.MachineDetail) {

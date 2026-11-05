@@ -132,10 +132,16 @@ func TestGetMachine_NotFound(t *testing.T) {
 // of a sync, for one). The detail page still needs a single Query and finds the rows it needs.
 func TestGetMachine_ManyOtherRowsInThePartition(t *testing.T) {
 	s := newStore(t)
-	for i := 0; i < 30; i++ {
+	limits := limitsUsed(t)
+	for i := 0; i < 60; i++ {
+		// Half sort before Config and half after SyncState, where Rudolph's archived SyncState@<time> rows go.
+		prefix := "Aaa#"
+		if i%2 == 1 {
+			prefix = "SyncState@"
+		}
 		it := map[string]types.AttributeValue{
 			"PK": &types.AttributeValueMemberS{Value: "Machine#" + machineA},
-			"SK": &types.AttributeValueMemberS{Value: "Aaa#" + string(rune('a'+i%26)) + strings.Repeat("x", i)},
+			"SK": &types.AttributeValueMemberS{Value: prefix + string(rune('a'+i%26)) + strings.Repeat("x", i)},
 		}
 		if _, err := ddblocal.Raw(t).PutItem(ctx, &awsdynamodb.PutItemInput{TableName: aws.String(ddblocal.TableName), Item: it}); err != nil {
 			t.Fatal(err)
@@ -150,6 +156,10 @@ func TestGetMachine_ManyOtherRowsInThePartition(t *testing.T) {
 		t.Errorf("got %+v sync %+v", got.Machine, got.Sync)
 	}
 	queriesOnly(t, 1)
+	// Read capacity is charged for every row a Query reads, so the detail page reads only the few rows it shows.
+	if len(*limits) != 1 || (*limits)[0] < 3 || (*limits)[0] > 10 {
+		t.Errorf("GetMachine queried with Limit %v, want one Query with a Limit of 3 to 10", *limits)
+	}
 }
 
 func TestListMachineRules_PagesInSortKeyOrder(t *testing.T) {
