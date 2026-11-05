@@ -75,7 +75,7 @@ The read models follow Rudolph's single-table DynamoDB layout (`PK`/`SK`):
 
 | Read model | Rudolph item |
 |---|---|
-| `store.Machine` | `PK=Machine#<id>, SK=Current` (sensor data; adds Hostname, ModelIdentifier, SIPStatus when Rudolph stores them) |
+| `store.Machine` | `PK=Machine#<id>, SK=Current` (sensor data; adds Hostname and ModelIdentifier when Rudolph stores them, and SIPStatus, where a missing attribute means enabled) |
 | `store.SyncState` | `PK=Machine#<id>, SK=SyncState` (PreflightAt, PostflightAt; adds LastSyncType, RulesProcessed) |
 | `store.Rule` (global) | `PK=GlobalRules, SK=<Type>#<identifier>` |
 | `store.Rule` (machine) | `PK=MachineRules#<id>` |

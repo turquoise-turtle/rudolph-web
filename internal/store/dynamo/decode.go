@@ -71,7 +71,7 @@ func DecodeMachinePartition(items []map[string]types.AttributeValue) (store.Mach
 			st := r.syncState()
 			d.Sync = &st
 		case skConfig:
-			d.ConfiguredClientMode = r.clientMode()
+			d.ConfiguredClientMode = r.configClientMode()
 		}
 		if r.err != nil {
 			return store.MachineDetail{}, fmt.Errorf("dynamo: decoding %s row %q: %w", r.str("PK"), sk, r.err)
@@ -147,13 +147,13 @@ func (r *reader) machine() store.Machine {
 		m.MachineID = strings.TrimPrefix(r.str("PK"), "Machine#")
 	}
 	// SIPStatus is the raw csrutil configuration flags: 0 means every
-	// protection is on, and each set bit turns one off.
-	if r.present("SIPStatus") {
-		if flags := r.num("SIPStatus"); flags == 0 {
-			m.SIPStatus = "enabled"
-		} else {
-			m.SIPStatus = fmt.Sprintf("reduced (0x%x)", flags)
-		}
+	// protection is on, and each set bit turns one off. Santa's sip_status is a
+	// plain proto3 uint32, so a 0 is left out of the preflight and Rudolph
+	// stores no attribute: a missing SIPStatus is a Mac with SIP fully on.
+	if flags := r.num("SIPStatus"); flags == 0 {
+		m.SIPStatus = "enabled"
+	} else {
+		m.SIPStatus = fmt.Sprintf("reduced (0x%x)", flags)
 	}
 	return m
 }
@@ -172,6 +172,21 @@ func (r *reader) clientMode() store.ClientMode {
 		return ""
 	}
 	return enum(r.num("ClientMode"), clientModes)
+}
+
+// configClientMode reads ClientMode from a machine config row. Rudolph skips a
+// machine config attribute it cannot decode and applies the global value, so a
+// mistyped one is shown as not set instead of failing the machine page.
+func (r *reader) configClientMode() store.ClientMode {
+	v, ok := r.item["ClientMode"].(*types.AttributeValueMemberN)
+	if !ok {
+		return ""
+	}
+	n, err := strconv.ParseInt(v.Value, 10, 64)
+	if err != nil {
+		return ""
+	}
+	return enum(n, clientModes)
 }
 
 func enum[T ~string](n int64, known map[int64]T) T {

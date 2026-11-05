@@ -95,8 +95,8 @@ A (Athena over Firehose) stays an optional later addition for full history beyon
 
 ## Contract mismatches to handle
 
-1. RuleType, Policy and ClientMode are numbers. Decode them, render unknown values as `UNKNOWN(n)`, add ALLOWLIST_TRANSITIVE (6). Show the configured client mode (machine config) apart from the reported one (sensor data).
-2. SIPStatus is the raw CSR flags: 0 means every protection is on, 127 means SIP is disabled. Rudolph's comment calling 0 "SIP disabled" is wrong.
+1. RuleType, Policy and ClientMode are numbers. Decode them, render unknown values as `UNKNOWN(n)`, add ALLOWLIST_TRANSITIVE (6). Show the configured client mode (machine config) apart from the reported one (sensor data). Rudolph skips a machine config attribute it cannot decode and applies the global value, so a mistyped ClientMode on the Config row shows as not configured rather than an error.
+2. SIPStatus is the raw CSR flags: 0 means every protection is on, 127 means SIP is disabled. Rudolph's comment calling 0 "SIP disabled" is wrong. Santa's `sip_status` is a plain proto3 uint32, so a 0 is left out of the preflight and Rudolph stores no attribute: a missing SIPStatus also means enabled.
 3. Certificate sort keys are `Cert#`: correct the contract README.
 4. LastSyncType is stored lower case.
 5. Rule state (in force, removing, expired), and the legacy `SHA256` attribute read as Identifier.
