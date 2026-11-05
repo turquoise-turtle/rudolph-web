@@ -8,6 +8,7 @@ package dynamo_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"strings"
@@ -74,7 +75,9 @@ func limitsUsed(t *testing.T) *[]int {
 	var limits []int
 	ddblocal.AddHook(t, ddblocal.Hook{Before: func(c *ddblocal.Call) *ddblocal.Fault {
 		if c.Op == "Query" {
-			l, _ := c.Input["Limit"].(float64)
+			// The proxy decodes requests with UseNumber.
+			n, _ := c.Input["Limit"].(json.Number)
+			l, _ := n.Int64()
 			limits = append(limits, int(l))
 		}
 		return nil
