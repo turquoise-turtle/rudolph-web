@@ -37,6 +37,7 @@ type Store struct {
 	mu           sync.Mutex
 	machines     map[string]store.Machine
 	syncStates   map[string]store.SyncState
+	configModes  map[string]store.ClientMode
 	globalRules  map[string]store.Rule
 	machineRules map[string]map[string]store.Rule
 	execEvents   []store.ExecutionEvent
@@ -61,6 +62,7 @@ func New() *Store {
 		cursors:      codec,
 		machines:     map[string]store.Machine{},
 		syncStates:   map[string]store.SyncState{},
+		configModes:  map[string]store.ClientMode{},
 		globalRules:  map[string]store.Rule{},
 		machineRules: map[string]map[string]store.Rule{},
 	}
@@ -78,6 +80,14 @@ func (s *Store) SetSyncState(machineID string, st store.SyncState) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.syncStates[machineID] = st
+}
+
+// SetConfiguredClientMode sets the client mode a machine's config sets ("" to
+// follow the global config).
+func (s *Store) SetConfiguredClientMode(machineID string, mode store.ClientMode) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.configModes[machineID] = mode
 }
 
 // AddGlobalRule inserts or replaces a global rule (keyed by type+identifier).
@@ -180,7 +190,7 @@ func (s *Store) GetMachine(_ context.Context, machineID string) (store.MachineDe
 	if !ok {
 		return store.MachineDetail{}, store.ErrNotFound
 	}
-	d := store.MachineDetail{Machine: m}
+	d := store.MachineDetail{Machine: m, ConfiguredClientMode: s.configModes[machineID]}
 	if st, ok := s.syncStates[machineID]; ok {
 		d.Sync = &st
 	}
