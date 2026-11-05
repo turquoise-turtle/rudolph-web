@@ -218,3 +218,12 @@ The tests cover the following:
 - The Terraform, through HCL-parsing static checks in `deployments/terraform_test.go`: least
   privilege on the role, no secret anywhere in the configuration, and the Function URL and
   CloudFront wiring.
+- Decoding of Rudolph's DynamoDB rows, against `testdata/webcontract/rows.json`, a copy of Rudolph's web contract fixture.
+
+Integration tests (build tag `integration`) run the DynamoDB data layer against DynamoDB Local, with the table created from `testdata/rudolph/dynamodb.tf`, a copy of Rudolph's table definition. They need Java and DynamoDB Local: either set `DYNAMODB_LOCAL_DIR`, or keep a Rudolph checkout next to this repo (`../rudolph`) where `scripts/setup_test_deps.sh` has been run.
+
+```sh
+go test -tags integration ./...
+```
+
+Both copies are checked against Rudolph's originals whenever a Rudolph checkout is found at `../rudolph` or `$RUDOLPH_DIR`. When Rudolph changes them, copy them over and look at what changed.
