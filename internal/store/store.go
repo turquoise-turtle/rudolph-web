@@ -162,7 +162,7 @@ type Machine struct {
 	SantaVersion    string
 	ClientMode      ClientMode // as last reported by the Mac
 	PrimaryUser     string
-	SIPStatus       string // "enabled", "reduced (0x<flags>)", or empty if not reported
+	SIPStatus       string // "enabled" (flags 0, or no SIPStatus stored) or "reduced (0x<flags>)"
 	RuleCounts      RuleCounts
 	LastSeen        time.Time // sensor data Time
 }
