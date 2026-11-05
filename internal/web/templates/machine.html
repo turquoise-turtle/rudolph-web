@@ -8,7 +8,8 @@
   <dt>Model</dt><dd>{{orDash .ModelIdentifier}}</dd>
   <dt>macOS</dt><dd>{{orDash .OSVersion}} ({{orDash .OSBuild}})</dd>
   <dt>Santa</dt><dd>{{orDash .SantaVersion}}</dd>
-  <dt>Client mode</dt><dd>{{.ClientMode}}</dd>
+  <dt>Client mode (reported)</dt><dd>{{.ClientMode}}</dd>
+  <dt>Client mode (configured)</dt><dd>{{with .ConfiguredClientMode}}{{.}}{{else}}not set: global config applies{{end}}</dd>
   <dt>Primary user</dt><dd>{{orDash .PrimaryUser}}</dd>
   <dt>SIP status</dt><dd>{{orDash .SIPStatus}}</dd>
   <dt>Last seen</dt><dd>{{ts .LastSeen}}</dd>
@@ -35,7 +36,7 @@
 {{if .Rules}}
 <div class="scroll">
 <table>
-<thead><tr><th>Type</th><th>Policy</th><th>Identifier</th><th>Custom message</th><th>Description</th><th>Expires</th></tr></thead>
+<thead><tr><th>Type</th><th>Policy</th><th>Identifier</th><th>Custom message</th><th>Description</th><th>Expires</th><th>State</th></tr></thead>
 <tbody>
 {{range .Rules}}
 <tr data-row>
@@ -45,6 +46,7 @@
   <td>{{.CustomMessage}}</td>
   <td>{{.Description}}</td>
   <td>{{ts .ExpiresAt}}</td>
+  <td>{{with .State}}{{.}}{{else}}—{{end}}</td>
 </tr>
 {{end}}
 </tbody>

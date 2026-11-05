@@ -28,6 +28,9 @@ func NewDemo(now time.Time) *Store {
 			RuleCounts: store.RuleCounts{Binary: 40 + i%7, Certificate: 3, TeamID: 12, SigningID: 5, CDHash: 1},
 			LastSeen:   now.Add(-time.Duration(i) * 11 * time.Minute),
 		})
+		if i%20 == 0 {
+			s.SetConfiguredClientMode(id, store.ClientModeLockdown)
+		}
 		if i%9 != 0 {
 			s.SetSyncState(id, store.SyncState{
 				PreflightAt: now.Add(-time.Duration(i) * 11 * time.Minute), PostflightAt: now.Add(-time.Duration(i)*11*time.Minute + 20*time.Second),
@@ -36,7 +39,13 @@ func NewDemo(now time.Time) *Store {
 		}
 		if i%10 == 1 {
 			s.AddMachineRule(id, store.Rule{RuleType: store.RuleTypeBinary, Policy: store.PolicyAllowlist,
-				Identifier: fmt.Sprintf("%064x", i), Description: "Break-glass exception", ExpiresAt: now.Add(24 * time.Hour)})
+				Identifier: fmt.Sprintf("%064x", i), Description: "Break-glass exception", ExpiresAt: now.Add(24 * time.Hour), State: store.RuleStateInForce})
+		}
+		if i%10 == 2 {
+			s.AddMachineRule(id, store.Rule{RuleType: store.RuleTypeBinary, Policy: store.PolicyAllowlist,
+				Identifier: fmt.Sprintf("%064x", i), Description: "Expired exception", ExpiresAt: now.Add(-time.Hour), State: store.RuleStateExpired})
+			s.AddMachineRule(id, store.Rule{RuleType: store.RuleTypeTeamID, Policy: store.PolicyBlocklist,
+				Identifier: "UBF8T346G9", Description: "Withdrawn block", State: store.RuleStateRemoving})
 		}
 		for j := 0; j < 6; j++ {
 			d := store.DecisionBlockUnknown
@@ -51,13 +60,13 @@ func NewDemo(now time.Time) *Store {
 			})
 		}
 	}
-	s.AddGlobalRule(store.Rule{RuleType: store.RuleTypeTeamID, Policy: store.PolicyAllowlist, Identifier: "EQHXZ8M8AV", Description: "Google"})
-	s.AddGlobalRule(store.Rule{RuleType: store.RuleTypeTeamID, Policy: store.PolicyAllowlist, Identifier: "UBF8T346G9", Description: "Microsoft"})
-	s.AddGlobalRule(store.Rule{RuleType: store.RuleTypeSigningID, Policy: store.PolicyAllowlist, Identifier: "platform:com.apple.curl"})
-	s.AddGlobalRule(store.Rule{RuleType: store.RuleTypeCDHash, Policy: store.PolicyCEL, Identifier: "a9fdcbc0427a0a585f91bbc7342c261c8ead1942", CELExpr: "target.signing_time >= timestamp('2025-01-01T00:00:00Z')"})
+	s.AddGlobalRule(store.Rule{RuleType: store.RuleTypeTeamID, Policy: store.PolicyAllowlist, Identifier: "EQHXZ8M8AV", Description: "Google", State: store.RuleStateInForce})
+	s.AddGlobalRule(store.Rule{RuleType: store.RuleTypeTeamID, Policy: store.PolicyAllowlist, Identifier: "UBF8T346G9", Description: "Microsoft", State: store.RuleStateInForce})
+	s.AddGlobalRule(store.Rule{RuleType: store.RuleTypeSigningID, Policy: store.PolicyAllowlist, Identifier: "platform:com.apple.curl", State: store.RuleStateInForce})
+	s.AddGlobalRule(store.Rule{RuleType: store.RuleTypeCDHash, Policy: store.PolicyCEL, Identifier: "a9fdcbc0427a0a585f91bbc7342c261c8ead1942", CELExpr: "target.signing_time >= timestamp('2025-01-01T00:00:00Z')", State: store.RuleStateInForce})
 	for i := 0; i < 80; i++ {
 		s.AddGlobalRule(store.Rule{RuleType: store.RuleTypeBinary, Policy: []store.Policy{store.PolicyBlocklist, store.PolicyAllowlist, store.PolicySilentBlocklist}[i%3],
-			Identifier: fmt.Sprintf("%064x", 5000+i), CustomMessage: "Contact IT"})
+			Identifier: fmt.Sprintf("%064x", 5000+i), CustomMessage: "Contact IT", State: store.RuleStateInForce})
 	}
 	return s
 }

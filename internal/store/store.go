@@ -6,6 +6,7 @@
 //
 //	PK=Machine#<id>       SK=Current      sensor data      -> Machine
 //	PK=Machine#<id>       SK=SyncState    sync state       -> SyncState
+//	PK=Machine#<id>       SK=Config       machine config   -> MachineDetail.ConfiguredClientMode
 //	PK=GlobalRules        SK=<Type>#<id>  global rules     -> Rule
 //	PK=MachineRules#<id>  SK=<Type>#<id>  machine rules    -> Rule
 //
@@ -45,7 +46,8 @@ type Page[T any] struct {
 	NextCursor string
 }
 
-// ClientMode is Santa's enforcement mode.
+// ClientMode is Santa's enforcement mode. Rudolph stores it as a number; a
+// number this package does not know is shown as UNKNOWN(n).
 type ClientMode string
 
 const (
@@ -54,7 +56,8 @@ const (
 	ClientModeStandalone ClientMode = "STANDALONE"
 )
 
-// RuleType is the kind of identifier a rule matches.
+// RuleType is the kind of identifier a rule matches. Unknown numbers from
+// Rudolph are shown as UNKNOWN(n).
 type RuleType string
 
 const (
@@ -68,23 +71,27 @@ const (
 // RuleTypes lists every valid RuleType.
 var RuleTypes = []RuleType{RuleTypeBinary, RuleTypeCertificate, RuleTypeTeamID, RuleTypeSigningID, RuleTypeCDHash}
 
-// Policy is what Santa does when a rule matches.
+// Policy is what Santa does when a rule matches. Unknown numbers from Rudolph
+// are shown as UNKNOWN(n).
 type Policy string
 
 const (
-	PolicyAllowlist          Policy = "ALLOWLIST"
-	PolicyAllowlistCompiler  Policy = "ALLOWLIST_COMPILER"
-	PolicyBlocklist          Policy = "BLOCKLIST"
-	PolicySilentBlocklist    Policy = "SILENT_BLOCKLIST"
-	PolicySilentGUIBlocklist Policy = "SILENT_GUI_BLOCKLIST"
-	PolicySilentTTYBlocklist Policy = "SILENT_TTY_BLOCKLIST"
-	PolicyRemove             Policy = "REMOVE"
-	PolicyCEL                Policy = "CEL"
+	PolicyAllowlist         Policy = "ALLOWLIST"
+	PolicyAllowlistCompiler Policy = "ALLOWLIST_COMPILER"
+	// Santa creates transitive allowlist rules locally; Rudolph never sends
+	// them, but a rule list can still hold one.
+	PolicyAllowlistTransitive Policy = "ALLOWLIST_TRANSITIVE"
+	PolicyBlocklist           Policy = "BLOCKLIST"
+	PolicySilentBlocklist     Policy = "SILENT_BLOCKLIST"
+	PolicySilentGUIBlocklist  Policy = "SILENT_GUI_BLOCKLIST"
+	PolicySilentTTYBlocklist  Policy = "SILENT_TTY_BLOCKLIST"
+	PolicyRemove              Policy = "REMOVE"
+	PolicyCEL                 Policy = "CEL"
 )
 
 // Policies lists every valid Policy.
 var Policies = []Policy{
-	PolicyAllowlist, PolicyAllowlistCompiler, PolicyBlocklist, PolicySilentBlocklist,
+	PolicyAllowlist, PolicyAllowlistCompiler, PolicyAllowlistTransitive, PolicyBlocklist, PolicySilentBlocklist,
 	PolicySilentGUIBlocklist, PolicySilentTTYBlocklist, PolicyRemove, PolicyCEL,
 }
 
@@ -148,14 +155,14 @@ type RuleCounts struct {
 type Machine struct {
 	MachineID       string
 	SerialNum       string
-	Hostname        string // being added to Rudolph
-	ModelIdentifier string // being added to Rudolph
+	Hostname        string // empty from older Rudolph versions
+	ModelIdentifier string // empty from older Rudolph versions
 	OSVersion       string
 	OSBuild         string
 	SantaVersion    string
-	ClientMode      ClientMode
+	ClientMode      ClientMode // as last reported by the Mac
 	PrimaryUser     string
-	SIPStatus       string // being added to Rudolph
+	SIPStatus       string // "enabled", "reduced (0x<flags>)", or empty if not reported
 	RuleCounts      RuleCounts
 	LastSeen        time.Time // sensor data Time
 }
@@ -164,15 +171,20 @@ type Machine struct {
 type SyncState struct {
 	PreflightAt    time.Time
 	PostflightAt   time.Time
-	LastSyncType   string // being added to Rudolph: NORMAL, CLEAN, CLEAN_ALL
-	RulesProcessed int    // being added to Rudolph
+	LastSyncType   string // NORMAL, CLEAN or CLEAN_ALL
+	RulesProcessed int
 }
 
-// MachineDetail combines sensor data with sync state. Sync is nil when the
-// machine has no sync state row (never synced, or expired).
+// MachineDetail combines sensor data with sync state and machine config. Sync
+// is nil when the machine has no sync state row (never synced, or expired).
 type MachineDetail struct {
 	Machine
 	Sync *SyncState
+	// ConfiguredClientMode is the mode the machine config (SK=Config) sets,
+	// which can differ from the mode the Mac last reported until it syncs.
+	// Empty when the machine config does not set one, so the global config
+	// applies.
+	ConfiguredClientMode ClientMode
 }
 
 // MachineFilter narrows ListMachines. At most one prefix may be set; each maps
@@ -181,6 +193,19 @@ type MachineFilter struct {
 	SerialPrefix   string
 	HostnamePrefix string
 }
+
+// RuleState is whether a rule currently applies.
+type RuleState string
+
+const (
+	RuleStateInForce RuleState = "IN_FORCE"
+	// RuleStateRemoving: Rudolph is telling Macs to drop the rule at their
+	// next sync.
+	RuleStateRemoving RuleState = "REMOVING"
+	// RuleStateExpired: the rule's expiry has passed but Rudolph has not yet
+	// deleted the row.
+	RuleStateExpired RuleState = "EXPIRED"
+)
 
 // Rule is a global or machine-specific Santa rule.
 type Rule struct {
@@ -192,6 +217,7 @@ type Rule struct {
 	CELExpr       string
 	Description   string
 	ExpiresAt     time.Time // machine rules only; zero if none
+	State         RuleState
 }
 
 // RuleFilter narrows ListGlobalRules. Zero values match everything.
