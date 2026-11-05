@@ -81,8 +81,7 @@ The read models follow Rudolph's single-table DynamoDB layout (`PK`/`SK`):
 | `store.Rule` (machine) | `PK=MachineRules#<id>` |
 | `store.ExecutionEvent`, `store.FileAccessEvent` | not queryable in Rudolph yet: interface + fake only |
 
-The DynamoDB implementation comes after Rudolph's storage changes land.
-Until then, `cmd/lambda` serves 503 for data pages.
+`internal/store/dynamo` reads machine detail, machine rules and global rules (all, or by rule type) from Rudolph's table, each page with one bounded Query. `cmd/lambda` uses it when `RUDOLPH_TABLE_NAME` is set, and serves 503 for every data page otherwise. The machine list, the global rules policy filter and the event pages still answer 503: they need Rudolph's storage changes first (see [docs/data-layer-design.md](docs/data-layer-design.md)).
 
 Two things that implementation will need:
 
@@ -155,6 +154,7 @@ Role changes take effect at the next sign-in, which is at most one session TTL l
 | `RUDOLPH_WEB_ADDR` | no | Listen address for `cmd/local`, default `127.0.0.1:8080` |
 | `RUDOLPH_WEB_CLIENT_SECRET_SSM_PARAMETER` | no | SSM parameter holding the client secret, instead of the variable above |
 | `RUDOLPH_WEB_COOKIE_KEY_SSM_PARAMETER` | no | SSM parameter holding the cookie key, instead of the variable above |
+| `RUDOLPH_TABLE_NAME` | no | Rudolph's DynamoDB table, read by `cmd/lambda`; unset, data pages return 503. Cursors are signed with a key derived from the cookie key |
 
 \* Each secret has exactly one source. Set the plain variable, as local development does, or name a
 SecureString parameter with its `*_SSM_PARAMETER` variable; setting both is an error. `cmd/lambda`

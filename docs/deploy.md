@@ -41,8 +41,9 @@ You only do this once.
 rudolph-web reads Rudolph's DynamoDB table. Note its name (`<rudolph prefix>_rudolph_store` by
 default) and, if the table is encrypted with a customer managed KMS key, that key's ARN.
 
-The read pages return 503 until the DynamoDB data layer lands; authentication, authorization and
-everything else in this guide work today.
+The function reads the table named by its `RUDOLPH_TABLE_NAME` environment variable. Machine detail, machine rules and global rules come from it; the machine list, the policy filter on global rules and the event pages return 503 until Rudolph's storage changes land. Without `RUDOLPH_TABLE_NAME` every data page returns 503, while authentication, authorization and everything else in this guide still work.
+
+The Terraform module does not set `RUDOLPH_TABLE_NAME` yet, so a deployment from it serves 503 for every data page. Setting the variable by hand (to the value of `dynamodb_table_name`) lasts only until the next `terraform apply` replaces the function's environment. The reader only calls `dynamodb:Query` on the table itself, which the `ReadRudolphStore` statement below already allows.
 
 ### A domain (optional)
 
@@ -351,4 +352,4 @@ The function logs JSON to stderr and never logs secrets, cookies or tokens.
 | Logout leaves you on Entra's signed-out page | `post_logout_redirect_url` is not registered on the app registration. |
 | Sign-in works, every page is 403 | The account has no `Rudolph.Viewer` or `Rudolph.Admin` assignment. |
 | `POST /auth/logout` returns 403 | The browser's `Origin` does not match `base_url`; you are reaching the app through a hostname it was not configured with. |
-| Data pages return 503 | Expected until the DynamoDB data layer lands. |
+| Data pages return 503 | Every data page: `RUDOLPH_TABLE_NAME` is not set on the function. Only the machine list, the policy filter and events: expected until Rudolph's storage changes land. |

@@ -26,6 +26,10 @@ const (
 	EnvSessionTTL            = "RUDOLPH_WEB_SESSION_TTL"
 	EnvAddr                  = "RUDOLPH_WEB_ADDR"
 
+	// EnvTableName names Rudolph's DynamoDB table. Unset, cmd/lambda has no data
+	// layer and the data pages answer 503.
+	EnvTableName = "RUDOLPH_TABLE_NAME"
+
 	// Names of SSM Parameter Store parameters holding the secrets. When one of
 	// these is set the matching plain variable must be unset, and the value is
 	// read once, at cold start.
@@ -53,6 +57,7 @@ type Config struct {
 	CookieKey             []byte
 	SessionTTL            time.Duration
 	Addr                  string // cmd/local only
+	TableName             string // empty: no data layer
 }
 
 // FromEnv reads and validates configuration. Error messages name variables
@@ -67,6 +72,7 @@ func FromEnv(getenv func(string) string) (Config, error) {
 		PostLogoutRedirectURL: get(EnvPostLogoutRedirectURL),
 		SessionTTL:            defaultSessionTTL,
 		Addr:                  get(EnvAddr),
+		TableName:             get(EnvTableName),
 	}
 	var errs []error
 	required := func(name, v string) bool {
