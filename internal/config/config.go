@@ -28,7 +28,7 @@ const (
 
 	// EnvTableName names Rudolph's DynamoDB table. Unset, cmd/lambda has no data
 	// layer and the data pages answer 503.
-	EnvTableName = "RUDOLPH_TABLE_NAME"
+	EnvTableName = "RUDOLPH_WEB_TABLE_NAME"
 
 	// Names of SSM Parameter Store parameters holding the secrets. When one of
 	// these is set the matching plain variable must be unset, and the value is
