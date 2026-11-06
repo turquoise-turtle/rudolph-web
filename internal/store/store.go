@@ -10,8 +10,13 @@
 //	PK=GlobalRules        SK=<Type>#<id>  global rules     -> Rule
 //	PK=MachineRules#<id>  SK=<Type>#<id>  machine rules    -> Rule
 //
-// Execution and file access events are not yet stored queryably by Rudolph;
-// their interfaces exist so the web layer and fake can be built first.
+// Execution events come from Rudolph's separate events table:
+//
+//	PK=Exec#<id>          SK=<TS>#<sha256>#<pid>          -> ExecutionEvent
+//
+// with the indexes Fleet_TS, Decision_TS and TeamID_TS. Top blocked binaries
+// and file access events are not read yet; their interfaces exist so the web
+// layer and fake can be built first.
 package store
 
 import (
@@ -240,7 +245,9 @@ type ExecutionEvent struct {
 	CDHash        string
 }
 
-// EventFilter narrows ListExecutionEvents. Zero values match everything.
+// EventFilter narrows ListExecutionEvents. Zero values match everything. The
+// DynamoDB reader serves one filter at a time (each is a different key) and
+// refuses a combination with ErrInvalidArgument.
 type EventFilter struct {
 	MachineID string
 	Decision  Decision
