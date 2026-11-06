@@ -145,7 +145,7 @@ func TestPages_UnauthenticatedRedirectToLoginWithoutTouchingData(t *testing.T) {
 
 	for _, target := range []string{
 		"/", "/machines", "/machines?hostname=secret", "/machines/m1", "/rules?type=BINARY",
-		"/events", "/events?decision=BLOCK_UNKNOWN", "/events/top-blocked", "/admin",
+		"/events", "/events?decision=BLOCK_UNKNOWN", "/events/top-blocked", "/events/top-allowed", "/admin",
 	} {
 		t.Run(target, func(t *testing.T) {
 			s.ResetCalls()
@@ -588,50 +588,70 @@ func TestEvents_FiltersAndPagination(t *testing.T) {
 	}
 }
 
-func TestTopBlocked_RanksBinariesInWindow(t *testing.T) {
+// Top blocked and top allowed binaries (Rudolph's hourly ranker): a window of 1, 7, 30 or 90 days (`days`, default
+// 7), the list as stored, when it was generated, and a warning when that is more than 3 hours ago.
+func TestTopLists_ShowTheStoredSnapshot(t *testing.T) {
 	s := fake.New()
-	block := func(machine, sha, name string, age time.Duration, d store.Decision) {
-		s.AddExecutionEvent(store.ExecutionEvent{MachineID: machine, FileSHA256: sha, FileName: name, TeamID: "TEAM" + name, Decision: d, ExecutionTime: fixedNow.Add(-age)})
-	}
-	for i := 0; i < 5; i++ {
-		block(fmt.Sprintf("m%d", i), "sha-most", "most-blocked", time.Hour, store.DecisionBlockUnknown)
-	}
-	block("m1", "sha-some", "some-blocked", 2*time.Hour, store.DecisionBlockBinary)
-	block("m1", "sha-some", "some-blocked", 3*time.Hour, store.DecisionBlockBinary)
-	block("m1", "sha-allowed", "allowed-bin", time.Hour, store.DecisionAllowUnknown)
-	block("m1", "sha-old", "old-blocked", 20*24*time.Hour, store.DecisionBlockUnknown)
+	gen := fixedNow.Add(-40 * time.Minute)
+	s.SetTopList(store.TopKindBlocked, 7, gen, []store.TopBinary{
+		{FileSHA256: "sha-most", FileName: "most-blocked", TeamID: "TEAMMOST", Count: 50, Machines: 5, MachinesKnown: true},
+		{FileSHA256: "sha-some", FileName: "some-blocked", Count: 2},
+	})
+	s.SetTopList(store.TopKindBlocked, 30, gen, []store.TopBinary{{FileSHA256: "sha-old", FileName: "old-blocked", Count: 70}})
+	s.SetTopList(store.TopKindAllowed, 7, gen, []store.TopBinary{{FileSHA256: "sha-gem", FileName: "Gemini", SigningID: "EQHXZ8M8AV:com.google.GeminiMacOS", Count: 12}})
 	a := newApp(t, s, 10)
 
 	code, body := a.viewerGet(t, "/events/top-blocked")
 	if code != http.StatusOK {
 		t.Fatalf("status %d", code)
 	}
-	mustContain(t, body, "most-blocked", "some-blocked", "sha-most")
-	mustNotContain(t, body, "allowed-bin", "old-blocked")
+	mustContain(t, body, "most-blocked", "some-blocked", "sha-most", "TEAMMOST", gen.UTC().Format("2006-01-02 15:04:05 UTC"))
+	mustNotContain(t, body, "old-blocked", "Gemini", "Warning")
 	if i, j := strings.Index(body, "most-blocked"), strings.Index(body, "some-blocked"); i > j {
-		t.Error("most-blocked should be ranked above some-blocked")
+		t.Error("the list's order was not kept")
 	}
 	calls := s.Calls()
-	if len(calls) != 1 || calls[0].Method != "TopBlockedBinaries" {
+	if len(calls) != 1 || calls[0].Method != "TopBinaries" {
 		t.Fatalf("calls %+v", calls)
 	}
-	if f, ok := calls[0].Filter.(store.TopBlockedFilter); !ok || !f.Since.Equal(fixedNow.Add(-7*24*time.Hour)) {
-		t.Errorf("default window: filter %+v, want Since = now-7d", calls[0].Filter)
+	if f, ok := calls[0].Filter.(store.TopFilter); !ok || f != (store.TopFilter{Kind: store.TopKindBlocked, WindowDays: 7}) {
+		t.Errorf("default: filter %+v, want blocked, 7 days", calls[0].Filter)
 	}
 
-	s.ResetCalls()
-	code, body = a.viewerGet(t, "/events/top-blocked?window=30d")
+	code, body = a.viewerGet(t, "/events/top-blocked?days=30")
 	if code != http.StatusOK {
 		t.Fatalf("status %d", code)
 	}
 	mustContain(t, body, "old-blocked")
-	if f, _ := s.Calls()[0].Filter.(store.TopBlockedFilter); !f.Since.Equal(fixedNow.Add(-30 * 24 * time.Hour)) {
-		t.Errorf("30d window: filter %+v", s.Calls()[0].Filter)
-	}
 
-	if code, _ := a.viewerGet(t, "/events/top-blocked?window=9999d"); code != http.StatusBadRequest {
-		t.Errorf("bad window: status %d, want 400", code)
+	code, body = a.viewerGet(t, "/events/top-allowed")
+	if code != http.StatusOK {
+		t.Fatalf("status %d", code)
 	}
+	mustContain(t, body, "Gemini", "EQHXZ8M8AV:com.google.GeminiMacOS")
+	mustNotContain(t, body, "most-blocked")
+
+	for _, bad := range []string{"/events/top-blocked?days=5", "/events/top-blocked?days=seven", "/events/top-allowed?days=-7"} {
+		if code, _ := a.viewerGet(t, bad); code != http.StatusBadRequest {
+			t.Errorf("%s: status %d, want 400", bad, code)
+		}
+	}
+}
+
+func TestTopLists_NotComputedYetAndStale(t *testing.T) {
+	s := fake.New()
+	s.SetTopList(store.TopKindBlocked, 7, fixedNow.Add(-5*time.Hour), []store.TopBinary{{FileSHA256: "sha-a", FileName: "a", Count: 1}})
+	a := newApp(t, s, 10)
+	code, body := a.viewerGet(t, "/events/top-blocked")
+	if code != http.StatusOK {
+		t.Fatalf("status %d", code)
+	}
+	mustContain(t, body, "Warning", "a")
+	code, body = a.viewerGet(t, "/events/top-allowed?days=90")
+	if code != http.StatusOK {
+		t.Fatalf("status %d", code)
+	}
+	mustContain(t, body, "not been computed yet")
 }
 
 // ---------------------------------------------------------------------------
@@ -744,7 +764,8 @@ func TestQueryBudget_OneBoundedPaginatedQueryPerList(t *testing.T) {
 		{"/rules?type=BINARY&policy=ALLOWLIST", "ListGlobalRules", 0},
 		{"/events", "ListExecutionEvents", 0},
 		{"/events?machine=machine-001", "ListExecutionEvents", 0},
-		{"/events/top-blocked", "TopBlockedBinaries", 0},
+		{"/events/top-blocked", "TopBinaries", 0},
+		{"/events/top-allowed", "TopBinaries", 0},
 	}
 	for _, tc := range cases {
 		t.Run(tc.target, func(t *testing.T) {

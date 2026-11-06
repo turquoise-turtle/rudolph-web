@@ -343,9 +343,6 @@ func TestListGlobalRules_InvalidArguments(t *testing.T) {
 func TestNotYetAvailable(t *testing.T) {
 	s := newStore(t)
 	p := store.PageRequest{Limit: 10}
-	if _, err := s.TopBlockedBinaries(ctx, store.TopBlockedFilter{}, p); !errors.Is(err, store.ErrUnavailable) {
-		t.Errorf("TopBlockedBinaries: %v", err)
-	}
 	if _, err := s.ListFileAccessEvents(ctx, store.FileAccessEventFilter{}, p); !errors.Is(err, store.ErrUnavailable) {
 		t.Errorf("ListFileAccessEvents: %v", err)
 	}

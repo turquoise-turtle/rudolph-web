@@ -1,7 +1,7 @@
 package web_test
 
 // Regression tests for security review findings: response headers on every
-// kind of response, strict validation of top-blocked "since" and filter
+// kind of response, strict validation of filter
 // lengths before any store query, sign-out behind a CDN/custom domain,
 // authenticated cursors, and no static directory listing.
 
@@ -150,61 +150,7 @@ func TestSecurityHeaders_OnEveryKindOfResponse(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Top-blocked "since" and filter length validation
-
-func TestTopBlocked_TamperedSinceIsBadRequestWithoutQuery(t *testing.T) {
-	s := fake.New()
-	for i := 0; i < 5; i++ {
-		for j := 0; j <= i; j++ {
-			s.AddExecutionEvent(store.ExecutionEvent{
-				MachineID: fmt.Sprintf("m%d", j), FileSHA256: fmt.Sprintf("sha-%d", i), FileName: fmt.Sprintf("bin-%d", i),
-				Decision: store.DecisionBlockUnknown, ExecutionTime: fixedNow.Add(-time.Duration(i+1) * time.Hour),
-			})
-		}
-	}
-	a := newApp(t, s, 2)
-
-	_, body := a.viewerGet(t, "/events/top-blocked?window=7d")
-	next := nextLink(t, body)
-	u, err := url.Parse(next)
-	if err != nil || u.Query().Get("cursor") == "" || u.Query().Get("since") == "" {
-		t.Fatalf("next link %q should carry cursor and since", next)
-	}
-	// Sanity: the untampered next link works.
-	if code, _ := a.viewerGet(t, next); code != http.StatusOK {
-		t.Fatalf("untampered next link: status %d, want 200", code)
-	}
-
-	windowStart := fixedNow.Add(-7 * 24 * time.Hour)
-	tampered := map[string]url.Values{}
-	set := func(name, key, value string) {
-		v := u.Query()
-		v.Set(key, value)
-		tampered[name] = v
-	}
-	set("future by an hour", "since", strconv.FormatInt(fixedNow.Add(time.Hour).Unix(), 10))
-	set("future by a year", "since", strconv.FormatInt(fixedNow.AddDate(1, 0, 0).Unix(), 10))
-	set("older than window", "since", strconv.FormatInt(windowStart.Add(-3*24*time.Hour).Unix(), 10))
-	set("epoch", "since", "0")
-	set("negative", "since", "-1")
-	set("non-numeric", "since", "yesterday")
-	set("float", "since", "1.5e9")
-	set("overflow", "since", "99999999999999999999999")
-	set("window narrowed below since", "window", "1d")
-
-	for name, q := range tampered {
-		t.Run(name, func(t *testing.T) {
-			s.ResetCalls()
-			code, _ := a.viewerGet(t, "/events/top-blocked?"+q.Encode())
-			if code != http.StatusBadRequest {
-				t.Errorf("status %d, want 400", code)
-			}
-			if calls := s.Calls(); len(calls) != 0 {
-				t.Errorf("tampered since still queried the store: %+v", calls)
-			}
-		})
-	}
-}
+// Filter length validation
 
 func TestFilters_OverlongValueIsBadRequestWithoutQuery(t *testing.T) {
 	const maxFilterLen = 256 // web.maxFilterLen
@@ -319,8 +265,12 @@ func TestForgedCursorIsBadRequest(t *testing.T) {
 		s.AddExecutionEvent(store.ExecutionEvent{MachineID: "machine-001", FileSHA256: fmt.Sprintf("sha-%d", i), FileName: "f",
 			Decision: store.DecisionBlockUnknown, ExecutionTime: fixedNow.Add(-time.Duration(i) * time.Minute)})
 	}
+	var top []store.TopBinary
+	for i := 1; i <= 7; i++ {
+		top = append(top, store.TopBinary{FileSHA256: fmt.Sprintf("sha-%d", i), Count: 10 - i})
+	}
+	s.SetTopList(store.TopKindBlocked, 7, fixedNow, top)
 	a := newApp(t, s, 2)
-	since := fixedNow.Truncate(time.Minute).Add(-7 * 24 * time.Hour)
 
 	cases := map[string]string{
 		"machines skip ahead": "/machines?cursor=" +
@@ -334,7 +284,7 @@ func TestForgedCursorIsBadRequest(t *testing.T) {
 		"events arbitrary offset": "/events?cursor=" +
 			forgeCursor("ListExecutionEvents", "", store.EventFilter{}, fmt.Sprintf("%020d|%08d", 0, 0)),
 		"top blocked": "/events/top-blocked?cursor=" +
-			forgeCursor("TopBlockedBinaries", "", since.UTC().Format("2006-01-02T15:04:05.999999999Z"), "0000000000|"),
+			forgeCursor("TopBinaries", "", store.TopFilter{Kind: store.TopKindBlocked, WindowDays: 7}, "3"),
 	}
 	for name, target := range cases {
 		t.Run(name, func(t *testing.T) {

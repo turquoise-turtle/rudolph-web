@@ -234,33 +234,37 @@ func TestListExecutionEvents_NewestFirstAndFilters(t *testing.T) {
 	}
 }
 
-func TestTopBlockedBinaries_AggregatesBlocksInWindow(t *testing.T) {
+// The top lists are computed by Rudolph's hourly ranker; the store serves the stored list for a kind and window,
+// paged, with the time it was generated.
+func TestTopBinaries_ServesTheStoredList(t *testing.T) {
 	s := fake.New()
-	now := time.Date(2026, 9, 17, 12, 0, 0, 0, time.UTC)
-	add := func(machine, sha string, d store.Decision, age time.Duration) {
-		s.AddExecutionEvent(store.ExecutionEvent{MachineID: machine, FileSHA256: sha, FileName: "bin-" + sha, Decision: d, ExecutionTime: now.Add(-age)})
-	}
-	add("m1", "aaa", store.DecisionBlockUnknown, time.Hour)
-	add("m2", "aaa", store.DecisionBlockBinary, 2*time.Hour)
-	add("m2", "aaa", store.DecisionBlockUnknown, 3*time.Hour)
-	add("m1", "bbb", store.DecisionBlockUnknown, time.Hour)
-	add("m1", "bbb", store.DecisionAllowBinary, time.Hour)        // allowed: not counted
-	add("m1", "ccc", store.DecisionBlockUnknown, 10*24*time.Hour) // outside window
-	add("m1", "ccc", store.DecisionBlockUnknown, 11*24*time.Hour)
+	gen := time.Date(2026, 9, 17, 11, 0, 0, 0, time.UTC)
+	s.SetTopList(store.TopKindBlocked, 7, gen, []store.TopBinary{
+		{FileSHA256: "aaa", FileName: "a", Count: 9, Machines: 3, MachinesKnown: true},
+		{FileSHA256: "bbb", FileName: "b", Count: 5},
+		{FileSHA256: "ccc", FileName: "c", Count: 1},
+	})
+	s.SetTopList(store.TopKindAllowed, 7, gen, []store.TopBinary{{FileSHA256: "zzz", Count: 2}})
 
-	page, err := s.TopBlockedBinaries(ctx, store.TopBlockedFilter{Since: now.Add(-7 * 24 * time.Hour)}, store.PageRequest{Limit: 10})
-	if err != nil {
-		t.Fatal(err)
+	first, err := s.TopBinaries(ctx, store.TopFilter{Kind: store.TopKindBlocked, WindowDays: 7}, store.PageRequest{Limit: 2})
+	if err != nil || len(first.Items) != 2 || first.Items[0].FileSHA256 != "aaa" || first.NextCursor == "" || !first.GeneratedAt.Equal(gen) {
+		t.Fatalf("first page %+v, %v", first, err)
 	}
-	if len(page.Items) != 2 {
-		t.Fatalf("got %d binaries, want 2: %+v", len(page.Items), page.Items)
+	second, err := s.TopBinaries(ctx, store.TopFilter{Kind: store.TopKindBlocked, WindowDays: 7}, store.PageRequest{Limit: 2, Cursor: first.NextCursor})
+	if err != nil || len(second.Items) != 1 || second.Items[0].FileSHA256 != "ccc" || second.NextCursor != "" {
+		t.Fatalf("second page %+v, %v", second, err)
 	}
-	a, b := page.Items[0], page.Items[1]
-	if a.FileSHA256 != "aaa" || a.BlockCount != 3 || a.MachineCount != 2 || !a.LastBlocked.Equal(now.Add(-time.Hour)) {
-		t.Errorf("first = %+v, want aaa blocked 3 times on 2 machines", a)
+	if _, err := s.TopBinaries(ctx, store.TopFilter{Kind: store.TopKindAllowed, WindowDays: 7}, store.PageRequest{Limit: 2, Cursor: first.NextCursor}); !errors.Is(err, store.ErrInvalidCursor) {
+		t.Errorf("blocked cursor for the allowed list: %v, want ErrInvalidCursor", err)
 	}
-	if b.FileSHA256 != "bbb" || b.BlockCount != 1 || b.MachineCount != 1 {
-		t.Errorf("second = %+v, want bbb blocked once", b)
+	empty, err := s.TopBinaries(ctx, store.TopFilter{Kind: store.TopKindBlocked, WindowDays: 30}, store.PageRequest{Limit: 2})
+	if err != nil || len(empty.Items) != 0 || !empty.GeneratedAt.IsZero() {
+		t.Errorf("a list not computed yet: %+v, %v; want empty with no GeneratedAt", empty, err)
+	}
+	for _, f := range []store.TopFilter{{Kind: store.TopKindBlocked, WindowDays: 5}, {Kind: "SOMETIMES", WindowDays: 7}} {
+		if _, err := s.TopBinaries(ctx, f, store.PageRequest{Limit: 2}); !errors.Is(err, store.ErrInvalidArgument) {
+			t.Errorf("%+v: %v, want ErrInvalidArgument", f, err)
+		}
 	}
 }
 
