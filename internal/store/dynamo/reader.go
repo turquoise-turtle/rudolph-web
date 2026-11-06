@@ -19,8 +19,8 @@ import (
 
 // ReadAPI is the DynamoDB calls the reader makes: every page is a bounded
 // Query, and the top lists (their pointer) and the group registry are read
-// with GetItem, so the
-// deployment grants dynamodb:Query and dynamodb:GetItem and nothing else.
+// with GetItem, so the deployment grants dynamodb:Query
+// and dynamodb:GetItem and nothing else.
 type ReadAPI interface {
 	Query(ctx context.Context, in *dynamodb.QueryInput, optFns ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error)
 	GetItem(ctx context.Context, in *dynamodb.GetItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error)
