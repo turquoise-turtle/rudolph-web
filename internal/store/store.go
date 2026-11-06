@@ -29,6 +29,8 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -179,6 +181,36 @@ type Machine struct {
 	LastSeen        time.Time // sensor data Time; in ListMachines, midnight UTC of LastSeenDay (a date only)
 }
 
+// SantaRelease is a Santa year.month release, such as 2025.12 from "2025.12.0".
+type SantaRelease struct{ Year, Month int }
+
+// ParseSantaVersion reads the release from a reported Santa version. ok is
+// false for an empty or unparseable version.
+func ParseSantaVersion(v string) (r SantaRelease, ok bool) {
+	parts := strings.SplitN(strings.TrimSpace(v), ".", 3)
+	if len(parts) < 2 {
+		return SantaRelease{}, false
+	}
+	year, err1 := strconv.Atoi(parts[0])
+	month, err2 := strconv.Atoi(parts[1])
+	if err1 != nil || err2 != nil || year < 0 || month < 1 || month > 12 {
+		return SantaRelease{}, false
+	}
+	return SantaRelease{Year: year, Month: month}, true
+}
+
+// LegacySantaVersion reports whether v is below Santa 2026.8, the oldest
+// release Rudolph fully supports; 2025.12 is accepted only for macOS 13 Macs,
+// with limits. An empty or unparseable version is not called legacy, since
+// nothing is known about it.
+func LegacySantaVersion(v string) bool {
+	r, ok := ParseSantaVersion(v)
+	if !ok {
+		return false
+	}
+	return r.Year < 2026 || (r.Year == 2026 && r.Month < 8)
+}
+
 // SyncState is a host's sync progress (SK=SyncState).
 type SyncState struct {
 	PreflightAt    time.Time
@@ -260,6 +292,10 @@ type ExecutionEvent struct {
 	TeamID        string
 	SigningID     string
 	CDHash        string
+	// IdentityUnverified is set when Santa could not confirm the file it
+	// evaluated was the image that ran, so the hash and file details are
+	// not verified (Santa 2026.9 identity_unverified).
+	IdentityUnverified bool
 }
 
 // EventFilter narrows ListExecutionEvents. Zero values match everything. The
