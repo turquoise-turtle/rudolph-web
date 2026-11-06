@@ -47,6 +47,11 @@ resource "aws_dynamodb_table" "store" {
     type = "S"
   }
 
+  attribute {
+    name = "GlobalRulePolicy"
+    type = "N"
+  }
+
   ttl {
     attribute_name = "ExpiresAfter"
     enabled        = true
@@ -91,6 +96,13 @@ resource "aws_dynamodb_table" "store" {
     range_key          = "HostnameKey"
     projection_type    = "INCLUDE"
     non_key_attributes = ["SerialNum", "SerialKey", "MachineID", "Hostname", "ModelIdentifier", "OSVersion", "SantaVersion", "ClientMode", "PrimaryUser", "LastSeenDay"]
+  }
+
+  global_secondary_index {
+    name            = "GlobalRulePolicy_SK"
+    hash_key        = "GlobalRulePolicy"
+    range_key       = "SK"
+    projection_type = "ALL"
   }
 
   server_side_encryption {

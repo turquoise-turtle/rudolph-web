@@ -337,16 +337,6 @@ func TestListGlobalRules_InvalidArguments(t *testing.T) {
 	queriesOnly(t, 0)
 }
 
-// Filtering by policy needs an index Rudolph does not have yet (R5). It must not fall back to a FilterExpression,
-// which returns short pages, or to a Scan.
-func TestListGlobalRules_PolicyFilterIsUnavailableForNow(t *testing.T) {
-	s := newStore(t)
-	if _, err := s.ListGlobalRules(ctx, store.RuleFilter{Policy: store.PolicyBlocklist}, store.PageRequest{Limit: 10}); !errors.Is(err, store.ErrUnavailable) {
-		t.Errorf("got %v, want store.ErrUnavailable", err)
-	}
-	queriesOnly(t, 0)
-}
-
 // Lists that need Rudolph changes first (the events table) answer store.ErrUnavailable without
 // touching DynamoDB.
 func TestNotYetAvailable(t *testing.T) {
