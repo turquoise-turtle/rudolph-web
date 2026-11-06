@@ -42,7 +42,9 @@ import (
 
 const (
 	TableName = "rudolph_web_integration_test"
-	Region    = "us-east-1"
+	// EventsTableName is Rudolph's execution events table (EventsTerraformFile).
+	EventsTableName = "rudolph_web_events_integration_test"
+	Region          = "us-east-1"
 )
 
 // Main starts DynamoDB Local, runs the tests and stops it again. It returns the exit code for os.Exit.
@@ -182,7 +184,7 @@ func Raw(t testing.TB) *dynamodb.Client {
 	return sharedRaw
 }
 
-// Reset recreates an empty table with the schema of testdata/rudolph/dynamodb.tf (see LoadTableSchema)
+// Reset recreates empty tables with the schemas of testdata/rudolph/dynamodb.tf and events.tf (see LoadTableSchema)
 // and clears the operation counters and consumed capacity.
 func Reset(t testing.TB) {
 	t.Helper()
@@ -202,6 +204,20 @@ func Reset(t testing.TB) {
 	}
 	if _, err := raw.CreateTable(ctx, schema.CreateTableInput(TableName)); err != nil {
 		t.Fatalf("create table: %v", err)
+	}
+
+	if _, err := raw.DeleteTable(ctx, &dynamodb.DeleteTableInput{TableName: aws.String(EventsTableName)}); err != nil {
+		var notFound *types.ResourceNotFoundException
+		if !errors.As(err, &notFound) {
+			t.Fatalf("delete events table: %v", err)
+		}
+	}
+	events, err := LoadEventsTableSchema()
+	if err != nil {
+		t.Fatalf("events table definition: %v", err)
+	}
+	if _, err := raw.CreateTable(ctx, events.CreateTableInput(EventsTableName)); err != nil {
+		t.Fatalf("create events table: %v", err)
 	}
 	ResetCounts()
 }
