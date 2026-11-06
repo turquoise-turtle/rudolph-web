@@ -41,34 +41,37 @@ func examples(t *testing.T) []string {
 	return lines
 }
 
-func must(t *testing.T, cmd string, ok bool) string {
-	t.Helper()
-	if !ok {
-		t.Fatalf("no command built")
+// must(t)(b.Rule(…)) fails the test when no command was built.
+func must(t *testing.T) func(string, bool) string {
+	return func(cmd string, ok bool) string {
+		t.Helper()
+		if !ok {
+			t.Fatalf("no command built")
+		}
+		return cmd
 	}
-	return cmd
 }
 
 func TestBuilderRendersExactlyTheContractExamples(t *testing.T) {
 	b := clicmd.New("prod")
 	got := []string{
-		must(t, b.Rule("deny", store.RuleTypeBinary, sha("e"), clicmd.Global())),
-		must(t, b.Rule("allow", store.RuleTypeBinary, sha("e"), clicmd.Global())),
-		must(t, b.Rule("allow", store.RuleTypeBinary, sha("e"), clicmd.Machine(machine, "24h"))),
-		must(t, b.Rule("deny", store.RuleTypeSigningID, "EQHXZ8M8AV:com.google.GeminiMacOS", clicmd.Global())),
-		must(t, b.Rule("deny", store.RuleTypeSigningID, "EQHXZ8M8AV:com.google.GeminiMacOS", clicmd.Group("eng"))),
-		must(t, b.Rule("allow", store.RuleTypeTeamID, "ABCDE12345", clicmd.Global())),
-		must(t, b.Rule("deny", store.RuleTypeCertificate, sha("f"), clicmd.Global())),
-		must(t, b.Rule("deny", store.RuleTypeCDHash, "ffeeddccbbaa99887766554433221100ffeeddcc", clicmd.Global())),
-		must(t, b.CollectAllowedEvents(store.RuleTypeTeamID, "EQHXZ8M8AV", clicmd.Global(), true)),
-		must(t, b.CollectAllowedEvents(store.RuleTypeTeamID, "EQHXZ8M8AV", clicmd.Global(), false)),
-		must(t, b.Remove(store.RuleTypeBinary, sha("1"), clicmd.Global())),
-		must(t, b.Remove(store.RuleTypeBinary, sha("b"), clicmd.Machine(machine, ""))),
-		must(t, b.MachineRules(machine)),
-		must(t, b.ConfigGet(machine)),
-		must(t, b.TemporaryMode(machine, store.ClientModeMonitor, "2h")),
-		must(t, b.EndTemporaryMode(machine)),
-		must(t, b.GroupAdd(machine, "eng")),
+		must(t)(b.Rule("deny", store.RuleTypeBinary, sha("e"), clicmd.Global())),
+		must(t)(b.Rule("allow", store.RuleTypeBinary, sha("e"), clicmd.Global())),
+		must(t)(b.Rule("allow", store.RuleTypeBinary, sha("e"), clicmd.Machine(machine, "24h"))),
+		must(t)(b.Rule("deny", store.RuleTypeSigningID, "EQHXZ8M8AV:com.google.GeminiMacOS", clicmd.Global())),
+		must(t)(b.Rule("deny", store.RuleTypeSigningID, "EQHXZ8M8AV:com.google.GeminiMacOS", clicmd.Group("eng"))),
+		must(t)(b.Rule("allow", store.RuleTypeTeamID, "ABCDE12345", clicmd.Global())),
+		must(t)(b.Rule("deny", store.RuleTypeCertificate, sha("f"), clicmd.Global())),
+		must(t)(b.Rule("deny", store.RuleTypeCDHash, "ffeeddccbbaa99887766554433221100ffeeddcc", clicmd.Global())),
+		must(t)(b.CollectAllowedEvents(store.RuleTypeTeamID, "EQHXZ8M8AV", clicmd.Global(), true)),
+		must(t)(b.CollectAllowedEvents(store.RuleTypeTeamID, "EQHXZ8M8AV", clicmd.Global(), false)),
+		must(t)(b.Remove(store.RuleTypeBinary, sha("1"), clicmd.Global())),
+		must(t)(b.Remove(store.RuleTypeBinary, sha("b"), clicmd.Machine(machine, ""))),
+		must(t)(b.MachineRules(machine)),
+		must(t)(b.ConfigGet(machine)),
+		must(t)(b.TemporaryMode(machine, store.ClientModeMonitor, "2h")),
+		must(t)(b.EndTemporaryMode(machine)),
+		must(t)(b.GroupAdd(machine, "eng")),
 	}
 	want := examples(t)
 	sort.Strings(got)
