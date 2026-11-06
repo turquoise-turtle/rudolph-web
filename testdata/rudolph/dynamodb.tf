@@ -37,6 +37,11 @@ resource "aws_dynamodb_table" "store" {
     type = "S"
   }
 
+  attribute {
+    name = "HostnameKey"
+    type = "S"
+  }
+
   ttl {
     attribute_name = "ExpiresAfter"
     enabled        = true
@@ -57,6 +62,22 @@ resource "aws_dynamodb_table" "store" {
     hash_key        = "DataType"
     range_key       = "MachineID"
     projection_type = "KEYS_ONLY"
+  }
+
+  global_secondary_index {
+    name               = "DataType_SerialNum"
+    hash_key           = "DataType"
+    range_key          = "SerialNum"
+    projection_type    = "INCLUDE"
+    non_key_attributes = ["MachineID", "Hostname", "ModelIdentifier", "OSVersion", "SantaVersion", "ClientMode", "PrimaryUser", "LastSeenDay"]
+  }
+
+  global_secondary_index {
+    name               = "DataType_HostnameKey"
+    hash_key           = "DataType"
+    range_key          = "HostnameKey"
+    projection_type    = "INCLUDE"
+    non_key_attributes = ["MachineID", "Hostname", "ModelIdentifier", "OSVersion", "SantaVersion", "ClientMode", "PrimaryUser", "LastSeenDay"]
   }
 
   server_side_encryption {

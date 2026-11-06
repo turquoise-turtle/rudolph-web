@@ -347,14 +347,11 @@ func TestListGlobalRules_PolicyFilterIsUnavailableForNow(t *testing.T) {
 	queriesOnly(t, 0)
 }
 
-// Lists that need Rudolph changes first (machine indexes, the events table) answer store.ErrUnavailable without
+// Lists that need Rudolph changes first (the events table) answer store.ErrUnavailable without
 // touching DynamoDB.
 func TestNotYetAvailable(t *testing.T) {
 	s := newStore(t)
 	p := store.PageRequest{Limit: 10}
-	if _, err := s.ListMachines(ctx, store.MachineFilter{}, p); !errors.Is(err, store.ErrUnavailable) {
-		t.Errorf("ListMachines: %v", err)
-	}
 	if _, err := s.ListExecutionEvents(ctx, store.EventFilter{}, p); !errors.Is(err, store.ErrUnavailable) {
 		t.Errorf("ListExecutionEvents: %v", err)
 	}
