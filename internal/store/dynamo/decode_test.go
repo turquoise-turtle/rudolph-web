@@ -183,7 +183,7 @@ func TestDecodeMachinePartition_TheFixtureMac(t *testing.T) {
 		ModelIdentifier: "Mac15,7",
 		OSVersion:       "15.6",
 		OSBuild:         "24G84",
-		SantaVersion:    "2026.8.0",
+		SantaVersion:    "2026.9.0",
 		ClientMode:      store.ClientModeMonitor,
 		PrimaryUser:     "alice",
 		SIPStatus:       "reduced (0x7f)",
