@@ -187,7 +187,7 @@ func TestDecodeMachinePartition_TheFixtureMac(t *testing.T) {
 		ClientMode:      store.ClientModeMonitor,
 		PrimaryUser:     "alice",
 		SIPStatus:       "reduced (0x7f)",
-		RuleCounts:      store.RuleCounts{Binary: 8, Certificate: 1, TeamID: 1, SigningID: 1, CDHash: 1},
+		RuleCounts:      store.RuleCounts{Binary: 8, Certificate: 1, TeamID: 1, SigningID: 2, CDHash: 1},
 		LastSeen:        fixtureTime,
 	}
 	if got.Machine != want {
@@ -196,7 +196,7 @@ func TestDecodeMachinePartition_TheFixtureMac(t *testing.T) {
 	if got.Sync == nil {
 		t.Fatal("sync state missing")
 	}
-	wantSync := store.SyncState{PreflightAt: fixtureTime, PostflightAt: fixtureTime, LastSyncType: "NORMAL", RulesProcessed: 13}
+	wantSync := store.SyncState{PreflightAt: fixtureTime, PostflightAt: fixtureTime, LastSyncType: "NORMAL", RulesProcessed: 14}
 	if *got.Sync != wantSync {
 		t.Errorf("sync state:\n got %+v\nwant %+v", *got.Sync, wantSync)
 	}

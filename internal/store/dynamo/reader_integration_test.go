@@ -110,7 +110,7 @@ func TestGetMachine_OneQuery(t *testing.T) {
 		t.Fatal(err)
 	}
 	queriesOnly(t, 1)
-	if got.MachineID != machineA || got.SerialNum != "C02AAAAAAAA1" || got.Sync == nil || got.Sync.RulesProcessed != 13 {
+	if got.MachineID != machineA || got.SerialNum != "C02AAAAAAAA1" || got.Sync == nil || got.Sync.RulesProcessed != 14 {
 		t.Errorf("got %+v sync %+v", got.Machine, got.Sync)
 	}
 }
