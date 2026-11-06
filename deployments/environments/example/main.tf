@@ -26,6 +26,9 @@ module "rudolph_web" {
   dynamodb_table_name  = var.dynamodb_table_name
   dynamodb_kms_key_arn = var.dynamodb_kms_key_arn
 
+  # Rudolph's execution events table, read-only. Empty leaves the events pages unavailable.
+  events_dynamodb_table_name = var.events_dynamodb_table_name
+
   lambda_memory_size     = var.lambda_memory_size
   lambda_timeout_seconds = var.lambda_timeout_seconds
   log_retention_in_days  = var.log_retention_in_days

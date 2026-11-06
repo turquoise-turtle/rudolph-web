@@ -177,6 +177,17 @@ func (s *server) events(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	filter := store.EventFilter{MachineID: machine, TeamID: teamID, Decision: store.Decision(q.Get("decision"))}
+	// The events table has one key per filter, so filters cannot be combined.
+	set := 0
+	for _, v := range []string{machine, teamID, string(filter.Decision)} {
+		if v != "" {
+			set++
+		}
+	}
+	if set > 1 {
+		s.renderError(w, r, http.StatusBadRequest, "Filter by one field at a time: machine, decision or team ID.")
+		return
+	}
 	if filter.Decision != "" && !slices.Contains(store.Decisions, filter.Decision) {
 		s.renderError(w, r, http.StatusBadRequest, "Unknown decision.")
 		return

@@ -235,12 +235,22 @@ func (s *Store) ListGlobalRules(_ context.Context, f store.RuleFilter, p store.P
 	return paginate(s.cursors, keyed, fingerprint("ListGlobalRules", "", f), p)
 }
 
-// ListExecutionEvents implements store.EventReader.
+// ListExecutionEvents implements store.EventReader. Like the DynamoDB reader,
+// which has one key per filter, it refuses more than one filter at once.
 func (s *Store) ListExecutionEvents(_ context.Context, f store.EventFilter, p store.PageRequest) (store.Page[store.ExecutionEvent], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.record(Call{Method: "ListExecutionEvents", Filter: f, Page: p}); err != nil {
 		return store.Page[store.ExecutionEvent]{}, err
+	}
+	set := 0
+	for _, v := range []string{f.MachineID, string(f.Decision), f.TeamID} {
+		if v != "" {
+			set++
+		}
+	}
+	if set > 1 {
+		return store.Page[store.ExecutionEvent]{}, fmt.Errorf("%w: filter events by machine, decision or team ID, one at a time", store.ErrInvalidArgument)
 	}
 	var keyed []keyedItem[store.ExecutionEvent]
 	for i, e := range s.execEvents {

@@ -111,6 +111,13 @@ variable "dynamodb_kms_key_arn" {
   default     = ""
 }
 
+variable "events_dynamodb_table_name" {
+  type        = string
+  description = "Name of Rudolph's execution events table, typically <rudolph prefix>_rudolph_events (Rudolph's events_dynamodb_table_name output). The role gets GetItem and Query on it and its indexes, and nothing else; its ARN is built from the region, account and this name, so a separate ARN can never name another table. It is encrypted with the store table's key, so dynamodb_kms_key_arn covers it. Empty leaves the events pages unavailable (503)."
+  default     = ""
+}
+
+
 #
 # Lambda sizing and logs
 #

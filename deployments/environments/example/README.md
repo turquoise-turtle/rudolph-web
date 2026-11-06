@@ -64,6 +64,7 @@ committed and ends up in the state.
 | `ssm_kms_key_arn` | `""` | KMS key for those parameters. Empty uses the AWS managed `alias/aws/ssm` key. |
 | `dynamodb_table_name` | (required) | Rudolph's table, typically `<rudolph prefix>_rudolph_store`. |
 | `dynamodb_kms_key_arn` | `""` | The CMK encrypting that table, if it has one. |
+| `events_dynamodb_table_name` | `""` | Rudolph's execution events table, typically `<rudolph prefix>_rudolph_events`. Empty leaves the events pages unavailable. |
 | `lambda_memory_size` | `256` | Function memory in MB. |
 | `lambda_timeout_seconds` | `10` | Function timeout in seconds. |
 | `log_retention_in_days` | `30` | Retention of the function's log group. |

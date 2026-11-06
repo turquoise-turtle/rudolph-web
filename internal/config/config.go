@@ -30,6 +30,11 @@ const (
 	// layer and the data pages answer 503.
 	EnvTableName = "RUDOLPH_WEB_DYNAMODB_TABLE"
 
+	// EnvEventsTableName names Rudolph's execution events table. Unset, the
+	// events page answers 503 while the rest of the data pages work. It needs
+	// EnvTableName.
+	EnvEventsTableName = "RUDOLPH_WEB_EVENTS_TABLE"
+
 	// Names of SSM Parameter Store parameters holding the secrets. When one of
 	// these is set the matching plain variable must be unset, and the value is
 	// read once, at cold start.
@@ -58,6 +63,7 @@ type Config struct {
 	SessionTTL            time.Duration
 	Addr                  string // cmd/local only
 	TableName             string // empty: no data layer
+	EventsTableName       string // empty: no execution events
 }
 
 // FromEnv reads and validates configuration. Error messages name variables
@@ -73,6 +79,7 @@ func FromEnv(getenv func(string) string) (Config, error) {
 		SessionTTL:            defaultSessionTTL,
 		Addr:                  get(EnvAddr),
 		TableName:             get(EnvTableName),
+		EventsTableName:       get(EnvEventsTableName),
 	}
 	var errs []error
 	required := func(name, v string) bool {
@@ -119,6 +126,9 @@ func FromEnv(getenv func(string) string) (Config, error) {
 		default:
 			c.SessionTTL = d
 		}
+	}
+	if c.EventsTableName != "" && c.TableName == "" {
+		errs = append(errs, fmt.Errorf("%s needs %s", EnvEventsTableName, EnvTableName))
 	}
 	if c.Addr == "" {
 		c.Addr = defaultAddr

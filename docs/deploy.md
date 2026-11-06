@@ -41,9 +41,9 @@ You only do this once.
 rudolph-web reads Rudolph's DynamoDB table. Note its name (`<rudolph prefix>_rudolph_store` by
 default) and, if the table is encrypted with a customer managed KMS key, that key's ARN.
 
-The function reads the table named by its `RUDOLPH_WEB_DYNAMODB_TABLE` environment variable. The machine list, machine detail, machine rules and global rules come from it; the machine list needs Rudolph's `DataType_SerialKey` and `DataType_HostnameKey` indexes and the policy filter on global rules needs `GlobalRulePolicy_SK`; each fails against a Rudolph table without its index. The event pages return 503 until Rudolph's storage changes land. Without `RUDOLPH_WEB_DYNAMODB_TABLE` every data page returns 503, while authentication, authorization and everything else in this guide still work.
+The function reads the table named by its `RUDOLPH_WEB_DYNAMODB_TABLE` environment variable. The machine list, machine detail, machine rules and global rules come from it; the machine list needs Rudolph's `DataType_SerialKey` and `DataType_HostnameKey` indexes and the policy filter on global rules needs `GlobalRulePolicy_SK`; each fails against a Rudolph table without its index. Execution events come from Rudolph's events table, named by `RUDOLPH_WEB_EVENTS_TABLE` (it needs the `Fleet_TS`, `Decision_TS` and `TeamID_TS` indexes); without it the events page returns 503. Top blocked binaries and file access events return 503 for now. Without `RUDOLPH_WEB_DYNAMODB_TABLE` every data page returns 503, while authentication, authorization and everything else in this guide still work.
 
-The Terraform module sets `RUDOLPH_WEB_DYNAMODB_TABLE` from `dynamodb_table_name`. The reader only calls `dynamodb:Query` on the table itself, which the `ReadRudolphStore` statement below already allows.
+The Terraform module sets `RUDOLPH_WEB_DYNAMODB_TABLE` from `dynamodb_table_name` and `RUDOLPH_WEB_EVENTS_TABLE` from `events_dynamodb_table_name` (Rudolph's `events_dynamodb_table_name` output, typically `<rudolph prefix>_rudolph_events`; leave it empty if your Rudolph has no events table). The reader only calls `dynamodb:Query`, which the `ReadRudolphStore` and `ReadRudolphEvents` statements below allow. The events table is encrypted with the same key as the store table, so `dynamodb_kms_key_arn` covers both.
 
 ### A domain (optional)
 
@@ -99,7 +99,7 @@ account specific settings). Edit two files:
   [the example environment's README](../deployments/environments/example/README.md).
 
 At a minimum set `aws_account_id`, `region`, `prefix`, `tenant_id`, `client_id` and
-`dynamodb_table_name`.
+`dynamodb_table_name`, and `events_dynamodb_table_name` to show execution events.
 
 ---
 
@@ -225,7 +225,7 @@ or on a 403 if your account has neither role.
 
 ### The role
 
-Four statements, no AWS managed policies and no wildcard resources:
+Four or five statements, no AWS managed policies and no wildcard resources:
 
 | Statement | Actions | Resources |
 |---|---|---|
@@ -233,8 +233,9 @@ Four statements, no AWS managed policies and no wildcard resources:
 | `ReadSecrets` | `ssm:GetParameter` | the two parameter ARNs |
 | `DecryptSecrets` | `kms:Decrypt` | the SSM key, conditioned on `kms:ViaService = ssm.<region>.amazonaws.com` |
 | `ReadRudolphStore` | `dynamodb:GetItem`, `dynamodb:Query` | the table and `<table>/index/*` |
+| `ReadRudolphEvents` | `dynamodb:GetItem`, `dynamodb:Query` | the events table and `<events table>/index/*`; only with `events_dynamodb_table_name` set |
 
-With `dynamodb_kms_key_arn` set there is a fifth, `kms:Decrypt` conditioned on the DynamoDB service.
+With `dynamodb_kms_key_arn` set there is one more, `kms:Decrypt` conditioned on the DynamoDB service.
 There is deliberately no `dynamodb:Scan` — every list in the app is one bounded query — and no write
 action of any kind, because the view is read-only.
 
@@ -352,4 +353,4 @@ The function logs JSON to stderr and never logs secrets, cookies or tokens.
 | Logout leaves you on Entra's signed-out page | `post_logout_redirect_url` is not registered on the app registration. |
 | Sign-in works, every page is 403 | The account has no `Rudolph.Viewer` or `Rudolph.Admin` assignment. |
 | `POST /auth/logout` returns 403 | The browser's `Origin` does not match `base_url`; you are reaching the app through a hostname it was not configured with. |
-| Data pages return 503 | Every data page: `RUDOLPH_WEB_DYNAMODB_TABLE` is not set on the function (a deployment not made from the module). Only the event pages: expected until Rudolph's storage changes land. |
+| Data pages return 503 | Every data page: `RUDOLPH_WEB_DYNAMODB_TABLE` is not set on the function (a deployment not made from the module). Only the events page: `RUDOLPH_WEB_EVENTS_TABLE` is not set (`events_dynamodb_table_name` empty). Top blocked binaries: expected, not read yet. |

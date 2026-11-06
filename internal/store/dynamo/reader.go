@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -27,19 +28,27 @@ type Options struct {
 	Client QueryAPI
 	// Table is Rudolph's single table.
 	Table string
+	// EventsTable is Rudolph's execution events table (docs/events-table.md in
+	// Rudolph). Empty means the deployment has none, and the event readers
+	// answer store.ErrUnavailable.
+	EventsTable string
 	// Cursors signs pagination cursors. Every instance serving the same users
 	// must share the key, or a cursor issued by one is refused by another.
 	Cursors *store.CursorCodec
 	// Now decides whether a rule's expiry has passed; time.Now if nil.
 	Now func() time.Time
+	// Logger records rows the reader skips; slog.Default() if nil.
+	Logger *slog.Logger
 }
 
 // Store reads Rudolph's table. It implements store.Reader.
 type Store struct {
-	client  QueryAPI
-	table   string
-	cursors *store.CursorCodec
-	now     func() time.Time
+	client      QueryAPI
+	table       string
+	eventsTable string
+	cursors     *store.CursorCodec
+	now         func() time.Time
+	log         *slog.Logger
 }
 
 var _ store.Reader = (*Store)(nil)
@@ -58,7 +67,11 @@ func New(o Options) (*Store, error) {
 	if now == nil {
 		now = time.Now
 	}
-	return &Store{client: o.Client, table: o.Table, cursors: o.Cursors, now: now}, nil
+	log := o.Logger
+	if log == nil {
+		log = slog.Default()
+	}
+	return &Store{client: o.Client, table: o.Table, eventsTable: o.EventsTable, cursors: o.Cursors, now: now, log: log}, nil
 }
 
 // machineDetailLimit bounds the machine detail Query. Config, Current and
@@ -277,13 +290,8 @@ func (s *Store) decodeMachineCursor(q machineQuery, cursor string) (map[string]t
 	return key, nil
 }
 
-// ListExecutionEvents implements store.EventReader. Rudolph does not yet store
-// events queryably, so it always answers store.ErrUnavailable; so do the other
-// event readers.
-func (s *Store) ListExecutionEvents(context.Context, store.EventFilter, store.PageRequest) (store.Page[store.ExecutionEvent], error) {
-	return store.Page[store.ExecutionEvent]{}, fmt.Errorf("%w: execution events need Rudolph's events table", store.ErrUnavailable)
-}
-
+// TopBlockedBinaries and ListFileAccessEvents answer store.ErrUnavailable
+// until the web view reads Rudolph's day counters and file access events.
 func (s *Store) TopBlockedBinaries(context.Context, store.TopBlockedFilter, store.PageRequest) (store.Page[store.BlockedBinary], error) {
 	return store.Page[store.BlockedBinary]{}, fmt.Errorf("%w: blocked binaries need Rudolph's events table", store.ErrUnavailable)
 }

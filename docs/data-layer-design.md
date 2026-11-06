@@ -1,6 +1,6 @@
 # Data layer design
 
-Status: proposed 2026-11-04; events scope decided 2026-11-05 (blocked and allowed binaries in v1, see "Decisions" below). Built in rudolph-web so far: steps 1 to 3 and 6 of "Implementation order" (machine list, machine detail, machine rules, global rules all and by type). Prices are us-east-1 on-demand and should be re-checked: DynamoDB $0.625 per million write units, $0.125 per million read units, $0.25/GB-month; Firehose Direct PUT $0.029/GB (each record rounded up to 5 KB); S3 $0.023/GB-month; Athena $5/TB scanned (10 MB minimum per query); CloudWatch Logs $0.50/GB ingested.
+Status: proposed 2026-11-04; events scope decided 2026-11-05 (blocked and allowed binaries in v1, see "Decisions" below). Built in rudolph-web so far: steps 1 to 3, 6 and 7 of "Implementation order" (machine list, machine detail, machine rules, global rules all, by type and by policy) and the execution events reader of step 9 (by fleet, Mac, decision or team ID, with its IAM statement); top blocked and top allowed readers are next. Prices are us-east-1 on-demand and should be re-checked: DynamoDB $0.625 per million write units, $0.125 per million read units, $0.25/GB-month; Firehose Direct PUT $0.029/GB (each record rounded up to 5 KB); S3 $0.023/GB-month; Athena $5/TB scanned (10 MB minimum per query); CloudWatch Logs $0.50/GB ingested.
 
 ## Cost yardstick
 
