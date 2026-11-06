@@ -78,7 +78,8 @@ func newEventQuery(f store.EventFilter) (eventQuery, error) {
 }
 
 // ListExecutionEvents implements store.EventReader with one Query per page,
-// newest first: a machine filter reads the Mac's Exec#<id> partition, a
+// newest first; rows it cannot decode are logged and skipped, so a page may
+// hold fewer items than the limit: a machine filter reads the Mac's Exec#<id> partition, a
 // decision Decision_TS, a team ID TeamID_TS and no filter Fleet_TS.
 func (s *Store) ListExecutionEvents(ctx context.Context, f store.EventFilter, p store.PageRequest) (store.Page[store.ExecutionEvent], error) {
 	if s.eventsTable == "" {
@@ -117,7 +118,11 @@ func (s *Store) ListExecutionEvents(ctx context.Context, f store.EventFilter, p 
 	for _, it := range out.Items {
 		e, err := DecodeExecutionEvent(it)
 		if err != nil {
-			return store.Page[store.ExecutionEvent]{}, err
+			// Failing the page would hide every older event of the list until
+			// this row expires, 90 days later. The page comes back short instead;
+			// the cursor still resumes after the skipped row.
+			s.log.Warn("skipping undecodable execution event", "pk", keyString(it["PK"]), "sk", keyString(it["SK"]), "err", err)
+			continue
 		}
 		page.Items = append(page.Items, e)
 	}
@@ -194,4 +199,13 @@ func (r *reader) microTS(name string) time.Time {
 		return time.Time{}
 	}
 	return time.UnixMicro(n).UTC()
+}
+
+// keyString returns a string key attribute for logging, or "" for anything
+// else.
+func keyString(v types.AttributeValue) string {
+	if s, ok := v.(*types.AttributeValueMemberS); ok {
+		return s.Value
+	}
+	return ""
 }

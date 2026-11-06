@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -36,6 +37,8 @@ type Options struct {
 	Cursors *store.CursorCodec
 	// Now decides whether a rule's expiry has passed; time.Now if nil.
 	Now func() time.Time
+	// Logger records rows the reader skips; slog.Default() if nil.
+	Logger *slog.Logger
 }
 
 // Store reads Rudolph's table. It implements store.Reader.
@@ -45,6 +48,7 @@ type Store struct {
 	eventsTable string
 	cursors     *store.CursorCodec
 	now         func() time.Time
+	log         *slog.Logger
 }
 
 var _ store.Reader = (*Store)(nil)
@@ -63,7 +67,11 @@ func New(o Options) (*Store, error) {
 	if now == nil {
 		now = time.Now
 	}
-	return &Store{client: o.Client, table: o.Table, eventsTable: o.EventsTable, cursors: o.Cursors, now: now}, nil
+	log := o.Logger
+	if log == nil {
+		log = slog.Default()
+	}
+	return &Store{client: o.Client, table: o.Table, eventsTable: o.EventsTable, cursors: o.Cursors, now: now, log: log}, nil
 }
 
 // machineDetailLimit bounds the machine detail Query. Config, Current and

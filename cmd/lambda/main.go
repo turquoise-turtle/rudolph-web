@@ -46,7 +46,7 @@ func main() {
 		log.Error("auth setup", "err", err)
 		os.Exit(1)
 	}
-	reader, err := newReader(ctx, cfg)
+	reader, err := newReader(ctx, cfg, log)
 	if err != nil {
 		log.Error("data layer setup", "err", err)
 		os.Exit(1)
@@ -62,7 +62,7 @@ func main() {
 // newReader returns the DynamoDB reader when a table is configured, and
 // otherwise a reader that answers 503, so a deployment without the setting
 // still signs people in.
-func newReader(ctx context.Context, cfg config.Config) (store.Reader, error) {
+func newReader(ctx context.Context, cfg config.Config, log *slog.Logger) (store.Reader, error) {
 	if cfg.TableName == "" {
 		return store.Unavailable{}, nil
 	}
@@ -85,5 +85,6 @@ func newReader(ctx context.Context, cfg config.Config) (store.Reader, error) {
 		Table:       cfg.TableName,
 		EventsTable: cfg.EventsTableName,
 		Cursors:     codec,
+		Logger:      log,
 	})
 }
