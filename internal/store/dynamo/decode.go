@@ -222,12 +222,13 @@ func (r *reader) configClientMode() store.ClientMode {
 // configTemporaryClientMode reads TemporaryClientMode and
 // TemporaryClientModeExpiresAt (Unix seconds) from a machine config row.
 // Rudolph applies a temporary mode only when both decode and the mode is a
-// known one, so anything else is shown as no temporary mode.
+// known one and the expiry is positive, so anything else is shown as no
+// temporary mode.
 func (r *reader) configTemporaryClientMode() (store.ClientMode, time.Time) {
 	mode, ok1 := r.configNum("TemporaryClientMode")
 	until, ok2 := r.configNum("TemporaryClientModeExpiresAt")
 	known, ok3 := clientModes[mode]
-	if !ok1 || !ok2 || !ok3 {
+	if !ok1 || !ok2 || !ok3 || until <= 0 {
 		return "", time.Time{}
 	}
 	return known, time.Unix(until, 0).UTC()

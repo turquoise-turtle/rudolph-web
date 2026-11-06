@@ -101,12 +101,12 @@ type tempMode struct {
 }
 
 // SetTemporaryClientMode sets a machine config's temporary client mode and
-// when it ends ("" to remove it). until may be past, like an ended mode
-// Rudolph leaves on the row.
+// when it ends ("" or a zero until removes it, as Rudolph ignores an expiry
+// of 0). until may be past, like an ended mode Rudolph leaves on the row.
 func (s *Store) SetTemporaryClientMode(machineID string, mode store.ClientMode, until time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if mode == "" {
+	if mode == "" || until.IsZero() {
 		delete(s.tempModes, machineID)
 		return
 	}
