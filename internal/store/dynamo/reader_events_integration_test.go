@@ -237,3 +237,29 @@ func TestListExecutionEvents_UndecodableRowIsSkipped(t *testing.T) {
 		}
 	}
 }
+
+// Santa 2026.9 marks events whose binary it could not confirm was the image the kernel loaded (identity_unverified);
+// Rudolph stores IdentityUnverified (BOOL) only when true.
+func TestListExecutionEvents_IdentityUnverified(t *testing.T) {
+	s := seedEvents(t)
+	at := eventsBase.Add(9 * time.Minute)
+	ts := fmt.Sprintf("%020d", at.UnixMicro())
+	sha := fmt.Sprintf("%064x", 9)
+	item := map[string]types.AttributeValue{
+		"PK": &types.AttributeValueMemberS{Value: "Exec#" + machineA}, "SK": &types.AttributeValueMemberS{Value: ts + "#" + sha + "#109"},
+		"MachineID": &types.AttributeValueMemberS{Value: machineA}, "TS": &types.AttributeValueMemberS{Value: ts},
+		"Fleet": &types.AttributeValueMemberS{Value: "Exec"}, "Decision": &types.AttributeValueMemberS{Value: "BLOCK_BINARY_MISMATCH"},
+		"FileSHA256": &types.AttributeValueMemberS{Value: sha}, "FileName": &types.AttributeValueMemberS{Value: "tool-9"},
+		"IdentityUnverified": &types.AttributeValueMemberBOOL{Value: true},
+	}
+	if _, err := ddblocal.Raw(t).PutItem(ctx, &awsdynamodb.PutItemInput{TableName: aws.String(ddblocal.EventsTableName), Item: item}); err != nil {
+		t.Fatal(err)
+	}
+	page, err := s.ListExecutionEvents(ctx, store.EventFilter{MachineID: machineA}, store.PageRequest{Limit: 2})
+	if err != nil || len(page.Items) != 2 {
+		t.Fatalf("%v %+v", err, page.Items)
+	}
+	if !page.Items[0].IdentityUnverified || page.Items[1].IdentityUnverified {
+		t.Errorf("IdentityUnverified %v then %v, want true for the newest event only", page.Items[0].IdentityUnverified, page.Items[1].IdentityUnverified)
+	}
+}
