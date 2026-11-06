@@ -21,7 +21,7 @@ v1 is read-only. `/admin` is a placeholder for future write actions and needs th
 ## Architecture
 
 ```
- Browser ──HTTPS──▶ Lambda Function URL / API Gateway (HTTP API)
+ Browser ──HTTPS──▶ (optional CloudFront) ──▶ Lambda Function URL
                          │  payload format 2.0
                          ▼
                  internal/lambdaadapter ──▶ http.Handler (internal/web)
@@ -46,11 +46,7 @@ v1 is read-only. `/admin` is a placeholder for future write actions and needs th
   (`store.CursorCodec`). A cursor cannot be minted by hand, edited to skip ahead or
   to point at another partition, or replayed against a different query or filter;
   anything that fails verification is `store.ErrInvalidCursor`, which the web layer
-  renders as 400. The fake signs with a per-process random key. The DynamoDB
-  implementation will carry the marshalled `LastEvaluatedKey` as the position and
-  derive its key with `store.DeriveCursorKey` (HKDF-SHA256 over the session cookie
-  key, with a cursor-specific info string), so every instance signs alike and the
-  cursor key stays independent of the cookie key.
+  renders as 400. The fake signs with a per-process random key. The DynamoDB implementation carries the marshalled `LastEvaluatedKey` as the position, and `cmd/lambda` derives its key with `store.DeriveCursorKey` (HKDF-SHA256 over the session cookie key, with a cursor-specific info string), so every instance signs alike and the cursor key stays independent of the cookie key.
 - **Server-rendered.** It uses `net/http` and `html/template`, with contextual
   auto-escaping on all data and no `template.HTML` on data. It has no JavaScript,
   and the CSP includes `script-src 'none'`.
@@ -62,7 +58,7 @@ v1 is read-only. `/admin` is a placeholder for future write actions and needs th
   its type's shape (SHA-256, CDHash, team ID, signing ID, machine UUID) and no
   command is shown for one that does not fit; every value from a Mac is
   single-quoted. With no JavaScript there is no copy button: a click selects the
-  whole command.
+  whole command. Add `--dry-run` to a pasted command to see what it would change without writing anything.
 - **The same handler runs locally.** `cmd/local` serves it with `net/http`.
 
 ### Packages
@@ -70,7 +66,7 @@ v1 is read-only. `/admin` is a placeholder for future write actions and needs th
 | Path | Purpose |
 |---|---|
 | `cmd/local` | Local HTTP server using the in-memory fake store seeded with demo data |
-| `cmd/lambda` | Lambda entrypoint (Function URL / API Gateway HTTP API) |
+| `cmd/lambda` | Lambda entrypoint (Function URL, payload format 2.0) |
 | `internal/config` | Loads and validates configuration from environment variables, with the secrets optionally from SSM |
 | `internal/awsssm` | Reads and caches SecureString parameters for the Lambda |
 | `internal/auth` | OIDC login/callback/logout, encrypted cookies, role middleware |
@@ -163,7 +159,7 @@ Role changes take effect at the next sign-in, which is at most one session TTL l
 | `RUDOLPH_WEB_COOKIE_KEY_SSM_PARAMETER` | no | SSM parameter holding the cookie key, instead of the variable above |
 | `RUDOLPH_WEB_DYNAMODB_TABLE` | no | Rudolph's DynamoDB table, read by `cmd/lambda`; unset, data pages return 503. Cursors are signed with a key derived from the cookie key |
 | `RUDOLPH_WEB_CLI_ENV` | no | Rudolph environment name (letters, digits, `.`, `_`, `-`) the copy-and-paste CLI commands start with, as `ENV=<name> rudolph …`; unset, they start with `rudolph` |
-| `RUDOLPH_WEB_EVENTS_TABLE` | no | Rudolph's execution events table (`<prefix>_rudolph_events`), read by `cmd/lambda`; unset, the events page returns 503. Needs `RUDOLPH_WEB_DYNAMODB_TABLE` |
+| `RUDOLPH_WEB_EVENTS_TABLE` | no | Rudolph's execution events table (`<prefix>_rudolph_events`), read by `cmd/lambda`; unset, the events and top list pages return 503. Needs `RUDOLPH_WEB_DYNAMODB_TABLE` |
 
 \* Each secret has exactly one source. Set the plain variable, as local development does, or name a
 SecureString parameter with its `*_SSM_PARAMETER` variable; setting both is an error. `cmd/lambda`
@@ -191,8 +187,7 @@ Local mode serves demo data from the in-memory fake store.
 ## Deploying
 
 `deployments/` holds Terraform for one arm64 Lambda behind a Function URL, optionally fronted by
-CloudFront with a custom domain, plus a CloudWatch log group with retention, an execution role
-scoped to reading two SSM parameters and querying Rudolph's table, and nothing else.
+CloudFront with a custom domain, plus a CloudWatch log group with retention, an execution role scoped to reading two SSM parameters and to `GetItem` and `Query` on Rudolph's table and, when configured, its events table, and nothing else.
 
 ```sh
 export ENV=prod
@@ -229,10 +224,10 @@ The tests cover the following:
   CloudFront wiring.
 - Decoding of Rudolph's DynamoDB rows, against `testdata/webcontract/rows.json`, a copy of Rudolph's web contract fixture.
 
-Integration tests (build tag `integration`) run the DynamoDB data layer against DynamoDB Local, with the table created from `testdata/rudolph/dynamodb.tf`, a copy of Rudolph's table definition. They need Java and DynamoDB Local: either set `DYNAMODB_LOCAL_DIR`, or keep a Rudolph checkout next to this repo (`../rudolph`) where `scripts/setup_test_deps.sh` has been run.
+Integration tests (build tag `integration`) run the DynamoDB data layer against DynamoDB Local, with the tables created from `testdata/rudolph/dynamodb.tf` and `testdata/rudolph/events.tf`, copies of Rudolph's store and events table definitions. They need Java and DynamoDB Local: either set `DYNAMODB_LOCAL_DIR`, or keep a Rudolph checkout next to this repo (`../rudolph`) where `scripts/setup_test_deps.sh` has been run.
 
 ```sh
 go test -tags integration ./...
 ```
 
-Both copies are checked against Rudolph's originals whenever a Rudolph checkout is found at `../rudolph` or `$RUDOLPH_DIR`. When Rudolph changes them, copy them over and look at what changed.
+The three copies (`rows.json`, `dynamodb.tf` and `events.tf`) are checked against Rudolph's originals whenever a Rudolph checkout is found at `../rudolph` or `$RUDOLPH_DIR`. When Rudolph changes them, copy them over and look at what changed. `testdata/webcontract/cli-examples.txt` goes the other way: Rudolph runs every line of its copy as a dry run through its real CLI, and `internal/clicmd` checks that the commands the pages offer match it.
