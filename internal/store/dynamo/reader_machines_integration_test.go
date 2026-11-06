@@ -194,8 +194,13 @@ func TestListMachines_HostnamePrefixIsCaseInsensitive(t *testing.T) {
 		}
 		queriesOnly(t, 1)
 	}
+	// Results from the hostname index show the serial as well.
+	got, _ := listAll(t, s, store.MachineFilter{HostnamePrefix: "build-"}, 10)
+	if len(got) != 1 || got[0].SerialNum != "C02BBB000001" || got[0].Hostname != "Build-01.Corp.Example" {
+		t.Errorf("hostname search result %+v, want serial C02BBB000001 and hostname Build-01.Corp.Example", got)
+	}
 	// A Mac without a hostname is only in the serial list.
-	got, _ := listAll(t, s, store.MachineFilter{HostnamePrefix: "c"}, 10)
+	got, _ = listAll(t, s, store.MachineFilter{HostnamePrefix: "c"}, 10)
 	if strings.Contains(ids(got), listMac4) {
 		t.Errorf("a Mac without a hostname was found by hostname: %s", ids(got))
 	}
