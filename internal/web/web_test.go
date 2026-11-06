@@ -749,6 +749,12 @@ func TestQueryBudget_OneBoundedPaginatedQueryPerList(t *testing.T) {
 		s.AddExecutionEvent(store.ExecutionEvent{MachineID: "machine-001", FileSHA256: fmt.Sprintf("sha-%03d", i), FileName: "f",
 			Decision: store.DecisionBlockUnknown, ExecutionTime: fixedNow.Add(-time.Duration(i) * time.Second)})
 	}
+	var top []store.TopBinary
+	for i := 0; i < 300; i++ {
+		top = append(top, store.TopBinary{FileSHA256: fmt.Sprintf("sha-%03d", i), FileName: "f", Count: 300 - i})
+	}
+	s.SetTopList(store.TopKindBlocked, 7, fixedNow, top)
+	s.SetTopList(store.TopKindAllowed, 7, fixedNow, top)
 	a := newApp(t, s, pageSize)
 
 	cases := []struct {
