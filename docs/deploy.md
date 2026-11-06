@@ -41,7 +41,7 @@ You only do this once.
 rudolph-web reads Rudolph's DynamoDB table. Note its name (`<rudolph prefix>_rudolph_store` by
 default) and, if the table is encrypted with a customer managed KMS key, that key's ARN.
 
-The function reads the table named by its `RUDOLPH_WEB_DYNAMODB_TABLE` environment variable. Machine detail, machine rules and global rules come from it; the machine list, the policy filter on global rules and the event pages return 503 until Rudolph's storage changes land. Without `RUDOLPH_WEB_DYNAMODB_TABLE` every data page returns 503, while authentication, authorization and everything else in this guide still work.
+The function reads the table named by its `RUDOLPH_WEB_DYNAMODB_TABLE` environment variable. The machine list, machine detail, machine rules and global rules come from it; the machine list needs Rudolph's `DataType_SerialNum` and `DataType_HostnameKey` indexes, and fails against a Rudolph table without them. The policy filter on global rules and the event pages return 503 until Rudolph's storage changes land. Without `RUDOLPH_WEB_DYNAMODB_TABLE` every data page returns 503, while authentication, authorization and everything else in this guide still work.
 
 The Terraform module sets `RUDOLPH_WEB_DYNAMODB_TABLE` from `dynamodb_table_name`. The reader only calls `dynamodb:Query` on the table itself, which the `ReadRudolphStore` statement below already allows.
 
@@ -352,4 +352,4 @@ The function logs JSON to stderr and never logs secrets, cookies or tokens.
 | Logout leaves you on Entra's signed-out page | `post_logout_redirect_url` is not registered on the app registration. |
 | Sign-in works, every page is 403 | The account has no `Rudolph.Viewer` or `Rudolph.Admin` assignment. |
 | `POST /auth/logout` returns 403 | The browser's `Origin` does not match `base_url`; you are reaching the app through a hostname it was not configured with. |
-| Data pages return 503 | Every data page: `RUDOLPH_WEB_DYNAMODB_TABLE` is not set on the function (a deployment not made from the module). Only the machine list, the policy filter and events: expected until Rudolph's storage changes land. |
+| Data pages return 503 | Every data page: `RUDOLPH_WEB_DYNAMODB_TABLE` is not set on the function (a deployment not made from the module). Only the policy filter and events: expected until Rudolph's storage changes land. |

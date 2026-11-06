@@ -81,14 +81,10 @@ The read models follow Rudolph's single-table DynamoDB layout (`PK`/`SK`):
 | `store.Rule` (machine) | `PK=MachineRules#<id>` |
 | `store.ExecutionEvent`, `store.FileAccessEvent` | not queryable in Rudolph yet: interface + fake only |
 
-`internal/store/dynamo` reads machine detail, machine rules and global rules (all, or by rule type) from Rudolph's table, each page with one bounded Query. `cmd/lambda` uses it when `RUDOLPH_WEB_DYNAMODB_TABLE` is set, and serves 503 for every data page otherwise. The machine list, the global rules policy filter and the event pages still answer 503: they need Rudolph's storage changes first (see [docs/data-layer-design.md](docs/data-layer-design.md)).
+`internal/store/dynamo` reads the machine list (all, or by serial or hostname prefix), machine detail, machine rules and global rules (all, or by rule type) from Rudolph's table, each page with one bounded Query. The machine list reads Rudolph's `DataType_SerialNum` and `DataType_HostnameKey` indexes, so it needs a Rudolph version that has them; its last seen is a UTC date (`LastSeenDay`), while the machine detail page shows the exact time. `cmd/lambda` uses it when `RUDOLPH_WEB_DYNAMODB_TABLE` is set, and serves 503 for every data page otherwise. The global rules policy filter and the event pages still answer 503: they need Rudolph's storage changes first (see [docs/data-layer-design.md](docs/data-layer-design.md)).
 
-Two things that implementation will need:
+One thing the event implementation will need:
 
-- **Machine filters.** Hostname prefix search needs an index keyed on `DataType`
-  with `Hostname` as the sort key, and serial prefix search needs the serial index
-  keyed the same way; Rudolph's current serial index only matches exactly. At most
-  one prefix may be set per query, since each maps to a different index.
 - **Top blocked binaries.** Ranking by block count cannot come from one bounded
   query over raw events, so this view assumes a precomputed aggregate (for example
   a per-day, per-binary counter item updated on event upload) that can be read in

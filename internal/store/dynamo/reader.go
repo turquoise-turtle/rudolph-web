@@ -145,10 +145,118 @@ func (s *Store) ListGlobalRules(ctx context.Context, f store.RuleFilter, p store
 	}, p)
 }
 
-// ListMachines implements store.MachineReader. It needs indexes Rudolph does not
-// have yet, so it always answers store.ErrUnavailable.
-func (s *Store) ListMachines(context.Context, store.MachineFilter, store.PageRequest) (store.Page[store.Machine], error) {
-	return store.Page[store.Machine]{}, fmt.Errorf("%w: listing machines needs Rudolph's machine indexes", store.ErrUnavailable)
+// Rudolph's machine list indexes. Both are keyed DataType = "SensorData" and
+// project the attributes the list shows, so a page is one Query with no
+// follow-up reads. A Mac is in an index only if it reported that attribute.
+const (
+	dataTypeSensorData = "SensorData"
+	indexSerialNum     = "DataType_SerialNum"
+	indexHostnameKey   = "DataType_HostnameKey"
+	attrSerialNum      = "SerialNum"
+	attrHostnameKey    = "HostnameKey"
+	listMachinesMethod = "ListMachines"
+)
+
+// ListMachines implements store.MachineReader with one Query on
+// DataType_SerialNum (no filter, or a serial prefix) or DataType_HostnameKey
+// (a hostname prefix). Never a FilterExpression: Limit applies before the
+// filter, so pages would come back short.
+func (s *Store) ListMachines(ctx context.Context, f store.MachineFilter, p store.PageRequest) (store.Page[store.Machine], error) {
+	if err := checkLimit(p); err != nil {
+		return store.Page[store.Machine]{}, err
+	}
+	// Rudolph stores serials as Santa reports them (upper case) and
+	// HostnameKey as the trimmed lower-case hostname.
+	serial := strings.ToUpper(strings.TrimSpace(f.SerialPrefix))
+	hostname := strings.ToLower(strings.TrimSpace(f.HostnamePrefix))
+	if serial != "" && hostname != "" {
+		return store.Page[store.Machine]{}, fmt.Errorf("%w: filter by serial or hostname, not both", store.ErrInvalidArgument)
+	}
+	q := machineQuery{index: indexSerialNum, rangeKey: attrSerialNum, prefix: serial}
+	if hostname != "" {
+		q = machineQuery{index: indexHostnameKey, rangeKey: attrHostnameKey, prefix: hostname}
+	}
+
+	in := &dynamodb.QueryInput{
+		TableName:              aws.String(s.table),
+		IndexName:              aws.String(q.index),
+		KeyConditionExpression: aws.String("DataType = :dt"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":dt": &types.AttributeValueMemberS{Value: dataTypeSensorData},
+		},
+		Limit:            aws.Int32(int32(p.Limit)),
+		ScanIndexForward: aws.Bool(true),
+	}
+	if q.prefix != "" {
+		in.KeyConditionExpression = aws.String("DataType = :dt AND begins_with(#rk, :prefix)")
+		in.ExpressionAttributeNames = map[string]string{"#rk": q.rangeKey}
+		in.ExpressionAttributeValues[":prefix"] = &types.AttributeValueMemberS{Value: q.prefix}
+	}
+	if p.Cursor != "" {
+		start, err := s.decodeMachineCursor(q, p.Cursor)
+		if err != nil {
+			return store.Page[store.Machine]{}, err
+		}
+		in.ExclusiveStartKey = start
+	}
+	out, err := s.client.Query(ctx, in)
+	if err != nil {
+		return store.Page[store.Machine]{}, fmt.Errorf("dynamo: reading %s: %w", q.index, err)
+	}
+	page := store.Page[store.Machine]{Items: make([]store.Machine, 0, len(out.Items))}
+	for _, it := range out.Items {
+		m, err := DecodeMachineListItem(it)
+		if err != nil {
+			return store.Page[store.Machine]{}, err
+		}
+		page.Items = append(page.Items, m)
+	}
+	if len(out.LastEvaluatedKey) > 0 {
+		if page.NextCursor, err = s.encodeCursor(q.fingerprint(), out.LastEvaluatedKey); err != nil {
+			return store.Page[store.Machine]{}, err
+		}
+	}
+	return page, nil
+}
+
+// machineQuery is one paginated machine list: an index and an optional,
+// already normalised, prefix of its range key.
+type machineQuery struct {
+	index    string
+	rangeKey string
+	prefix   string
+}
+
+// fingerprint binds a cursor to the index and the normalised prefix, so the
+// same prefix typed in another case or with spaces keeps the cursor valid.
+func (q machineQuery) fingerprint() string {
+	b, _ := json.Marshal([]string{listMachinesMethod, q.index, q.prefix})
+	return string(b)
+}
+
+// decodeMachineCursor checks that the position is a key of q's index within
+// q's prefix, on top of the codec's HMAC.
+func (s *Store) decodeMachineCursor(q machineQuery, cursor string) (map[string]types.AttributeValue, error) {
+	plain, err := s.decodePosition(q.fingerprint(), cursor)
+	if err != nil {
+		return nil, err
+	}
+	if len(plain) != 4 {
+		return nil, store.ErrInvalidCursor
+	}
+	pk, hasPK := plain["PK"]
+	_, hasSK := plain["SK"]
+	dt, hasDT := plain["DataType"]
+	rk, hasRK := plain[q.rangeKey]
+	if !hasPK || !hasSK || !hasDT || !hasRK || !strings.HasPrefix(pk, "Machine#") ||
+		dt != dataTypeSensorData || !strings.HasPrefix(rk, q.prefix) {
+		return nil, store.ErrInvalidCursor
+	}
+	key := make(map[string]types.AttributeValue, len(plain))
+	for name, v := range plain {
+		key[name] = &types.AttributeValueMemberS{Value: v}
+	}
+	return key, nil
 }
 
 // ListExecutionEvents implements store.EventReader. Rudolph does not yet store
@@ -225,17 +333,16 @@ func (s *Store) queryRules(ctx context.Context, q ruleQuery, p store.PageRequest
 		page.Items = append(page.Items, r)
 	}
 	if len(out.LastEvaluatedKey) > 0 {
-		if page.NextCursor, err = s.encodeCursor(q, out.LastEvaluatedKey); err != nil {
+		if page.NextCursor, err = s.encodeCursor(q.fingerprint(), out.LastEvaluatedKey); err != nil {
 			return store.Page[store.Rule]{}, err
 		}
 	}
 	return page, nil
 }
 
-// encodeCursor serialises a base-table LastEvaluatedKey as a JSON object of
-// its string attributes; encoding/json sorts map keys, so the form is
-// canonical.
-func (s *Store) encodeCursor(q ruleQuery, key map[string]types.AttributeValue) (string, error) {
+// encodeCursor serialises a LastEvaluatedKey as a JSON object of its string
+// attributes; encoding/json sorts map keys, so the form is canonical.
+func (s *Store) encodeCursor(fingerprint string, key map[string]types.AttributeValue) (string, error) {
 	plain := make(map[string]string, len(key))
 	for name, v := range key {
 		sv, ok := v.(*types.AttributeValueMemberS)
@@ -248,19 +355,33 @@ func (s *Store) encodeCursor(q ruleQuery, key map[string]types.AttributeValue) (
 	if err != nil {
 		return "", err
 	}
-	return s.cursors.Encode(q.fingerprint(), string(position))
+	return s.cursors.Encode(fingerprint, string(position))
+}
+
+// decodePosition verifies a cursor issued for fingerprint and returns the key
+// attributes it carries. Callers still check the names and values against
+// their own query.
+func (s *Store) decodePosition(fingerprint, cursor string) (map[string]string, error) {
+	position, err := s.cursors.Decode(fingerprint, cursor)
+	if err != nil {
+		return nil, err
+	}
+	var plain map[string]string
+	if err := json.Unmarshal([]byte(position), &plain); err != nil {
+		return nil, store.ErrInvalidCursor
+	}
+	return plain, nil
 }
 
 // decodeCursor checks the key itself as well as the codec's HMAC, so that a
 // cursor can never start a Query in a partition or SK range other than its
 // own, even if the fingerprint ever stopped covering them.
 func (s *Store) decodeCursor(q ruleQuery, cursor string) (map[string]types.AttributeValue, error) {
-	position, err := s.cursors.Decode(q.fingerprint(), cursor)
+	plain, err := s.decodePosition(q.fingerprint(), cursor)
 	if err != nil {
 		return nil, err
 	}
-	var plain map[string]string
-	if err := json.Unmarshal([]byte(position), &plain); err != nil || len(plain) != 2 {
+	if len(plain) != 2 {
 		return nil, store.ErrInvalidCursor
 	}
 	pk, hasPK := plain["PK"]

@@ -121,6 +121,37 @@ func DecodeRule(item map[string]types.AttributeValue, now time.Time) (store.Rule
 	return rule, nil
 }
 
+// DecodeMachineListItem decodes one item of the machine list indexes, which
+// project only what the list shows. Its last seen is LastSeenDay, a UTC date
+// Rudolph rewrites at most once a day so the indexes are not written on every
+// sync; a missing or unreadable one is shown as unknown rather than failing
+// the list.
+func DecodeMachineListItem(item map[string]types.AttributeValue) (store.Machine, error) {
+	r := reader{item: item}
+	m := store.Machine{
+		MachineID:       r.str("MachineID"),
+		SerialNum:       r.str("SerialNum"),
+		Hostname:        r.str("Hostname"),
+		ModelIdentifier: r.str("ModelIdentifier"),
+		OSVersion:       r.str("OSVersion"),
+		SantaVersion:    r.str("SantaVersion"),
+		ClientMode:      r.clientMode(),
+		PrimaryUser:     r.str("PrimaryUser"),
+	}
+	if v, ok := item["LastSeenDay"].(*types.AttributeValueMemberS); ok {
+		if day, err := time.Parse(time.DateOnly, v.Value); err == nil {
+			m.LastSeen = day
+		}
+	}
+	if m.MachineID == "" {
+		m.MachineID = strings.TrimPrefix(r.str("PK"), "Machine#")
+	}
+	if r.err != nil {
+		return store.Machine{}, fmt.Errorf("dynamo: decoding machine list item %q: %w", r.str("PK"), r.err)
+	}
+	return m, nil
+}
+
 func (r *reader) machine() store.Machine {
 	m := store.Machine{
 		MachineID:       r.str("MachineID"),

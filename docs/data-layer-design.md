@@ -1,6 +1,6 @@
 # Data layer design
 
-Status: proposed 2026-11-04; events scope decided 2026-11-05 (blocked and allowed binaries in v1, see "Decisions" below); not yet built. Prices are us-east-1 on-demand and should be re-checked: DynamoDB $0.625 per million write units, $0.125 per million read units, $0.25/GB-month; Firehose Direct PUT $0.029/GB (each record rounded up to 5 KB); S3 $0.023/GB-month; Athena $5/TB scanned (10 MB minimum per query); CloudWatch Logs $0.50/GB ingested.
+Status: proposed 2026-11-04; events scope decided 2026-11-05 (blocked and allowed binaries in v1, see "Decisions" below). Built in rudolph-web so far: steps 1 to 3 and 6 of "Implementation order" (machine list, machine detail, machine rules, global rules all and by type). Prices are us-east-1 on-demand and should be re-checked: DynamoDB $0.625 per million write units, $0.125 per million read units, $0.25/GB-month; Firehose Direct PUT $0.029/GB (each record rounded up to 5 KB); S3 $0.023/GB-month; Athena $5/TB scanned (10 MB minimum per query); CloudWatch Logs $0.50/GB ingested.
 
 ## Cost yardstick
 
@@ -22,7 +22,7 @@ A Mac syncs at most every 600 s, so 144 syncs a day: 4.32 million syncs a month 
 | Machines, no filter | Query GSI `DataType_SerialNum`: `DataType = "SensorData"`, Limit n. Ordered by serial. |
 | Machines, serial prefix | Same index, `begins_with(SerialNum, upper(trim(p)))` |
 | Machines, hostname prefix | Query GSI `DataType_HostnameKey`: `begins_with(HostnameKey, lower(trim(p)))` (case-insensitive) |
-| Machine list projection | INCLUDE MachineID, SerialNum, Hostname, ModelIdentifier, OSVersion, SantaVersion, ClientMode, PrimaryUser (+ `LastSeenDay` if adopted). About 4 read units per page of 100. |
+| Machine list projection | INCLUDE MachineID, SerialNum, Hostname, ModelIdentifier, OSVersion, SantaVersion, ClientMode, PrimaryUser, `LastSeenDay`. About 4 read units per page of 100. `DataType_HostnameKey` as Rudolph defines it does not project SerialNum (it is neither a table key nor that index's key), so hostname search results show no serial until Rudolph adds it to the projection. |
 | Machine detail | Query `PK = Machine#<id>`, Limit 5: config, current sensor data and sync state in one call, leaving out tracking internals. No sensor data row (90-day TTL) means not found. |
 | Machine rules | Query `PK = MachineRules#<id>`; state (in force, removing, expired) computed per the contract |
 | Global rules, all or by type | Query `PK = GlobalRules` [`begins_with(SK, "Binary#" / "Cert#" / "TeamID#" / "SigningID#" / "CDHash#")`] |
@@ -32,7 +32,9 @@ A Mac syncs at most every 600 s, so 144 syncs a day: 4.32 million syncs a month 
 | Top blocked binaries, top allowed binaries | GetItem pointer `Top#<Blocked or Allowed>#<window>` (cached 60 s), then Query the snapshot it points to; the cursor pins the snapshot |
 | Optional event search (ALLOW history) | Athena with parameterised SQL; cursor = HMAC(query execution ID, NextToken) bound to the filter |
 
-Cursors: LastEvaluatedKey as canonical JSON inside `CursorCodec.Encode(fingerprint, json)`; the fingerprint covers method, index and normalised filter. A decoded key whose names, partition or index differ from the query's is refused, on top of the HMAC.
+Cursors: LastEvaluatedKey as canonical JSON inside `CursorCodec.Encode(fingerprint, json)`; the fingerprint covers method, index and normalised filter. A decoded key whose names, partition or index differ from the query's is refused, on top of the HMAC. For the machine list the key is the GSI's LastEvaluatedKey (PK, SK, DataType and the index range key); a prefix spelt with other case or spaces normalises to the same filter, so its cursors stay valid.
+
+The machine list's last seen is `LastSeenDay` read as midnight UTC and shown as a date; a missing or unreadable value is shown as unknown rather than failing the page. A Mac with no serial is only found by hostname, and one with no hostname only by serial.
 
 ## Rudolph-side changes
 

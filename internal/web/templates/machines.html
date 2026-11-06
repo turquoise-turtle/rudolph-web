@@ -9,7 +9,7 @@
 {{if .Machines}}
 <div class="scroll">
 <table>
-<thead><tr><th>Hostname</th><th>Serial</th><th>Model</th><th>macOS</th><th>Santa</th><th>Mode</th><th>Primary user</th><th>Last seen</th></tr></thead>
+<thead><tr><th>Hostname</th><th>Serial</th><th>Model</th><th>macOS</th><th>Santa</th><th>Mode</th><th>Primary user</th><th>Last seen (UTC)</th></tr></thead>
 <tbody>
 {{range .Machines}}
 <tr data-row>
@@ -20,7 +20,7 @@
   <td>{{.SantaVersion}}</td>
   <td>{{.ClientMode}}</td>
   <td>{{.PrimaryUser}}</td>
-  <td>{{ts .LastSeen}}</td>
+  <td>{{day .LastSeen}}</td>
 </tr>
 {{end}}
 </tbody>

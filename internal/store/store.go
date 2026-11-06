@@ -164,7 +164,7 @@ type Machine struct {
 	PrimaryUser     string
 	SIPStatus       string // "enabled" (flags 0, or no SIPStatus stored) or "reduced (0x<flags>)"
 	RuleCounts      RuleCounts
-	LastSeen        time.Time // sensor data Time
+	LastSeen        time.Time // sensor data Time; in ListMachines, midnight UTC of LastSeenDay (a date only)
 }
 
 // SyncState is a host's sync progress (SK=SyncState).
@@ -292,8 +292,9 @@ type TopBlockedFilter struct {
 
 // MachineReader reads machines and their machine-specific rules.
 type MachineReader interface {
-	// ListMachines returns machines ordered by the index implied by the filter
-	// (machine ID, serial or hostname).
+	// ListMachines returns machines ordered by the index implied by the filter:
+	// serial (no filter, or a serial prefix) or hostname. Prefixes are trimmed;
+	// serial prefixes match upper case and hostname prefixes ignore case.
 	ListMachines(ctx context.Context, f MachineFilter, p PageRequest) (Page[Machine], error)
 	// GetMachine reads one machine's sensor data and sync state
 	// (a single Query on PK=Machine#<id>). Returns ErrNotFound.
