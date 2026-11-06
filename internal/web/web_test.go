@@ -660,7 +660,8 @@ func TestHostileDataIsEscaped(t *testing.T) {
 		"/events",
 		"/events/top-blocked",
 		"/machines?hostname=" + url.QueryEscape(`"><script>alert(8)</script>`),
-		"/events?team_id=" + url.QueryEscape(`"><script>alert(9)</script>`) + "&machine=" + url.QueryEscape(`'><img src=x onerror=alert(10)>`),
+		"/events?team_id=" + url.QueryEscape(`"><script>alert(9)</script>`),
+		"/events?machine=" + url.QueryEscape(`'><img src=x onerror=alert(10)>`),
 	}
 	for _, p := range pages {
 		t.Run(p, func(t *testing.T) {
