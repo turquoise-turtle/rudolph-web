@@ -62,6 +62,12 @@ variable "session_ttl" {
   default     = "1h"
 }
 
+variable "cli_env" {
+  type        = string
+  description = "Rudolph environment name the pages' copy-and-paste CLI commands start with (ENV=<name>). Empty leaves ENV to the operator's shell."
+  default     = ""
+}
+
 variable "create_ssm_parameters" {
   type        = bool
   description = "Create the two SecureString parameters with a placeholder value instead of creating them yourself"

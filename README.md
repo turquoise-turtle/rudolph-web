@@ -54,6 +54,15 @@ v1 is read-only. `/admin` is a placeholder for future write actions and needs th
 - **Server-rendered.** It uses `net/http` and `html/template`, with contextual
   auto-escaping on all data and no `template.HTML` on data. It has no JavaScript,
   and the CSP includes `script-src 'none'`.
+- **Commands to copy, not write actions.** The pages are read-only. Event rows
+  and top-list entries, the machine page, and global, machine and group rule
+  rows offer Rudolph CLI commands (`internal/clicmd`) under a "Commands"
+  disclosure, matching the contract in `testdata/webcontract/cli-examples.txt`
+  that Rudolph checks against its real CLI. Each identifier is checked against
+  its type's shape (SHA-256, CDHash, team ID, signing ID, machine UUID) and no
+  command is shown for one that does not fit; every value from a Mac is
+  single-quoted. With no JavaScript there is no copy button: a click selects the
+  whole command.
 - **The same handler runs locally.** `cmd/local` serves it with `net/http`.
 
 ### Packages
@@ -66,6 +75,7 @@ v1 is read-only. `/admin` is a placeholder for future write actions and needs th
 | `internal/awsssm` | Reads and caches SecureString parameters for the Lambda |
 | `internal/auth` | OIDC login/callback/logout, encrypted cookies, role middleware |
 | `internal/web` | Routes, handlers, templates, security headers |
+| `internal/clicmd` | Builds the Rudolph CLI commands the pages offer to copy |
 | `internal/store` | Read models and data-access interfaces |
 | `internal/store/fake` | In-memory implementation that records calls (tests + local dev) |
 | `internal/lambdaadapter` | Payload format 2.0 event ⇄ `http.Handler` |
@@ -152,6 +162,7 @@ Role changes take effect at the next sign-in, which is at most one session TTL l
 | `RUDOLPH_WEB_CLIENT_SECRET_SSM_PARAMETER` | no | SSM parameter holding the client secret, instead of the variable above |
 | `RUDOLPH_WEB_COOKIE_KEY_SSM_PARAMETER` | no | SSM parameter holding the cookie key, instead of the variable above |
 | `RUDOLPH_WEB_DYNAMODB_TABLE` | no | Rudolph's DynamoDB table, read by `cmd/lambda`; unset, data pages return 503. Cursors are signed with a key derived from the cookie key |
+| `RUDOLPH_WEB_CLI_ENV` | no | Rudolph environment name (letters, digits, `.`, `_`, `-`) the copy-and-paste CLI commands start with, as `ENV=<name> rudolph …`; unset, they start with `rudolph` |
 | `RUDOLPH_WEB_EVENTS_TABLE` | no | Rudolph's execution events table (`<prefix>_rudolph_events`), read by `cmd/lambda`; unset, the events page returns 503. Needs `RUDOLPH_WEB_DYNAMODB_TABLE` |
 
 \* Each secret has exactly one source. Set the plain variable, as local development does, or name a

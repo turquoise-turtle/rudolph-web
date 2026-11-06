@@ -51,7 +51,7 @@ func main() {
 		log.Error("data layer setup", "err", err)
 		os.Exit(1)
 	}
-	h, err := web.New(web.Options{Auth: a, Store: reader, Logger: log})
+	h, err := web.New(web.Options{Auth: a, Store: reader, Logger: log, CLIEnv: cfg.CLIEnv})
 	if err != nil {
 		log.Error("web setup", "err", err)
 		os.Exit(1)

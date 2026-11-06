@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/turquoise-turtle/rudolph-web/internal/auth"
+	"github.com/turquoise-turtle/rudolph-web/internal/clicmd"
 	"github.com/turquoise-turtle/rudolph-web/internal/store"
 )
 
@@ -34,6 +35,9 @@ type Options struct {
 	PageSize int              // 1..store.MaxPageSize; 0 means DefaultPageSize
 	Now      func() time.Time // optional; for tests
 	Logger   *slog.Logger     // optional
+	// CLIEnv is the Rudolph environment the copy-and-paste CLI commands name
+	// (ENV=<CLIEnv>); empty leaves ENV to the operator's shell.
+	CLIEnv string
 }
 
 type server struct {
@@ -67,7 +71,7 @@ func New(opts Options) (http.Handler, error) {
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()
 	}
-	pages, err := parseTemplates()
+	pages, err := parseTemplates(cliFuncs(clicmd.New(opts.CLIEnv)))
 	if err != nil {
 		return nil, err
 	}
@@ -193,8 +197,52 @@ var funcs = template.FuncMap{
 	},
 }
 
-func parseTemplates() (map[string]*template.Template, error) {
-	base, err := template.New("layout.html").Funcs(funcs).ParseFS(templateFS, "templates/layout.html")
+// cliCommand is one labelled command in a "Commands" disclosure.
+type cliCommand struct {
+	Label   string
+	Command string
+}
+
+// cliFuncs gives the templates the copy-and-paste CLI commands. Each returns
+// "" when no command can be built (an identifier of the wrong shape), and the
+// templates then show nothing.
+func cliFuncs(b clicmd.Builder) template.FuncMap {
+	str := func(cmd string, ok bool) string {
+		if !ok {
+			return ""
+		}
+		return cmd
+	}
+	// Machine rules made from the web view are for a quick unblock, so they
+	// expire after a day.
+	const machineRuleExpiry = "24h"
+	return template.FuncMap{
+		"cliRuleGlobal": func(verb string, t store.RuleType, id string) string {
+			return str(b.Rule(verb, t, id, clicmd.Global()))
+		},
+		"cliRuleMachine": func(verb string, t store.RuleType, id, machine string) string {
+			return str(b.Rule(verb, t, id, clicmd.Machine(machine, machineRuleExpiry)))
+		},
+		"cliRuleGroup": func(verb string, t store.RuleType, id, group string) string {
+			return str(b.Rule(verb, t, id, clicmd.Group(group)))
+		},
+		"cliRemoveGlobal": func(t store.RuleType, id string) string {
+			return str(b.Remove(t, id, clicmd.Global()))
+		},
+		"cliRemoveMachine": func(t store.RuleType, id, machine string) string {
+			return str(b.Remove(t, id, clicmd.Machine(machine, "")))
+		},
+		"cmd":             func(label, command string) cliCommand { return cliCommand{label, command} },
+		"binary":          func() store.RuleType { return store.RuleTypeBinary },
+		"cliMachineRules": func(machine string) string { return str(b.MachineRules(machine)) },
+		"cliConfigGet":    func(machine string) string { return str(b.ConfigGet(machine)) },
+		"cliEndTemporary": func(machine string) string { return str(b.EndTemporaryMode(machine)) },
+		"cliMonitorFor2h": func(machine string) string { return str(b.TemporaryMode(machine, store.ClientModeMonitor, "2h")) },
+	}
+}
+
+func parseTemplates(extra template.FuncMap) (map[string]*template.Template, error) {
+	base, err := template.New("layout.html").Funcs(funcs).Funcs(extra).ParseFS(templateFS, "templates/layout.html")
 	if err != nil {
 		return nil, err
 	}

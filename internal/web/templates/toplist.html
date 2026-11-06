@@ -12,7 +12,7 @@
 {{if .Binaries}}
 <div class="scroll">
 <table>
-<thead><tr><th scope="col">File</th><th scope="col">SHA-256</th><th scope="col">Team ID</th><th scope="col">Signing ID</th><th scope="col">Executions</th><th scope="col">Machines</th></tr></thead>
+<thead><tr><th scope="col">File</th><th scope="col">SHA-256</th><th scope="col">Team ID</th><th scope="col">Signing ID</th><th scope="col">Executions</th><th scope="col">Machines</th><th scope="col">Rudolph CLI</th></tr></thead>
 <tbody>
 {{range .Binaries}}
 <tr data-row>
@@ -22,6 +22,10 @@
   <td>{{orDash .SigningID}}</td>
   <td class="num">{{.Count}}</td>
   <td class="num">{{if .MachinesKnown}}{{.Machines}}{{else}}—{{end}}</td>
+  <td>{{$deny := cliRuleGlobal "deny" binary .FileSHA256}}{{if $deny}}<details class="cmds"><summary>Commands</summary><ul>
+    {{template "cmd" (cmd "Block everywhere" $deny)}}
+    {{template "cmd" (cmd "Allow everywhere" (cliRuleGlobal "allow" binary .FileSHA256))}}
+  </ul></details>{{end}}</td>
 </tr>
 {{end}}
 </tbody>
