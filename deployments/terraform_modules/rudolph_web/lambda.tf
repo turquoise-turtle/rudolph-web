@@ -45,6 +45,9 @@ resource "aws_lambda_function" "web" {
       # Read by the DynamoDB data layer that replaces store.Unavailable.
       RUDOLPH_WEB_DYNAMODB_TABLE = var.dynamodb_table_name
       RUDOLPH_WEB_EVENTS_TABLE   = var.events_dynamodb_table_name
+
+      # The ENV= the pages' copy-and-paste Rudolph CLI commands start with.
+      RUDOLPH_WEB_CLI_ENV = var.cli_env
     }
   }
 

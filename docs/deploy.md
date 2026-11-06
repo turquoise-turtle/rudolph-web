@@ -45,6 +45,8 @@ The function reads the table named by its `RUDOLPH_WEB_DYNAMODB_TABLE` environme
 
 The Terraform module sets `RUDOLPH_WEB_DYNAMODB_TABLE` from `dynamodb_table_name` and `RUDOLPH_WEB_EVENTS_TABLE` from `events_dynamodb_table_name` (Rudolph's `events_dynamodb_table_name` output, typically `<rudolph prefix>_rudolph_events`; leave it empty if your Rudolph has no events table). The reader only calls `dynamodb:Query`, which the `ReadRudolphStore` and `ReadRudolphEvents` statements below allow. The events table is encrypted with the same key as the store table, so `dynamodb_kms_key_arn` covers both.
 
+The pages offer Rudolph CLI commands to copy (block or allow a binary from an event or a top list, a Mac's configuration and temporary monitor mode, removing a rule). Set `cli_env` (the module sets `RUDOLPH_WEB_CLI_ENV` from it) to the Rudolph environment name, e.g. `prod`, so each command starts with `ENV=prod rudolph`; left empty, the commands start with `rudolph` and the operator's shell supplies `ENV`. The web view itself never writes anything.
+
 ### A domain (optional)
 
 Only needed for `enable_cloudfront = true`. Without it the deployment is reachable at its Function

@@ -37,3 +37,6 @@
   {{with .Next}}<a rel="next" href="{{.}}">Next page</a>{{end}}
 </nav>
 {{end}}
+{{/* One command to copy. There is no copy button: the CSP allows no script,
+so a click (or Tab to it) selects the whole command for the usual copy. */}}
+{{define "cmd"}}{{if .Command}}<li><span class="cmd-label">{{.Label}}</span> <code class="cmd" tabindex="0">{{.Command}}</code></li>{{end}}{{end}}

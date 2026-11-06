@@ -19,6 +19,9 @@ module "rudolph_web" {
   post_logout_redirect_url = var.post_logout_redirect_url
   session_ttl              = var.session_ttl
 
+  # The ENV= of the copy-and-paste Rudolph CLI commands on the pages.
+  cli_env = var.cli_env
+
   create_ssm_parameters = var.create_ssm_parameters
   ssm_kms_key_arn       = var.ssm_kms_key_arn
 

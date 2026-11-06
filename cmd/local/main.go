@@ -28,7 +28,7 @@ func main() {
 		log.Error("auth setup", "err", err)
 		os.Exit(1)
 	}
-	h, err := web.New(web.Options{Auth: a, Store: fake.NewDemo(time.Now()), Logger: log})
+	h, err := web.New(web.Options{Auth: a, Store: fake.NewDemo(time.Now()), Logger: log, CLIEnv: cfg.CLIEnv})
 	if err != nil {
 		log.Error("web setup", "err", err)
 		os.Exit(1)

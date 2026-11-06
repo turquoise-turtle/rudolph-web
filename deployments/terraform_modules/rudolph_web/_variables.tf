@@ -48,6 +48,17 @@ variable "post_logout_redirect_url" {
   default     = ""
 }
 
+variable "cli_env" {
+  type        = string
+  description = "Rudolph environment name the pages' copy-and-paste CLI commands start with, as ENV=<name> (RUDOLPH_WEB_CLI_ENV), e.g. prod. Empty leaves ENV to the operator's shell."
+  default     = ""
+
+  validation {
+    condition     = var.cli_env == "" || can(regex("^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$", var.cli_env))
+    error_message = "cli_env must be letters, digits, '.', '_' or '-' (at most 64)."
+  }
+}
+
 variable "session_ttl" {
   type        = string
   description = "Session cookie lifetime as a Go duration between 5m and 12h (RUDOLPH_WEB_SESSION_TTL). Role changes take effect at most one TTL after the next sign-in."

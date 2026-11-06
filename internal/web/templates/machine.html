@@ -31,6 +31,14 @@
 </dl>
 </section>
 <p><a href="{{eventsForMachineURL .MachineID}}">Events for this machine</a></p>
+{{with cliConfigGet .MachineID}}
+<details class="cmds"><summary>Rudolph CLI commands for this Mac</summary><ul>
+  {{template "cmd" (cmd "Show its configuration" .)}}
+  {{template "cmd" (cmd "List its rules" (cliMachineRules $.Machine.MachineID))}}
+  {{template "cmd" (cmd "Monitor mode for 2 hours" (cliMonitorFor2h $.Machine.MachineID))}}
+  {{template "cmd" (cmd "End a temporary mode" (cliEndTemporary $.Machine.MachineID))}}
+</ul></details>
+{{end}}
 <h2>Groups</h2>
 <dl>
   <dt>Assigned in Rudolph</dt><dd>{{range $i, $g := .AssignedGroups}}{{if $i}}, {{end}}<a href="{{groupURL $g}}">{{$g}}</a>{{else}}none{{end}}</dd>
@@ -54,7 +62,7 @@
 {{if .Rules}}
 <div class="scroll">
 <table>
-<thead><tr><th>Type</th><th>Policy</th><th>Identifier</th><th>Custom message</th><th>Description</th><th>Expires</th><th>State</th></tr></thead>
+<thead><tr><th>Type</th><th>Policy</th><th>Identifier</th><th>Custom message</th><th>Description</th><th>Expires</th><th>State</th><th>Rudolph CLI</th></tr></thead>
 <tbody>
 {{range .Rules}}
 <tr data-row>
@@ -65,6 +73,9 @@
   <td>{{.Description}}</td>
   <td>{{ts .ExpiresAt}}</td>
   <td>{{with .State}}{{.}}{{else}}—{{end}}</td>
+  <td>{{with cliRemoveMachine .RuleType .Identifier $.Machine.MachineID}}<details class="cmds"><summary>Commands</summary><ul>
+    {{template "cmd" (cmd "Remove" .)}}
+  </ul></details>{{end}}</td>
 </tr>
 {{end}}
 </tbody>

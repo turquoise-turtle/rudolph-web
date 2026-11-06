@@ -12,7 +12,7 @@
 {{if .Rules}}
 <div class="scroll">
 <table>
-<thead><tr><th>Type</th><th>Policy</th><th>Identifier</th><th>Custom message</th><th>Description</th><th>State</th></tr></thead>
+<thead><tr><th>Type</th><th>Policy</th><th>Identifier</th><th>Custom message</th><th>Description</th><th>State</th><th>Rudolph CLI</th></tr></thead>
 <tbody>
 {{range .Rules}}
 <tr data-row>
@@ -22,6 +22,9 @@
   <td>{{.CustomMessage}}{{with .CustomURL}}<br><span class="muted">{{.}}</span>{{end}}</td>
   <td>{{.Description}}</td>
   <td>{{with .State}}{{.}}{{else}}—{{end}}</td>
+  <td>{{with cliRuleGroup "deny" .RuleType .Identifier $.Group.Name}}<details class="cmds"><summary>Commands</summary><ul>
+    {{template "cmd" (cmd "Block in this group" .)}}
+  </ul></details>{{end}}</td>
 </tr>
 {{end}}
 </tbody>

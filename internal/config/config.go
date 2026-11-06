@@ -35,6 +35,11 @@ const (
 	// EnvTableName.
 	EnvEventsTableName = "RUDOLPH_WEB_EVENTS_TABLE"
 
+	// EnvCLIEnv is the Rudolph environment name the copy-and-paste CLI
+	// commands start with (ENV=<name> rudolph ...). Unset, they start with
+	// plain rudolph and the operator's shell supplies ENV.
+	EnvCLIEnv = "RUDOLPH_WEB_CLI_ENV"
+
 	// Names of SSM Parameter Store parameters holding the secrets. When one of
 	// these is set the matching plain variable must be unset, and the value is
 	// read once, at cold start.
@@ -50,6 +55,10 @@ const (
 	entraAuthority    = "https://login.microsoftonline.com"
 )
 
+// cliEnvRe matches environment names that can follow ENV= in a shell command
+// without quoting.
+var cliEnvRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`)
+
 var guidRe = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 // Config is the validated application configuration.
@@ -64,6 +73,7 @@ type Config struct {
 	Addr                  string // cmd/local only
 	TableName             string // empty: no data layer
 	EventsTableName       string // empty: no execution events
+	CLIEnv                string // empty: CLI commands without ENV=
 }
 
 // FromEnv reads and validates configuration. Error messages name variables
@@ -80,6 +90,7 @@ func FromEnv(getenv func(string) string) (Config, error) {
 		Addr:                  get(EnvAddr),
 		TableName:             get(EnvTableName),
 		EventsTableName:       get(EnvEventsTableName),
+		CLIEnv:                get(EnvCLIEnv),
 	}
 	var errs []error
 	required := func(name, v string) bool {
@@ -129,6 +140,9 @@ func FromEnv(getenv func(string) string) (Config, error) {
 	}
 	if c.EventsTableName != "" && c.TableName == "" {
 		errs = append(errs, fmt.Errorf("%s needs %s", EnvEventsTableName, EnvTableName))
+	}
+	if c.CLIEnv != "" && !cliEnvRe.MatchString(c.CLIEnv) {
+		errs = append(errs, fmt.Errorf("%s must be letters, digits, '.', '_' or '-' (at most 64)", EnvCLIEnv))
 	}
 	if c.Addr == "" {
 		c.Addr = defaultAddr
