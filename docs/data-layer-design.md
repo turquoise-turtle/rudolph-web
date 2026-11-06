@@ -26,7 +26,7 @@ A Mac syncs at most every 600 s, so 144 syncs a day: 4.32 million syncs a month 
 | Machine detail | Query `PK = Machine#<id>`, Limit 5: config, current sensor data and sync state in one call, leaving out tracking internals. No sensor data row (90-day TTL) means not found. |
 | Machine rules | Query `PK = MachineRules#<id>`; state (in force, removing, expired) computed per the contract |
 | Global rules, all or by type | Query `PK = GlobalRules` [`begins_with(SK, "Binary#" / "Cert#" / "TeamID#" / "SigningID#" / "CDHash#")`] |
-| Global rules by policy | Query new GSI `GlobalRulePolicy_SK` (never a FilterExpression: Limit applies before the filter, so pages would come back short) |
+| Global rules by policy | Query GSI `GlobalRulePolicy_SK`, `GlobalRulePolicy = :n`, plus `begins_with(SK)` when a rule type is also given (never a FilterExpression: Limit applies before the filter, so pages would come back short). The cursor is the index key: PK, SK and GlobalRulePolicy. |
 | Execution events (blocked and allowed) | New events table: per machine `PK = Exec#<m>` newest first; fleet-wide GSI `Fleet_TS`; by decision `Decision_TS`; by team ID `TeamID_TS`. Combined filters are refused in v1. |
 | File access events | v2. Interface kept; the DynamoDB reader answers `ErrUnavailable` until then. |
 | Top blocked binaries, top allowed binaries | GetItem pointer `Top#<Blocked or Allowed>#<window>` (cached 60 s), then Query the snapshot it points to; the cursor pins the snapshot |
