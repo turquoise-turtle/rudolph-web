@@ -109,6 +109,7 @@ func New(opts Options) (http.Handler, error) {
 	mux.Handle("GET /rules", viewer(s.rules))
 	mux.Handle("GET /events", viewer(s.events))
 	mux.Handle("GET /events/top-blocked", viewer(s.topBlocked))
+	mux.Handle("GET /events/top-allowed", viewer(s.topAllowed))
 	mux.Handle("GET /admin", opts.Auth.Require(auth.RoleAdmin, http.HandlerFunc(s.admin)))
 
 	csp := strings.Join([]string{

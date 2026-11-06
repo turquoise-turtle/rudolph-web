@@ -17,15 +17,17 @@ import (
 	"github.com/turquoise-turtle/rudolph-web/internal/store"
 )
 
-// QueryAPI is the one DynamoDB call the reader makes. Every page is a bounded
-// Query, so the deployment can grant dynamodb:Query and nothing else.
-type QueryAPI interface {
+// ReadAPI is the DynamoDB calls the reader makes: every page is a bounded
+// Query, and the top lists also read their pointer with GetItem, so the
+// deployment grants dynamodb:Query and dynamodb:GetItem and nothing else.
+type ReadAPI interface {
 	Query(ctx context.Context, in *dynamodb.QueryInput, optFns ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error)
+	GetItem(ctx context.Context, in *dynamodb.GetItemInput, optFns ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error)
 }
 
 // Options configures New.
 type Options struct {
-	Client QueryAPI
+	Client ReadAPI
 	// Table is Rudolph's single table.
 	Table string
 	// EventsTable is Rudolph's execution events table (docs/events-table.md in
@@ -43,7 +45,7 @@ type Options struct {
 
 // Store reads Rudolph's table. It implements store.Reader.
 type Store struct {
-	client      QueryAPI
+	client      ReadAPI
 	table       string
 	eventsTable string
 	cursors     *store.CursorCodec
@@ -290,12 +292,8 @@ func (s *Store) decodeMachineCursor(q machineQuery, cursor string) (map[string]t
 	return key, nil
 }
 
-// TopBlockedBinaries and ListFileAccessEvents answer store.ErrUnavailable
-// until the web view reads Rudolph's day counters and file access events.
-func (s *Store) TopBlockedBinaries(context.Context, store.TopBlockedFilter, store.PageRequest) (store.Page[store.BlockedBinary], error) {
-	return store.Page[store.BlockedBinary]{}, fmt.Errorf("%w: blocked binaries need Rudolph's events table", store.ErrUnavailable)
-}
-
+// ListFileAccessEvents answers store.ErrUnavailable until Rudolph stores file
+// access events.
 func (s *Store) ListFileAccessEvents(context.Context, store.FileAccessEventFilter, store.PageRequest) (store.Page[store.FileAccessEvent], error) {
 	return store.Page[store.FileAccessEvent]{}, fmt.Errorf("%w: file access events need Rudolph's events table", store.ErrUnavailable)
 }

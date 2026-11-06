@@ -14,14 +14,21 @@
 //
 //	PK=Exec#<id>          SK=<TS>#<sha256>#<pid>          -> ExecutionEvent
 //
-// with the indexes Fleet_TS, Decision_TS and TeamID_TS. Top blocked binaries
-// and file access events are not read yet; their interfaces exist so the web
+// with the indexes Fleet_TS, Decision_TS and TeamID_TS, and the top lists
+// Rudolph's hourly ranker writes to the same table:
+//
+//	PK=Top#<kind>#<days>                      SK=Current   pointer to the latest snapshot
+//	PK=TopSnapshot#<kind>#<days>#<snapshot>   SK=<rank>    -> TopBinary
+//
+// File access events are not read yet; their interface exists so the web
 // layer and fake can be built first.
 package store
 
 import (
 	"context"
 	"errors"
+	"fmt"
+	"slices"
 	"time"
 )
 
@@ -291,20 +298,63 @@ type FileAccessEventFilter struct {
 	Decision  FileAccessDecision
 }
 
-// BlockedBinary is one row of the "top blocked binaries" summary.
-type BlockedBinary struct {
-	FileSHA256   string
-	FileName     string
-	TeamID       string
-	SigningID    string
-	BlockCount   int
-	MachineCount int
-	LastBlocked  time.Time
+// TopKind selects one of the ranker's lists: binaries blocked or allowed most
+// often.
+type TopKind string
+
+const (
+	TopKindBlocked TopKind = "BLOCKED"
+	TopKindAllowed TopKind = "ALLOWED"
+)
+
+// TopKinds lists every valid TopKind.
+var TopKinds = []TopKind{TopKindBlocked, TopKindAllowed}
+
+// TopWindowDays are the windows, in days ending today (UTC), that Rudolph's
+// hourly ranker computes. No other window exists in the table.
+var TopWindowDays = []int{1, 7, 30, 90}
+
+// TopFilter selects one ranker list.
+type TopFilter struct {
+	Kind       TopKind
+	WindowDays int
 }
 
-// TopBlockedFilter selects the aggregation window.
-type TopBlockedFilter struct {
-	Since time.Time
+// Validate returns ErrInvalidArgument for a kind or window the ranker does
+// not compute.
+func (f TopFilter) Validate() error {
+	if !slices.Contains(TopKinds, f.Kind) {
+		return fmt.Errorf("%w: unknown top list kind %q", ErrInvalidArgument, f.Kind)
+	}
+	if !slices.Contains(TopWindowDays, f.WindowDays) {
+		return fmt.Errorf("%w: top list window %d days is not one of %v", ErrInvalidArgument, f.WindowDays, TopWindowDays)
+	}
+	return nil
+}
+
+// TopBinary is one row of a top list. Count is the number of executions of
+// the list's kind in the window, by execution date. Machines is the number of
+// Macs that uploaded any stored execution of the binary in the window, by
+// upload date; the ranker counts it for the first 100 rows only, so
+// MachinesKnown is false further down.
+type TopBinary struct {
+	FileSHA256    string
+	FileName      string
+	TeamID        string
+	SigningID     string
+	Count         int
+	Machines      int
+	MachinesKnown bool
+}
+
+// TopList is one page of a ranker snapshot, in the snapshot's order (Count,
+// highest first). GeneratedAt is when the ranker built the snapshot; zero
+// when the list has not been computed yet, in which case Items is empty.
+// Every page of one listing comes from the same snapshot.
+type TopList struct {
+	Items       []TopBinary
+	NextCursor  string
+	GeneratedAt time.Time
 }
 
 // MachineReader reads machines and their machine-specific rules.
@@ -330,8 +380,10 @@ type RuleReader interface {
 type EventReader interface {
 	// ListExecutionEvents returns events newest first.
 	ListExecutionEvents(ctx context.Context, f EventFilter, p PageRequest) (Page[ExecutionEvent], error)
-	// TopBlockedBinaries returns binaries by descending block count since f.Since.
-	TopBlockedBinaries(ctx context.Context, f TopBlockedFilter, p PageRequest) (Page[BlockedBinary], error)
+	// TopBinaries returns a page of the ranker's latest list for f, or of the
+	// snapshot a cursor pinned. Returns ErrInvalidArgument for a kind or
+	// window that does not exist.
+	TopBinaries(ctx context.Context, f TopFilter, p PageRequest) (TopList, error)
 	// ListFileAccessEvents returns file access events newest first.
 	ListFileAccessEvents(ctx context.Context, f FileAccessEventFilter, p PageRequest) (Page[FileAccessEvent], error)
 }
@@ -372,8 +424,8 @@ func (Unavailable) ListExecutionEvents(context.Context, EventFilter, PageRequest
 	return Page[ExecutionEvent]{}, ErrUnavailable
 }
 
-func (Unavailable) TopBlockedBinaries(context.Context, TopBlockedFilter, PageRequest) (Page[BlockedBinary], error) {
-	return Page[BlockedBinary]{}, ErrUnavailable
+func (Unavailable) TopBinaries(context.Context, TopFilter, PageRequest) (TopList, error) {
+	return TopList{}, ErrUnavailable
 }
 
 func (Unavailable) ListFileAccessEvents(context.Context, FileAccessEventFilter, PageRequest) (Page[FileAccessEvent], error) {
