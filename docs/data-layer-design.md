@@ -1,12 +1,14 @@
 # Data layer design
 
-Status: proposed 2026-11-04; events scope decided 2026-11-05 (blocked and allowed binaries in v1, see "Decisions" below). Built in rudolph-web so far: steps 1 to 3, 6 and 7 of "Implementation order" (machine list, machine detail, machine rules, global rules all, by type and by policy) and the readers of step 9: execution events (by fleet, Mac, decision or team ID, with its IAM statement) and the top blocked and top allowed lists from Rudolph's ranker snapshots (R8). Prices are us-east-1 on-demand and should be re-checked: DynamoDB $0.625 per million write units, $0.125 per million read units, $0.25/GB-month; Firehose Direct PUT $0.029/GB (each record rounded up to 5 KB); S3 $0.023/GB-month; Athena $5/TB scanned (10 MB minimum per query); CloudWatch Logs $0.50/GB ingested.
+Status: proposed 2026-11-04; events scope decided 2026-11-05 (blocked and allowed binaries in v1, see "Decisions" below). Built: Rudolph's R1 to R8 (R3 included), and in rudolph-web steps 1 to 3, 6, 7 and 9 of "Implementation order" (machine list, machine detail, machine rules, global rules all, by type and by policy; execution events by fleet, Mac, decision or team ID, with its IAM statement; the top blocked and top allowed lists from Rudolph's ranker snapshots). Device groups and group rules, sync health and the copy-and-paste CLI commands were built besides this plan. Not built: R9 and Athena search (step 10, optional) and file access events (v2). Prices are us-east-1 on-demand and should be re-checked: DynamoDB $0.625 per million write units, $0.125 per million read units, $0.25/GB-month; Firehose Direct PUT $0.029/GB (each record rounded up to 5 KB); S3 $0.023/GB-month; Athena $5/TB scanned (10 MB minimum per query); CloudWatch Logs $0.50/GB ingested.
 
 ## Cost yardstick
 
 A Mac syncs at most every 600 s, so 144 syncs a day: 4.32 million syncs a month per 1,000 Macs. One extra write unit per sync costs about $2.70 a month at 1,000 Macs and $270 at 100,000. A steady-state sync uses 3 write units today (COST2 budget: 4). The design adds nothing to a steady-state sync.
 
 ## Findings in the current code (Rudolph)
+
+As found on 2026-11-04. The `Hostname` and `Cert#` findings have since been fixed (R1, and the contract README).
 
 - `pkg/model/sensordata/model.go` stores `Hostname` without `omitempty`, so a Mac without a hostname is stored with `""`. A GSI keyed on it would make preflight's PutItem fail (index keys cannot be empty strings). Must be fixed before any hostname index.
 - Sensor data (about 500 B) is written on every preflight. New GSIs cost nothing per sync only if they project attributes that rarely change: never `Time` or `ExpiresAfter`.
@@ -48,9 +50,9 @@ The machine list's last seen is `LastSeenDay` read as midnight UTC and shown as 
 | R4 | `SerialKey = upper(trim(SerialNum))` on sensor data (omitempty), GSIs `DataType_SerialKey` and `DataType_HostnameKey` (INCLUDE projection above), one per apply | index only | 0 in steady state; an OS, Santa, hostname, mode or user change costs 1 to 2 write units per GSI |
 | R5 | `GlobalRulePolicy` (number) on global rule rows only, GSI `GlobalRulePolicy_SK`, one-off backfill | no | Backfill of 80k rules about $0.10 once |
 | R6 | New table `<prefix>_rudolph_events` (on-demand, TTL, KMS) with GSIs `Fleet_TS`, `Decision_TS`, `TeamID_TS`; read-only IAM for the web role | no | see below |
-| R7 | Event writer in the eventupload Lambda for every uploaded execution event (blocked and allowed); file access, audit and bundle events skipped in v1 | no | An upload without execution events makes no DynamoDB calls |
+| R7 | Event writer in the eventupload Lambda for blocked (`BLOCK_*`) and unknown (`ALLOW_UNKNOWN`) executions, plus allowed-by-rule executions of flagged rules (R7b); file access, audit and bundle events skipped in v1 | no | An upload without execution events makes no DynamoDB calls |
 | R7b | `CollectAllowedEvents` on rule rows, the `EventCollection` index item, CLI flags and warnings; the writer stores allowed-by-rule events only for flagged rules | no | 0 until a rule is flagged |
-| R8 | Hourly ranker Lambda (EventBridge) building top-blocked and top-allowed snapshots for 1, 7, 30 and 90 day windows | no | About $0.10/month at 1k, $6 at 100k |
+| R8 | Hourly ranker Lambda (EventBridge) building top-blocked and top-allowed snapshots for 1, 7, 30 and 90 day windows | no | As built, about $2/month at 1k and $19 at 100k (up to about $70), mostly reading 90 days of day counters; see Rudolph's `docs/events-table.md`, "Top binaries" |
 | R9 (optional) | Firehose: GZIP, `dt=/hour=` prefix, larger buffers, S3 lifecycle, one record per upload; Glue table with partition projection and an Athena workgroup with a scan limit | no | see below |
 
 ## Event store options
@@ -64,7 +66,7 @@ Assumptions: 1,000 events per Mac per day, about 1.5 KB each, blocks 0.5% of eve
 | C. CloudWatch Logs Insights | about $22 | about $2,250 | No page tokens; fine for ad hoc use only |
 | D. DynamoDB table of blocked and file access events, with counters and a ranker | about $0.90 | about $20 to $86 | Real time, one query per page; no allowed binaries |
 
-Decided for v1 (owner, 2026-11-05): **blocked and allowed binaries**, stored as D extended to every uploaded execution event ("D+"). File access, audit and bundle events wait for v2.
+Decided for v1 (owner, 2026-11-05): **blocked and allowed binaries**, stored as D extended to every uploaded execution event ("D+"); allowed-by-rule executions were then limited to flagged rules (see "Collecting allowed events per rule"). File access, audit and bundle events wait for v2.
 
 What Santa uploads decides the cost, not how often binaries run. By default (sync_v1.proto, `enable_all_event_upload` and `disable_unknown_event_upload`) Santa uploads only executions that were blocked or would have been blocked in lockdown: every BLOCK_* decision, plus ALLOW_UNKNOWN on Macs in monitor mode. Executions allowed by a rule are uploaded only when `EnableAllEventUpload` is set, and even then only decisions Santa did not answer from its cache. So by default, "allowed binaries" means the unknown binaries monitor-mode Macs ran, which is the list an admin works through before moving to lockdown.
 
@@ -86,7 +88,7 @@ Use case: Google's team ID is allowed fleet-wide; to find the signing IDs of Gem
 
 Santa has no per-rule upload switch: the Rule message (sync_v1.proto) has no such field, and `enable_all_event_upload` applies to the whole Mac. So the choice is made by Rudolph when it stores events:
 
-- Rule rows get an optional `CollectAllowedEvents` (bool, omitempty). The CLI sets and clears it (`rudolph rule update ... --collect-allowed-events=true|false`, and `rule list` shows it). Rudolph already records rule changes in the feed, but this flag is not sent to Santa, so setting it must not touch the rules feed or `rules_hash`.
+- Rule rows get an optional `CollectAllowedEvents` (bool, omitempty). The CLI sets and clears it (`rudolph rule update ... --collect-allowed-events=true|false`; `rudolph rules` marks flagged rules and `rules export` writes the flag). Rudolph already records rule changes in the feed, but this flag is not sent to Santa, so setting it must not touch the rules feed or `rules_hash`.
 - The event writer stores an allowed-by-rule event (ALLOW_BINARY, ALLOW_CERTIFICATE, ALLOW_TEAMID, ALLOW_SIGNINGID, ALLOW_CDHASH) only if the rule that matched has the flag set. The rule is found from the decision and the event's own fields: `team_id`, `signing_id`, `cdhash`, `file_sha256`, or the leaf certificate's SHA-256. Every event carries `signing_id`, so collecting on the Google team ID lists the signing IDs it allows. Machine rules are looked up as well as global ones, so one Mac can be watched on its own.
 - BLOCK_* and ALLOW_UNKNOWN are stored as before. ALLOW_SCOPE and ALLOW_PLATFORM are not stored in v1.
 - The flagged rules are read from one small index item (`EventCollection` / `Rules`, rewritten by the CLI when a flag changes), cached for 60 s in the Lambda, so the writer makes no extra read per event.
@@ -126,7 +128,7 @@ A (Athena over Firehose) stays an optional later addition for full history beyon
 
 ## Decisions
 
-- 2026-11-05, owner: v1 shows blocked and allowed binaries (every uploaded execution event, D+). File access, audit and bundle events, and full history beyond what Santa uploads, wait for v2.
+- 2026-11-05, owner: v1 shows blocked and allowed binaries (every uploaded execution event, D+), narrowed the same day by the next decision: executions allowed by a rule are stored only for rules flagged for collection. File access, audit and bundle events, and full history beyond what Santa uploads, wait for v2.
 - 2026-11-05, owner: allowed-by-rule events are collected per rule, switched on and off from the CLI (see "Collecting allowed events per rule"); unknown and blocked executions are always stored.
 - Taken as defaults until the owner says otherwise: day-level last seen (R3); events kept 90 days; R9 and Athena left out of v1, so whether Firehose or a SIEM is in use no longer blocks anything.
 
