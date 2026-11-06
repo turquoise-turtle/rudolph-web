@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -125,25 +126,41 @@ func (s *Store) ListGlobalRules(ctx context.Context, f store.RuleFilter, p store
 			return store.Page[store.Rule]{}, fmt.Errorf("%w: unknown rule type %q", store.ErrInvalidArgument, f.RuleType)
 		}
 	}
-	if f.Policy != "" {
-		known := false
-		for _, pol := range store.Policies {
-			known = known || pol == f.Policy
-		}
-		if !known {
-			return store.Page[store.Rule]{}, fmt.Errorf("%w: unknown policy %q", store.ErrInvalidArgument, f.Policy)
-		}
-		// A FilterExpression would apply after Limit and return short pages;
-		// filtering by policy waits for Rudolph's GlobalRulePolicy_SK index.
-		return store.Page[store.Rule]{}, fmt.Errorf("%w: filtering rules by policy needs an index Rudolph does not have yet", store.ErrUnavailable)
-	}
-	return s.queryRules(ctx, ruleQuery{
+	q := ruleQuery{
 		method:    "ListGlobalRules",
 		partition: "GlobalRules",
 		ruleType:  f.RuleType,
 		skPrefix:  prefix,
-	}, p)
+	}
+	if f.Policy != "" {
+		n, ok := policyNumbers[f.Policy]
+		if !ok {
+			return store.Page[store.Rule]{}, fmt.Errorf("%w: unknown policy %q", store.ErrInvalidArgument, f.Policy)
+		}
+		// A FilterExpression would apply after Limit and return short pages,
+		// so a policy reads Rudolph's GlobalRulePolicy_SK index instead.
+		q.index = indexGlobalRulePolicy
+		q.policy = f.Policy
+		q.policyNum = strconv.FormatInt(n, 10)
+	}
+	return s.queryRules(ctx, q, p)
 }
+
+// Rudolph sets GlobalRulePolicy, a copy of Policy, on global rule rows only,
+// and indexes it with SK as the range key.
+const (
+	indexGlobalRulePolicy = "GlobalRulePolicy_SK"
+	attrGlobalRulePolicy  = "GlobalRulePolicy"
+)
+
+// policyNumbers is the inverse of policies, Rudolph's numbering.
+var policyNumbers = func() map[store.Policy]int64 {
+	m := make(map[store.Policy]int64, len(policies))
+	for n, pol := range policies {
+		m[pol] = n
+	}
+	return m
+}()
 
 // Rudolph's machine list indexes. Both are keyed DataType = "SensorData" and
 // project the attributes the list shows, so a page is one Query with no
@@ -283,19 +300,23 @@ func checkLimit(p store.PageRequest) error {
 }
 
 // ruleQuery is one paginated rule list: a partition, optionally narrowed to
-// one rule type's SK prefix.
+// one rule type's SK prefix, or, with a policy, the global rules of that
+// policy from the GlobalRulePolicy_SK index.
 type ruleQuery struct {
 	method    string
 	partition string
 	machineID string
 	ruleType  store.RuleType
 	skPrefix  string
+	index     string
+	policy    store.Policy
+	policyNum string
 }
 
-// fingerprint binds a cursor to the method, machine and filter, but not to
-// the page size, so a reader may change the page size and keep going.
+// fingerprint binds a cursor to the method, machine, index and filter, but
+// not to the page size, so a reader may change the page size and keep going.
 func (q ruleQuery) fingerprint() string {
-	b, _ := json.Marshal([]string{q.method, q.machineID, string(q.ruleType)})
+	b, _ := json.Marshal([]string{q.method, q.machineID, string(q.ruleType), q.index, string(q.policy)})
 	return string(b)
 }
 
@@ -309,8 +330,15 @@ func (s *Store) queryRules(ctx context.Context, q ruleQuery, p store.PageRequest
 		Limit:            aws.Int32(int32(p.Limit)),
 		ScanIndexForward: aws.Bool(true),
 	}
+	if q.index != "" {
+		in.IndexName = aws.String(q.index)
+		in.KeyConditionExpression = aws.String("GlobalRulePolicy = :policy")
+		in.ExpressionAttributeValues = map[string]types.AttributeValue{
+			":policy": &types.AttributeValueMemberN{Value: q.policyNum},
+		}
+	}
 	if q.skPrefix != "" {
-		in.KeyConditionExpression = aws.String("PK = :pk AND begins_with(SK, :prefix)")
+		in.KeyConditionExpression = aws.String(*in.KeyConditionExpression + " AND begins_with(SK, :prefix)")
 		in.ExpressionAttributeValues[":prefix"] = &types.AttributeValueMemberS{Value: q.skPrefix}
 	}
 	if p.Cursor != "" {
@@ -342,15 +370,20 @@ func (s *Store) queryRules(ctx context.Context, q ruleQuery, p store.PageRequest
 }
 
 // encodeCursor serialises a LastEvaluatedKey as a JSON object of its string
-// attributes; encoding/json sorts map keys, so the form is canonical.
+// and number attributes (numbers as their decimal text); encoding/json sorts
+// map keys, so the form is canonical. Decoders know which attributes are
+// numbers.
 func (s *Store) encodeCursor(fingerprint string, key map[string]types.AttributeValue) (string, error) {
 	plain := make(map[string]string, len(key))
 	for name, v := range key {
-		sv, ok := v.(*types.AttributeValueMemberS)
-		if !ok {
-			return "", fmt.Errorf("dynamo: key attribute %s is %T, want a string", name, v)
+		switch v := v.(type) {
+		case *types.AttributeValueMemberS:
+			plain[name] = v.Value
+		case *types.AttributeValueMemberN:
+			plain[name] = v.Value
+		default:
+			return "", fmt.Errorf("dynamo: key attribute %s is %T, want a string or number", name, v)
 		}
-		plain[name] = sv.Value
 	}
 	position, err := json.Marshal(plain)
 	if err != nil {
@@ -382,7 +415,11 @@ func (s *Store) decodeCursor(q ruleQuery, cursor string) (map[string]types.Attri
 	if err != nil {
 		return nil, err
 	}
-	if len(plain) != 2 {
+	want := 2
+	if q.index != "" {
+		want = 3
+	}
+	if len(plain) != want {
 		return nil, store.ErrInvalidCursor
 	}
 	pk, hasPK := plain["PK"]
@@ -390,8 +427,15 @@ func (s *Store) decodeCursor(q ruleQuery, cursor string) (map[string]types.Attri
 	if !hasPK || !hasSK || pk != q.partition || !strings.HasPrefix(sk, q.skPrefix) {
 		return nil, store.ErrInvalidCursor
 	}
-	return map[string]types.AttributeValue{
+	key := map[string]types.AttributeValue{
 		"PK": &types.AttributeValueMemberS{Value: pk},
 		"SK": &types.AttributeValueMemberS{Value: sk},
-	}, nil
+	}
+	if q.index != "" {
+		if plain[attrGlobalRulePolicy] != q.policyNum {
+			return nil, store.ErrInvalidCursor
+		}
+		key[attrGlobalRulePolicy] = &types.AttributeValueMemberN{Value: q.policyNum}
+	}
+	return key, nil
 }
