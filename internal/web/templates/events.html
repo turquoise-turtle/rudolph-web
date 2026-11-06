@@ -1,17 +1,25 @@
 {{define "content"}}
-<form class="filters" method="get" action="/events">
-  <label>Machine ID <input name="machine" value="{{.Filter.MachineID}}" autocomplete="off"></label>
-  <label>Decision
-    <select name="decision">
-      <option value="">Any</option>
-      {{range .Decisions}}<option value="{{.}}"{{if eq . $.Filter.Decision}} selected{{end}}>{{.}}</option>{{end}}
-    </select>
-  </label>
-  <label>Team ID <input name="team_id" value="{{.Filter.TeamID}}" autocomplete="off"></label>
-  <button type="submit">Filter</button>
+<div class="filters">
+  <form method="get" action="/events" role="search" aria-label="Events by machine">
+    <label>Machine ID <input name="machine" value="{{.Filter.MachineID}}" autocomplete="off"></label>
+    <button type="submit">Show</button>
+  </form>
+  <form method="get" action="/events" role="search" aria-label="Events by decision">
+    <label>Decision
+      <select name="decision">
+        <option value="">Any</option>
+        {{range .Decisions}}<option value="{{.}}"{{if eq . $.Filter.Decision}} selected{{end}}>{{.}}</option>{{end}}
+      </select>
+    </label>
+    <button type="submit">Show</button>
+  </form>
+  <form method="get" action="/events" role="search" aria-label="Events by team ID">
+    <label>Team ID <input name="team_id" value="{{.Filter.TeamID}}" autocomplete="off"></label>
+    <button type="submit">Show</button>
+  </form>
   <a href="/events">Clear</a>
-</form>
-<p class="muted">Newest first. Filter by one of machine ID, decision or team ID at a time.</p>
+</div>
+<p class="hint">Newest first. Each filter replaces the others.</p>
 {{if .Events}}
 <div class="scroll">
 <table>
