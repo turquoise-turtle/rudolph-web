@@ -225,7 +225,7 @@ func TestListExecutionEvents_NewestFirstAndFilters(t *testing.T) {
 	if got := names(store.EventFilter{Decision: store.DecisionBlockUnknown}); got != "[mid old]" {
 		t.Errorf("decision: %s", got)
 	}
-	if got := names(store.EventFilter{TeamID: "T1"}); got != "[mid old]" && got != "[mid]" {
+	if got := names(store.EventFilter{TeamID: "T1"}); got != "[mid old]" {
 		t.Errorf("team: %s", got)
 	}
 	// Like the DynamoDB store (one index per filter), several filters at once are refused.
