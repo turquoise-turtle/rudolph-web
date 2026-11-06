@@ -57,7 +57,7 @@ func TestListMachines_CursorWalksAllPagesWithoutOverlap(t *testing.T) {
 func TestListMachines_ExactMultipleHasNoEmptyTrailingPage(t *testing.T) {
 	s := fake.New()
 	for i := 0; i < 4; i++ {
-		s.AddMachine(store.Machine{MachineID: fmt.Sprintf("m-%d", i)})
+		s.AddMachine(store.Machine{MachineID: fmt.Sprintf("m-%d", i), SerialNum: fmt.Sprintf("SN%d", i)})
 	}
 	page, err := s.ListMachines(ctx, store.MachineFilter{}, store.PageRequest{Limit: 4})
 	if err != nil {
@@ -103,8 +103,8 @@ func TestListMachines_PrefixFilters(t *testing.T) {
 
 func TestPaging_RejectsBadLimitsAndCursors(t *testing.T) {
 	s := fake.New()
-	s.AddMachine(store.Machine{MachineID: "a"})
-	s.AddMachine(store.Machine{MachineID: "b"})
+	s.AddMachine(store.Machine{MachineID: "a", SerialNum: "SNA"})
+	s.AddMachine(store.Machine{MachineID: "b", SerialNum: "SNB"})
 
 	for _, limit := range []int{0, -1, store.MaxPageSize + 1} {
 		if _, err := s.ListMachines(ctx, store.MachineFilter{}, store.PageRequest{Limit: limit}); !errors.Is(err, store.ErrInvalidArgument) {
@@ -282,7 +282,7 @@ func TestListFileAccessEvents(t *testing.T) {
 
 func TestCalls_AreRecordedAndResettable(t *testing.T) {
 	s := fake.New()
-	s.AddMachine(store.Machine{MachineID: "m1"})
+	s.AddMachine(store.Machine{MachineID: "m1", SerialNum: "SN1"})
 	_, _ = s.ListMachines(ctx, store.MachineFilter{HostnamePrefix: "h"}, store.PageRequest{Limit: 5, Cursor: ""})
 	_, _ = s.GetMachine(ctx, "m1")
 	_, _ = s.ListMachineRules(ctx, "m1", store.PageRequest{Limit: 7})
@@ -318,5 +318,20 @@ func TestSetError_FailsEveryRead(t *testing.T) {
 	}
 	if _, err := s.ListExecutionEvents(ctx, store.EventFilter{}, store.PageRequest{Limit: 1}); !errors.Is(err, boom) {
 		t.Errorf("ListExecutionEvents err %v", err)
+	}
+}
+
+// Like Rudolph's serial index, the unfiltered list leaves out Macs that report no serial; hostname search finds them.
+func TestListMachines_MacsWithoutSerialOnlyByHostname(t *testing.T) {
+	s := fake.New()
+	s.AddMachine(store.Machine{MachineID: "with", SerialNum: "C02AAA", Hostname: "with-serial"})
+	s.AddMachine(store.Machine{MachineID: "without", Hostname: "no-serial"})
+	page, err := s.ListMachines(context.Background(), store.MachineFilter{}, store.PageRequest{Limit: 10})
+	if err != nil || len(page.Items) != 1 || page.Items[0].MachineID != "with" {
+		t.Errorf("unfiltered: %v %+v, want only the Mac with a serial", err, page.Items)
+	}
+	page, err = s.ListMachines(context.Background(), store.MachineFilter{HostnamePrefix: "no-"}, store.PageRequest{Limit: 10})
+	if err != nil || len(page.Items) != 1 || page.Items[0].MachineID != "without" {
+		t.Errorf("by hostname: %v %+v, want the Mac without a serial", err, page.Items)
 	}
 }
