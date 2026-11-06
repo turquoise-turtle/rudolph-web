@@ -8,6 +8,7 @@ package dynamo
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -19,9 +20,11 @@ import (
 
 // Sort keys of the rows in a Machine#<id> partition.
 const (
-	skCurrent   = "Current"
-	skSyncState = "SyncState"
-	skConfig    = "Config"
+	skCurrent        = "Current"
+	skSyncState      = "SyncState"
+	skConfig         = "Config"
+	skGroups         = "Groups"
+	skReportedGroups = "ReportedGroups"
 )
 
 var ruleTypes = map[int64]store.RuleType{
@@ -51,8 +54,9 @@ var clientModes = map[int64]store.ClientMode{
 }
 
 // DecodeMachinePartition decodes every row of one Machine#<id> partition:
-// sensor data (SK=Current), sync state (SK=SyncState) and machine config
-// (SK=Config). Rows with other sort keys are ignored so that Rudolph can add
+// sensor data (SK=Current), sync state (SK=SyncState), machine config
+// (SK=Config), the Mac's groups (SK=Groups) and the groups Santa reported
+// (SK=ReportedGroups). Rows with other sort keys are ignored so that Rudolph can add
 // row kinds without breaking the web layer. A partition without sensor data
 // (expired, or holding only a machine config) is store.ErrNotFound.
 func DecodeMachinePartition(items []map[string]types.AttributeValue) (store.MachineDetail, error) {
@@ -74,6 +78,11 @@ func DecodeMachinePartition(items []map[string]types.AttributeValue) (store.Mach
 			d.ConfiguredClientMode = r.configClientMode()
 			d.TemporaryClientMode, d.TemporaryClientModeUntil = r.configTemporaryClientMode()
 			d.CleanSyncRequested = r.configCleanSync()
+		case skGroups:
+			d.AssignedGroups = sortedStrings(stringList(it["Assigned"]))
+			d.ReportedGroups = sortedStrings(stringList(it["Reported"]))
+		case skReportedGroups:
+			d.ReportedAsSent = stringList(it["PrimaryUserGroups"])
 		}
 		if r.err != nil {
 			return store.MachineDetail{}, fmt.Errorf("dynamo: decoding %s row %q: %w", r.str("PK"), sk, r.err)
@@ -250,6 +259,58 @@ func (r *reader) configNum(name string) (int64, bool) {
 	}
 	n, err := strconv.ParseInt(v.Value, 10, 64)
 	return n, err == nil
+}
+
+// stringList reads a string set or a list of strings. The groups rows are
+// optional extras on the machine page, so a mistyped value, or a mistyped
+// element, is left out instead of failing the page.
+func stringList(v types.AttributeValue) []string {
+	var out []string
+	switch v := v.(type) {
+	case *types.AttributeValueMemberSS:
+		out = append(out, v.Value...)
+	case *types.AttributeValueMemberL:
+		for _, e := range v.Value {
+			if s, ok := e.(*types.AttributeValueMemberS); ok {
+				out = append(out, s.Value)
+			}
+		}
+	}
+	return out
+}
+
+// sortedStrings sorts a set DynamoDB returns in no particular order.
+func sortedStrings(s []string) []string {
+	slices.Sort(s)
+	return s
+}
+
+// DecodeGroupRegistry decodes the GroupRegistry/Current item: its Groups map,
+// name to entry, sorted by name. An entry that is not a map is skipped, and a
+// mistyped Description or AcceptReported is shown as empty or false, so one
+// bad entry does not hide the others.
+func DecodeGroupRegistry(item map[string]types.AttributeValue) []store.Group {
+	m, ok := item["Groups"].(*types.AttributeValueMemberM)
+	if !ok {
+		return nil
+	}
+	groups := make([]store.Group, 0, len(m.Value))
+	for name, v := range m.Value {
+		entry, ok := v.(*types.AttributeValueMemberM)
+		if !ok {
+			continue
+		}
+		g := store.Group{Name: name}
+		if d, ok := entry.Value["Description"].(*types.AttributeValueMemberS); ok {
+			g.Description = d.Value
+		}
+		if a, ok := entry.Value["AcceptReported"].(*types.AttributeValueMemberBOOL); ok {
+			g.AcceptReported = a.Value
+		}
+		groups = append(groups, g)
+	}
+	slices.SortFunc(groups, func(a, b store.Group) int { return strings.Compare(a.Name, b.Name) })
+	return groups
 }
 
 func enum[T ~string](n int64, known map[int64]T) T {

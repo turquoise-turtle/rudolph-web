@@ -31,6 +31,13 @@
 </dl>
 </section>
 <p><a href="{{eventsForMachineURL .MachineID}}">Events for this machine</a></p>
+<h2>Groups</h2>
+<dl>
+  <dt>Assigned in Rudolph</dt><dd>{{range $i, $g := .AssignedGroups}}{{if $i}}, {{end}}<a href="{{groupURL $g}}">{{$g}}</a>{{else}}none{{end}}</dd>
+  <dt>Reported and counted</dt><dd>{{range $i, $g := .ReportedGroups}}{{if $i}}, {{end}}<a href="{{groupURL $g}}">{{$g}}</a>{{else}}none{{end}}</dd>
+  <dt>Reported by Santa (as sent)</dt><dd>{{range $i, $g := .ReportedAsSent}}{{if $i}}, {{end}}{{$g}}{{else}}none{{end}}</dd>
+  {{if and (not .AssignedGroups) (not .ReportedGroups)}}<dt>Effective</dt><dd><a href="{{groupURL ungrouped}}">Ungrouped</a> <span class="muted">(gets the rules for Macs in no group)</span></dd>{{end}}
+</dl>
 {{end}}
 <h2>Sync health</h2>
 {{with .Health}}

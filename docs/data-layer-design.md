@@ -23,8 +23,10 @@ A Mac syncs at most every 600 s, so 144 syncs a day: 4.32 million syncs a month 
 | Machines, serial prefix | Same index, `begins_with(SerialKey, upper(trim(p)))` (case-insensitive; SerialNum stays as reported and is what the page shows, since some VMs report mixed-case serials) |
 | Machines, hostname prefix | Query GSI `DataType_HostnameKey`: `begins_with(HostnameKey, lower(trim(p)))` (case-insensitive) |
 | Machine list projection | INCLUDE MachineID, SerialNum, Hostname, ModelIdentifier, OSVersion, SantaVersion, ClientMode, PrimaryUser, `LastSeenDay`. About 4 read units per page of 100. |
-| Machine detail | Query `PK = Machine#<id>`, Limit 5: config, current sensor data and sync state in one call, leaving out tracking internals. No sensor data row (90-day TTL) means not found. |
+| Machine detail | Query `PK = Machine#<id>`, `SK BETWEEN Config AND SyncState`, Limit 8: config, current sensor data, groups (`Groups`), groups as sent (`ReportedGroups`) and sync state in one call, leaving out tracking internals. No sensor data row (90-day TTL) means not found. |
 | Machine rules | Query `PK = MachineRules#<id>`; state (in force, removing, expired) computed per the contract |
+| Groups | GetItem `GroupRegistry` / `Current`, sorted by name; no item means no groups. `rudolph:ungrouped` is never registered and is always listed. A group page answers 404 for a name not in the registry. |
+| Group rules | Query `PK = GroupRules#<group>`, Limit = page size; the cursor is bound to the method and the group. |
 | Global rules, all or by type | Query `PK = GlobalRules` [`begins_with(SK, "Binary#" / "Cert#" / "TeamID#" / "SigningID#" / "CDHash#")`] |
 | Global rules by policy | Query GSI `GlobalRulePolicy_SK`, `GlobalRulePolicy = :n`, plus `begins_with(SK)` when a rule type is also given (never a FilterExpression: Limit applies before the filter, so pages would come back short). The cursor is the index key: PK, SK and GlobalRulePolicy. |
 | Execution events (blocked and allowed) | New events table: per machine `PK = Exec#<m>` newest first; fleet-wide GSI `Fleet_TS`; by decision `Decision_TS`; by team ID `TeamID_TS`. Combined filters are refused in v1. |

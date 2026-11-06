@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -28,9 +29,9 @@ type Call struct {
 }
 
 // Paginated reports whether the call was a paginated list query (as opposed to
-// a bounded point read such as GetMachine).
+// a bounded point read such as GetMachine or ListGroups, one registry item).
 func (c Call) Paginated() bool {
-	return c.Method != "GetMachine"
+	return c.Method != "GetMachine" && c.Method != "ListGroups"
 }
 
 // Store is an in-memory store.Reader. The zero value is not usable; use New.
@@ -43,6 +44,9 @@ type Store struct {
 	cleanSyncs   map[string]bool
 	globalRules  map[string]store.Rule
 	machineRules map[string]map[string]store.Rule
+	groups       map[string]store.Group
+	groupRules   map[string]map[string]store.Rule
+	machineGrps  map[string]machineGroups
 	execEvents   []store.ExecutionEvent
 	faaEvents    []store.FileAccessEvent
 	topLists     map[store.TopFilter]topList
@@ -71,6 +75,9 @@ func New() *Store {
 		cleanSyncs:   map[string]bool{},
 		globalRules:  map[string]store.Rule{},
 		machineRules: map[string]map[string]store.Rule{},
+		groups:       map[string]store.Group{},
+		groupRules:   map[string]map[string]store.Rule{},
+		machineGrps:  map[string]machineGroups{},
 		topLists:     map[store.TopFilter]topList{},
 	}
 }
@@ -142,6 +149,39 @@ func (s *Store) AddMachineRule(machineID string, r store.Rule) {
 		s.machineRules[machineID] = map[string]store.Rule{}
 	}
 	s.machineRules[machineID][ruleKey(r)] = r
+}
+
+type machineGroups struct {
+	assigned, reported, reportedAsSent []string
+}
+
+// AddGroup inserts or replaces a registered group.
+func (s *Store) AddGroup(g store.Group) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.groups[g.Name] = g
+}
+
+// AddGroupRule inserts or replaces a rule of a group.
+func (s *Store) AddGroupRule(group string, r store.Rule) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.groupRules[group] == nil {
+		s.groupRules[group] = map[string]store.Rule{}
+	}
+	s.groupRules[group][ruleKey(r)] = r
+}
+
+// SetMachineGroups sets a Mac's assigned groups, its reported groups that
+// count, and the groups Santa reported as sent.
+func (s *Store) SetMachineGroups(machineID string, assigned, reported, reportedAsSent []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.machineGrps[machineID] = machineGroups{
+		assigned:       slices.Sorted(slices.Values(assigned)),
+		reported:       slices.Sorted(slices.Values(reported)),
+		reportedAsSent: slices.Clone(reportedAsSent),
+	}
 }
 
 // AddExecutionEvent appends an execution event.
@@ -242,6 +282,11 @@ func (s *Store) GetMachine(_ context.Context, machineID string) (store.MachineDe
 		TemporaryClientModeUntil: tm.until,
 		CleanSyncRequested:       s.cleanSyncs[machineID],
 	}
+	if g, ok := s.machineGrps[machineID]; ok {
+		d.AssignedGroups = slices.Clone(g.assigned)
+		d.ReportedGroups = slices.Clone(g.reported)
+		d.ReportedAsSent = slices.Clone(g.reportedAsSent)
+	}
 	if st, ok := s.syncStates[machineID]; ok {
 		d.Sync = &st
 	}
@@ -277,6 +322,35 @@ func (s *Store) ListGlobalRules(_ context.Context, f store.RuleFilter, p store.P
 		keyed = append(keyed, keyedItem[store.Rule]{key: k, item: r})
 	}
 	return paginate(s.cursors, keyed, fingerprint("ListGlobalRules", "", f), p)
+}
+
+// ListGroups implements store.GroupReader.
+func (s *Store) ListGroups(context.Context) ([]store.Group, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.record(Call{Method: "ListGroups"}); err != nil {
+		return nil, err
+	}
+	groups := make([]store.Group, 0, len(s.groups))
+	for _, g := range s.groups {
+		groups = append(groups, g)
+	}
+	slices.SortFunc(groups, func(a, b store.Group) int { return strings.Compare(a.Name, b.Name) })
+	return groups, nil
+}
+
+// ListGroupRules implements store.GroupReader.
+func (s *Store) ListGroupRules(_ context.Context, group string, p store.PageRequest) (store.Page[store.Rule], error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.record(Call{Method: "ListGroupRules", Filter: group, Page: p}); err != nil {
+		return store.Page[store.Rule]{}, err
+	}
+	var keyed []keyedItem[store.Rule]
+	for k, r := range s.groupRules[group] {
+		keyed = append(keyed, keyedItem[store.Rule]{key: k, item: r})
+	}
+	return paginate(s.cursors, keyed, fingerprint("ListGroupRules", "", group), p)
 }
 
 // ListExecutionEvents implements store.EventReader. Like the DynamoDB reader,

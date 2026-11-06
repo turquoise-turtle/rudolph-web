@@ -1,0 +1,34 @@
+{{define "content"}}
+<dl>
+  <dt>Name</dt><dd><code>{{.Group.Name}}</code></dd>
+  {{if eq .Group.Name ungrouped}}
+  <dt>Members</dt><dd>Every Mac in no group</dd>
+  {{else}}
+  <dt>Description</dt><dd>{{orDash .Group.Description}}</dd>
+  <dt>Reported membership counts</dt><dd>{{if .Group.AcceptReported}}yes{{else}}no{{end}}</dd>
+  {{end}}
+</dl>
+<h2>Rules</h2>
+{{if .Rules}}
+<div class="scroll">
+<table>
+<thead><tr><th>Type</th><th>Policy</th><th>Identifier</th><th>Custom message</th><th>Description</th><th>State</th></tr></thead>
+<tbody>
+{{range .Rules}}
+<tr data-row>
+  <td>{{.RuleType}}</td>
+  <td>{{.Policy}}</td>
+  <td><code>{{.Identifier}}</code>{{with .CELExpr}}<br><code class="cel">{{.}}</code>{{end}}</td>
+  <td>{{.CustomMessage}}{{with .CustomURL}}<br><span class="muted">{{.}}</span>{{end}}</td>
+  <td>{{.Description}}</td>
+  <td>{{with .State}}{{.}}{{else}}—{{end}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+</div>
+{{else}}
+<p>No rules for this group.</p>
+{{end}}
+{{template "pager" .Pager}}
+{{end}}
