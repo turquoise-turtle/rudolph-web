@@ -223,7 +223,8 @@ func TestListExecutionEvents_UndecodableRowIsSkipped(t *testing.T) {
 	bad := map[string]types.AttributeValue{
 		"PK": &types.AttributeValueMemberS{Value: "Exec#" + machineA}, "SK": &types.AttributeValueMemberS{Value: "99999999999999999999#bad#1"},
 		"MachineID": &types.AttributeValueMemberS{Value: machineA}, "TS": &types.AttributeValueMemberS{Value: "not-a-time"},
-		"Fleet": &types.AttributeValueMemberS{Value: "Exec"}, "Decision": &types.AttributeValueMemberN{Value: "3"},
+		"Fleet": &types.AttributeValueMemberS{Value: "Exec"}, "Decision": &types.AttributeValueMemberS{Value: "BLOCK_BINARY"},
+		"FileName": &types.AttributeValueMemberN{Value: "3"},
 	}
 	if _, err := ddblocal.Raw(t).PutItem(ctx, &awsdynamodb.PutItemInput{TableName: aws.String(ddblocal.EventsTableName), Item: bad}); err != nil {
 		t.Fatal(err)
