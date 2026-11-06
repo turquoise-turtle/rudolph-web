@@ -576,3 +576,45 @@ func TestPoliciesIncludeTransitive(t *testing.T) {
 		t.Error(fmt.Sprintf("store.Policies lacks %s", store.PolicyAllowlistTransitive))
 	}
 }
+
+// Sync health reads the machine config row's temporary client mode (Rudolph's TemporaryClientMode and
+// TemporaryClientModeExpiresAt, Unix seconds) and its clean sync request (CleanSync). Values are passed on as stored;
+// whether a temporary mode is still running is decided when the page is shown. Mistyped values are left out, as
+// Rudolph ignores them.
+func TestDecodeMachinePartition_TemporaryModeAndCleanSync(t *testing.T) {
+	until := time.Date(2026, 11, 6, 20, 0, 0, 0, time.UTC)
+	config := clone(row(t, "Machine#"+machineB, "Config"))
+	config["PK"] = &types.AttributeValueMemberS{Value: "Machine#" + machineA}
+	config["TemporaryClientMode"] = n(1)
+	config["TemporaryClientModeExpiresAt"] = n(int(until.Unix()))
+	config["CleanSync"] = &types.AttributeValueMemberBOOL{Value: true}
+	got, err := dynamo.DecodeMachinePartition(append(rowsWithPK(t, "Machine#"+machineA), config))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.TemporaryClientMode != store.ClientModeMonitor || !got.TemporaryClientModeUntil.Equal(until) || !got.CleanSyncRequested {
+		t.Errorf("temporary %q until %v, clean sync %v; want MONITOR until %v and true", got.TemporaryClientMode, got.TemporaryClientModeUntil, got.CleanSyncRequested, until)
+	}
+
+	for name, bad := range map[string]item{
+		"mode is a string":   {"TemporaryClientMode": &types.AttributeValueMemberS{Value: "MONITOR"}, "TemporaryClientModeExpiresAt": n(int(until.Unix()))},
+		"no expiry":          {"TemporaryClientMode": n(1)},
+		"expiry is a string": {"TemporaryClientMode": n(1), "TemporaryClientModeExpiresAt": &types.AttributeValueMemberS{Value: "soon"}},
+		"clean sync string":  {"CleanSync": &types.AttributeValueMemberS{Value: "true"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := clone(row(t, "Machine#"+machineB, "Config"))
+			c["PK"] = &types.AttributeValueMemberS{Value: "Machine#" + machineA}
+			for k, v := range bad {
+				c[k] = v
+			}
+			got, err := dynamo.DecodeMachinePartition(append(rowsWithPK(t, "Machine#"+machineA), c))
+			if err != nil {
+				t.Fatalf("a mistyped value broke the machine page: %v", err)
+			}
+			if got.TemporaryClientMode != "" || !got.TemporaryClientModeUntil.IsZero() || got.CleanSyncRequested {
+				t.Errorf("got temporary %q until %v, clean sync %v; want none", got.TemporaryClientMode, got.TemporaryClientModeUntil, got.CleanSyncRequested)
+			}
+		})
+	}
+}
