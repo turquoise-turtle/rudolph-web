@@ -13,3 +13,8 @@ bootstrap
 *.tfstate
 *.tfstate.*
 crash.log
+
+# Environments hold the account ID, tenant and client IDs and the domain. new_env.sh also writes a
+# .gitignore into each, but a directory made by hand has none.
+/deployments/environments/*
+!/deployments/environments/example/

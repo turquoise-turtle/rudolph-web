@@ -75,6 +75,8 @@ committed and ends up in the state.
 | `route53_zone_name` | `""` | Hosted zone for the alias record and certificate validation. |
 | `use_existing_route53_zone` | `true` | Look the zone up instead of creating it. |
 | `cloudfront_price_class` | `"PriceClass_100"` | Cheapest class covering North America and Europe. |
+| `monthly_budget_usd` | `0` | Monthly AWS Budgets cost budget in USD for resources tagged `Name = rudolph-web`. `0` creates no budget. It alerts and never caps spending; see [docs/deploy.md](../../../docs/deploy.md#the-monthly-cost-budget). |
+| `budget_alert_emails` | `[]` | Where the budget emails at 80% and 100% of actual spend and 100% of forecast spend. Required when `monthly_budget_usd` is above `0`. |
 | `tags` | `{}` | Extra tags merged into every taggable resource. |
 
 ### `_outputs.tf`

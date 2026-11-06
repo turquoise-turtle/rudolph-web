@@ -91,8 +91,7 @@ export ENV=prod
 make init-env
 ```
 
-That copies the example into `deployments/environments/prod/` (which is gitignored, since it holds
-account specific settings). Edit two files:
+That copies the example into `deployments/environments/prod/`. Edit two files:
 
 * **`_backend.tf`** — the state bucket, key, region and KMS key, and the region of the two AWS
   providers. Keep the `aws.us_east_1` alias even if you deploy elsewhere and disable CloudFront:
@@ -102,6 +101,16 @@ account specific settings). Edit two files:
 
 At a minimum set `aws_account_id`, `region`, `prefix`, `tenant_id`, `client_id` and
 `dynamodb_table_name`, and `events_dynamodb_table_name` to show execution events and the top lists. Set `cli_env` too if the copy-and-paste commands should name the Rudolph environment.
+
+Environment directories hold the account ID, the tenant and client IDs and the domain, so Git never sees them: the repository's `.gitignore` ignores everything under `deployments/environments/` except `example/`, and `make init-env` also writes a `.gitignore` of `*` into the new directory. Keep your own copy of an environment's `_backend.tf` and `config.auto.tfvars.json` somewhere safe; they are not in the repository.
+
+### The monthly cost budget
+
+Set `monthly_budget_usd` (for example `10`) and `budget_alert_emails` to give rudolph-web its own AWS Budgets cost budget. It emails every address when actual spend passes 80% and 100% of the amount, and when forecast spend for the month passes 100%. `0`, the default, creates no budget, and a budget above `0` with no addresses fails the plan.
+
+A budget **only alerts**: it never stops, throttles or caps anything, and rudolph-web keeps running and costing money past it.
+
+The account may hold other resources, so the budget counts only costs tagged `Name = rudolph-web`, which every rudolph-web resource carries (the module's own tags and the provider default tag in `_backend.tf`; do not override `Name` in `tags`). AWS ignores a tag in budgets until it is a cost allocation tag: once, in the management (payer) account, open Billing and Cost Management, Cost allocation tags, and activate the user-defined tag `Name`. It only appears there after a tagged resource has existed for a while (up to a day), it only counts costs from activation onwards, and until it is active the budget reports nothing.
 
 ---
 
@@ -224,6 +233,7 @@ or on a 403 if your account has neither role.
 | `aws_cloudfront_origin_request_policy` | what CloudFront forwards to the function |
 | `aws_acm_certificate` (+ validation) | us-east-1, only when a custom domain needs one |
 | `aws_route53_record` | validation record and the A/AAAA aliases |
+| `aws_budgets_budget` | `<prefix>_rudolph_web_monthly`, only with `monthly_budget_usd` above 0 |
 
 ### The role
 

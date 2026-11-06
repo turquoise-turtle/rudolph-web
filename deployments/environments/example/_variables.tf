@@ -156,3 +156,15 @@ variable "tags" {
   description = "Extra tags merged into every taggable resource"
   default     = {}
 }
+
+variable "monthly_budget_usd" {
+  type        = number
+  description = "Monthly cost budget in USD for resources tagged Name = rudolph-web. 0 creates no budget"
+  default     = 0
+}
+
+variable "budget_alert_emails" {
+  type        = list(string)
+  description = "Addresses the budget alerts go to; required when monthly_budget_usd is above 0"
+  default     = []
+}

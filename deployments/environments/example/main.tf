@@ -44,5 +44,9 @@ module "rudolph_web" {
   use_existing_route53_zone = var.use_existing_route53_zone
   cloudfront_price_class    = var.cloudfront_price_class
 
+  # Optional monthly cost budget; alerts only, never caps spending.
+  monthly_budget_usd  = var.monthly_budget_usd
+  budget_alert_emails = var.budget_alert_emails
+
   tags = var.tags
 }

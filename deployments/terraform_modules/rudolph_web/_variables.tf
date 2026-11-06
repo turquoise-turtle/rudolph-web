@@ -209,3 +209,20 @@ variable "tags" {
   description = "Extra tags merged into the tags of every taggable resource."
   default     = {}
 }
+
+variable "monthly_budget_usd" {
+  type        = number
+  description = "Monthly AWS Budgets cost budget in USD for resources tagged Name = rudolph-web. 0 creates no budget. Alerts only; it never caps spending."
+  default     = 0
+
+  validation {
+    condition     = var.monthly_budget_usd >= 0
+    error_message = "monthly_budget_usd must be 0 (no budget) or more."
+  }
+}
+
+variable "budget_alert_emails" {
+  type        = list(string)
+  description = "Addresses the budget emails at 80% and 100% of actual spend and 100% of forecast spend. Required when monthly_budget_usd is above 0."
+  default     = []
+}
