@@ -11,7 +11,7 @@ Admins use it to see:
   Its "Sync health" section lists signs that a Mac is not syncing as it should: not seen for more than a day, a last sync without postflight 30 minutes after its preflight, a pending clean sync request, and a temporary client mode (running, ended, or ignored because it ends more than 30 days ahead).
 - **Global rules**: a paginated list you can filter by rule type and policy.
 - **Execution events**: a paginated list you can filter by machine, decision and team ID.
-- **Top blocked binaries**: the binaries blocked most often in a time window.
+- **Top blocked and top allowed binaries**: the binaries blocked or allowed most often in the last 1, 7, 30 or 90 days, as computed every hour by Rudolph's ranker, with the time the list was generated and a warning when that is more than 3 hours ago.
 
 v1 is read-only. `/admin` is a placeholder for future write actions and needs the
 `Rudolph.Admin` role.
@@ -82,17 +82,10 @@ The read models follow Rudolph's single-table DynamoDB layout (`PK`/`SK`):
 | `store.Rule` (global) | `PK=GlobalRules, SK=<Type>#<identifier>` |
 | `store.Rule` (machine) | `PK=MachineRules#<id>` |
 | `store.ExecutionEvent` | events table: `PK=Exec#<id>, SK=<TS>#<sha256>#<pid>`, indexes `Fleet_TS`, `Decision_TS`, `TeamID_TS` |
-| `store.BlockedBinary`, `store.FileAccessEvent` | not read yet: interface + fake only |
+| `store.TopBinary` | events table: pointer `PK=Top#<Blocked or Allowed>#<days>, SK=Current` (Snapshot, GeneratedAt), rows `PK=TopSnapshot#<kind>#<days>#<snapshot>, SK=<rank>` written by Rudolph's hourly ranker |
+| `store.FileAccessEvent` | not read yet: interface + fake only |
 
-`internal/store/dynamo` reads the machine list (all, or by serial or hostname prefix), machine detail, machine rules and global rules (all, or by rule type, policy or both) from Rudolph's table, each page with one bounded Query. The machine list reads Rudolph's `DataType_SerialKey` and `DataType_HostnameKey` indexes and the policy filter reads `GlobalRulePolicy_SK`, so they need a Rudolph version that has them; its last seen is a UTC date (`LastSeenDay`), while the machine detail page shows the exact time. `cmd/lambda` uses it when `RUDOLPH_WEB_DYNAMODB_TABLE` is set, and serves 503 for every data page otherwise. Execution events come from Rudolph's separate events table, named by `RUDOLPH_WEB_EVENTS_TABLE`, newest first: all of them (`Fleet_TS`), one Mac's (its `Exec#<id>` partition), one decision's (`Decision_TS`) or one team ID's (`TeamID_TS`), one bounded Query per page. Filters are used one at a time; a combination answers 400. Decisions the view does not know, such as `ALLOW_PLATFORM`, are shown as stored. An event row the reader cannot decode is logged and skipped, so its page may be short, rather than failing the page and hiding every older event until the row expires. Without the events table the events page answers 503; top blocked binaries and file access events still answer 503 (see [docs/data-layer-design.md](docs/data-layer-design.md)).
-
-One thing the event implementation will need:
-
-- **Top blocked binaries.** Ranking by block count cannot come from one bounded
-  query over raw events, so this view assumes a precomputed aggregate (for example
-  a per-day, per-binary counter item updated on event upload) that can be read in
-  key order and paginated. Its next links carry the window start, so later pages
-  read exactly the window the first page did.
+`internal/store/dynamo` reads the machine list (all, or by serial or hostname prefix), machine detail, machine rules and global rules (all, or by rule type, policy or both) from Rudolph's table, each page with one bounded Query. The machine list reads Rudolph's `DataType_SerialKey` and `DataType_HostnameKey` indexes and the policy filter reads `GlobalRulePolicy_SK`, so they need a Rudolph version that has them; its last seen is a UTC date (`LastSeenDay`), while the machine detail page shows the exact time. `cmd/lambda` uses it when `RUDOLPH_WEB_DYNAMODB_TABLE` is set, and serves 503 for every data page otherwise. Execution events come from Rudolph's separate events table, named by `RUDOLPH_WEB_EVENTS_TABLE`, newest first: all of them (`Fleet_TS`), one Mac's (its `Exec#<id>` partition), one decision's (`Decision_TS`) or one team ID's (`TeamID_TS`), one bounded Query per page. Filters are used one at a time; a combination answers 400. Decisions the view does not know, such as `ALLOW_PLATFORM`, are shown as stored. An event row the reader cannot decode is logged and skipped, so its page may be short, rather than failing the page and hiding every older event until the row expires. The top blocked and top allowed lists (`/events/top-blocked` and `/events/top-allowed`, `days` 1, 7, 30 or 90, default 7) come from the same table: Rudolph's hourly ranker writes each list as a snapshot and moves a pointer to it, and a page reads the pointer (one GetItem) and one page of the snapshot (one Query). The cursor pins the snapshot, so later pages stay consistent when the ranker runs meanwhile, and is bound to the kind and window. A list whose pointer does not exist yet shows "This list has not been computed yet". Machine counts exist for the first 100 rows of each list only and show as "—" further down. Without the events table the events and top list pages answer 503; file access events still answer 503 (see [docs/data-layer-design.md](docs/data-layer-design.md)).
 
 ## Authentication and authorization
 

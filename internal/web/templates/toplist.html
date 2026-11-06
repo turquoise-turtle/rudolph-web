@@ -1,0 +1,37 @@
+{{define "content"}}
+<div class="filters">
+  <nav class="choices" aria-label="Time window">
+    <span class="muted">Last</span>
+    {{range .Windows}}<a href="{{.URL}}"{{if .Current}} aria-current="page"{{end}}>{{.Days}} {{if eq .Days 1}}day{{else}}days{{end}}</a>{{end}}
+  </nav>
+  <a href="{{.OtherURL}}">{{.OtherTitle}}</a>
+</div>
+{{if .Computed}}
+<p class="hint">Binaries with the most {{.List.Noun}} in the last {{.Days}} {{if eq .Days 1}}day (today so far, UTC){{else}}days (UTC){{end}}, highest first. Generated {{ts .GeneratedAt}} by Rudolph's hourly ranker. Machines counts the Macs that uploaded any stored execution of the binary in the window; it is counted for the first 100 binaries only.</p>
+{{if .Stale}}<p class="error" role="status"><strong>Warning:</strong> this list was generated more than 3 hours ago. Rudolph's ranker normally runs every hour; check that it is still running.</p>{{end}}
+{{if .Binaries}}
+<div class="scroll">
+<table>
+<thead><tr><th scope="col">File</th><th scope="col">SHA-256</th><th scope="col">Team ID</th><th scope="col">Signing ID</th><th scope="col">Executions</th><th scope="col">Machines</th></tr></thead>
+<tbody>
+{{range .Binaries}}
+<tr data-row>
+  <td>{{orDash .FileName}}</td>
+  <td><code>{{.FileSHA256}}</code></td>
+  <td>{{orDash .TeamID}}</td>
+  <td>{{orDash .SigningID}}</td>
+  <td class="num">{{.Count}}</td>
+  <td class="num">{{if .MachinesKnown}}{{.Machines}}{{else}}—{{end}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+</div>
+{{else}}
+<p>No {{.List.Noun}} in this window.</p>
+{{end}}
+{{template "pager" .Pager}}
+{{else}}
+<p>This list has not been computed yet. Rudolph's ranker builds it every hour; check again after its next run.</p>
+{{end}}
+{{end}}

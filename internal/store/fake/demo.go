@@ -2,6 +2,7 @@ package fake
 
 import (
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/turquoise-turtle/rudolph-web/internal/store"
@@ -68,5 +69,46 @@ func NewDemo(now time.Time) *Store {
 		s.AddGlobalRule(store.Rule{RuleType: store.RuleTypeBinary, Policy: []store.Policy{store.PolicyBlocklist, store.PolicyAllowlist, store.PolicySilentBlocklist}[i%3],
 			Identifier: fmt.Sprintf("%064x", 5000+i), CustomMessage: "Contact IT", State: store.RuleStateInForce})
 	}
+	seedDemoTopLists(s, now)
 	return s
+}
+
+// seedDemoTopLists ranks the demo events the way Rudolph's ranker does: by
+// count, highest first, then by SHA-256, with windows of whole UTC days
+// ending today.
+func seedDemoTopLists(s *Store, now time.Time) {
+	today := now.UTC().Truncate(24 * time.Hour)
+	generated := now.UTC().Truncate(time.Hour)
+	for _, kind := range store.TopKinds {
+		for _, days := range store.TopWindowDays {
+			from := today.AddDate(0, 0, 1-days)
+			byHash := map[string]*store.TopBinary{}
+			macs := map[string]map[string]bool{}
+			for _, e := range s.execEvents {
+				if e.ExecutionTime.Before(from) || e.Decision.IsBlock() != (kind == store.TopKindBlocked) {
+					continue
+				}
+				b := byHash[e.FileSHA256]
+				if b == nil {
+					b = &store.TopBinary{FileSHA256: e.FileSHA256, FileName: e.FileName, TeamID: e.TeamID, SigningID: e.SigningID, MachinesKnown: true}
+					byHash[e.FileSHA256] = b
+					macs[e.FileSHA256] = map[string]bool{}
+				}
+				b.Count++
+				macs[e.FileSHA256][e.MachineID] = true
+				b.Machines = len(macs[e.FileSHA256])
+			}
+			list := make([]store.TopBinary, 0, len(byHash))
+			for _, b := range byHash {
+				list = append(list, *b)
+			}
+			sort.Slice(list, func(i, j int) bool {
+				if list[i].Count != list[j].Count {
+					return list[i].Count > list[j].Count
+				}
+				return list[i].FileSHA256 < list[j].FileSHA256
+			})
+			s.SetTopList(kind, days, generated, list)
+		}
+	}
 }

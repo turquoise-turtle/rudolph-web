@@ -45,6 +45,7 @@ type Store struct {
 	machineRules map[string]map[string]store.Rule
 	execEvents   []store.ExecutionEvent
 	faaEvents    []store.FileAccessEvent
+	topLists     map[store.TopFilter]topList
 	calls        []Call
 	err          error
 
@@ -70,6 +71,7 @@ func New() *Store {
 		cleanSyncs:   map[string]bool{},
 		globalRules:  map[string]store.Rule{},
 		machineRules: map[string]map[string]store.Rule{},
+		topLists:     map[store.TopFilter]topList{},
 	}
 }
 
@@ -93,6 +95,11 @@ func (s *Store) SetConfiguredClientMode(machineID string, mode store.ClientMode)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.configModes[machineID] = mode
+}
+
+type topList struct {
+	generatedAt time.Time
+	items       []store.TopBinary
 }
 
 type tempMode struct {
@@ -302,39 +309,39 @@ func (s *Store) ListExecutionEvents(_ context.Context, f store.EventFilter, p st
 	return paginate(s.cursors, keyed, fingerprint("ListExecutionEvents", "", f), p)
 }
 
-// TopBlockedBinaries implements store.EventReader.
-func (s *Store) TopBlockedBinaries(_ context.Context, f store.TopBlockedFilter, p store.PageRequest) (store.Page[store.BlockedBinary], error) {
+// SetTopList stores the list Rudolph's ranker would have computed for a kind
+// and window, in rank order, replacing any earlier one.
+func (s *Store) SetTopList(kind store.TopKind, windowDays int, generatedAt time.Time, items []store.TopBinary) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := s.record(Call{Method: "TopBlockedBinaries", Filter: f, Page: p}); err != nil {
-		return store.Page[store.BlockedBinary]{}, err
+	s.topLists[store.TopFilter{Kind: kind, WindowDays: windowDays}] = topList{
+		generatedAt: generatedAt,
+		items:       append([]store.TopBinary(nil), items...),
 	}
-	agg := map[string]*store.BlockedBinary{}
-	machines := map[string]map[string]bool{}
-	for _, e := range s.execEvents {
-		if !e.Decision.IsBlock() || e.ExecutionTime.Before(f.Since) {
-			continue
-		}
-		b := agg[e.FileSHA256]
-		if b == nil {
-			b = &store.BlockedBinary{FileSHA256: e.FileSHA256}
-			agg[e.FileSHA256] = b
-			machines[e.FileSHA256] = map[string]bool{}
-		}
-		b.BlockCount++
-		machines[e.FileSHA256][e.MachineID] = true
-		b.MachineCount = len(machines[e.FileSHA256])
-		if e.ExecutionTime.After(b.LastBlocked) {
-			b.LastBlocked = e.ExecutionTime
-			b.FileName, b.TeamID, b.SigningID = e.FileName, e.TeamID, e.SigningID
-		}
+}
+
+// TopBinaries implements store.EventReader, serving the list set with
+// SetTopList in its stored order. A list never set has not been computed:
+// empty, with a zero GeneratedAt.
+func (s *Store) TopBinaries(_ context.Context, f store.TopFilter, p store.PageRequest) (store.TopList, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.record(Call{Method: "TopBinaries", Filter: f, Page: p}); err != nil {
+		return store.TopList{}, err
 	}
-	var keyed []keyedItem[store.BlockedBinary]
-	for sha, b := range agg {
-		k := fmt.Sprintf("%010d|%s", math.MaxInt32-b.BlockCount, sha)
-		keyed = append(keyed, keyedItem[store.BlockedBinary]{key: k, item: *b})
+	if err := f.Validate(); err != nil {
+		return store.TopList{}, err
 	}
-	return paginate(s.cursors, keyed, fingerprint("TopBlockedBinaries", "", f.Since.UTC().Format("2006-01-02T15:04:05.999999999Z")), p)
+	l := s.topLists[f]
+	keyed := make([]keyedItem[store.TopBinary], 0, len(l.items))
+	for i, b := range l.items {
+		keyed = append(keyed, keyedItem[store.TopBinary]{key: fmt.Sprintf("%06d", i+1), item: b})
+	}
+	page, err := paginate(s.cursors, keyed, fingerprint("TopBinaries", "", f), p)
+	if err != nil {
+		return store.TopList{}, err
+	}
+	return store.TopList{Items: page.Items, NextCursor: page.NextCursor, GeneratedAt: l.generatedAt}, nil
 }
 
 // ListFileAccessEvents implements store.EventReader.

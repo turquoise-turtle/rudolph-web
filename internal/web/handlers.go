@@ -15,11 +15,6 @@ import (
 // maxFilterLen bounds free-text filter values.
 const maxFilterLen = 256
 
-// topBlockedWindows are the selectable aggregation windows.
-var topBlockedWindows = []string{"1d", "7d", "30d", "90d"}
-
-const defaultTopBlockedWindow = "7d"
-
 // pager holds the navigation links for a list.
 type pager struct {
 	Next  string // "" on the last page
@@ -214,54 +209,106 @@ func (s *server) events(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// topBlocked ranks blocked binaries in a window. The window start ("since")
-// is carried in next links so later pages query exactly the same window as
-// the first, even as the clock moves; cursors are bound to their query.
+// topListPage is one of the ranker's two lists.
+type topListPage struct {
+	Kind  store.TopKind
+	Path  string
+	Title string
+	Nav   string
+	Noun  string // what Count counts, for the column heading and the empty list
+}
+
+var (
+	topBlockedPage = topListPage{Kind: store.TopKindBlocked, Path: "/events/top-blocked", Title: "Top blocked binaries", Nav: "top-blocked", Noun: "blocked executions"}
+	topAllowedPage = topListPage{Kind: store.TopKindAllowed, Path: "/events/top-allowed", Title: "Top allowed binaries", Nav: "top-allowed", Noun: "allowed executions"}
+)
+
+const defaultTopWindowDays = 7
+
+// topListStaleAfter is three missed runs of Rudolph's hourly ranker.
+const topListStaleAfter = 3 * time.Hour
+
+// topWindowLink is one window in the window navigation.
+type topWindowLink struct {
+	Days    int
+	URL     string
+	Current bool
+}
+
 func (s *server) topBlocked(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	window := q.Get("window")
-	if window == "" {
-		window = defaultTopBlockedWindow
+	s.topList(w, r, topBlockedPage)
+}
+
+func (s *server) topAllowed(w http.ResponseWriter, r *http.Request) {
+	s.topList(w, r, topAllowedPage)
+}
+
+// topWindowDays reads `days`, which must be written exactly as one of the
+// ranker's windows.
+func topWindowDays(q url.Values) (int, bool) {
+	raw := q.Get("days")
+	if raw == "" {
+		return defaultTopWindowDays, true
 	}
-	if !slices.Contains(topBlockedWindows, window) {
+	for _, d := range store.TopWindowDays {
+		if raw == strconv.Itoa(d) {
+			return d, true
+		}
+	}
+	return 0, false
+}
+
+func topListURL(path string, days int) string {
+	return path + "?" + url.Values{"days": {strconv.Itoa(days)}}.Encode()
+}
+
+// topList shows one page of a ranker list. The cursor pins the snapshot of
+// the first page, so later pages stay consistent when the ranker runs
+// meanwhile.
+func (s *server) topList(w http.ResponseWriter, r *http.Request, page topListPage) {
+	q := r.URL.Query()
+	days, ok := topWindowDays(q)
+	if !ok {
 		s.renderError(w, r, http.StatusBadRequest, "Unknown time window.")
 		return
 	}
-	days, _ := strconv.Atoi(strings.TrimSuffix(window, "d"))
-	now := s.now().UTC().Truncate(time.Minute)
-	since := now.AddDate(0, 0, -days)
-	if raw := q.Get("since"); raw != "" && q.Get("cursor") != "" {
-		unix, err := strconv.ParseInt(raw, 10, 64)
-		t := time.Unix(unix, 0).UTC()
-		if err != nil || t.After(now) || t.Before(now.AddDate(0, 0, -days-1)) {
-			s.renderError(w, r, http.StatusBadRequest, "This page link is invalid or has expired. Start again from the first page.")
-			return
-		}
-		since = t
-	}
 	pr := s.pageRequest(q)
-	page, err := s.store.TopBlockedBinaries(r.Context(), store.TopBlockedFilter{Since: since}, pr)
+	list, err := s.store.TopBinaries(r.Context(), store.TopFilter{Kind: page.Kind, WindowDays: days}, pr)
 	if err != nil {
 		s.storeError(w, r, err)
 		return
 	}
-	p := links("/events/top-blocked", url.Values{"window": {window}, "since": {strconv.FormatInt(since.Unix(), 10)}},
-		pr.Cursor, page.NextCursor)
-	if p.First != "" {
-		p.First = "/events/top-blocked?" + url.Values{"window": {window}}.Encode()
+	windows := make([]topWindowLink, 0, len(store.TopWindowDays))
+	for _, d := range store.TopWindowDays {
+		windows = append(windows, topWindowLink{Days: d, URL: topListURL(page.Path, d), Current: d == days})
 	}
-	s.render(w, r, http.StatusOK, "topblocked", "Top blocked binaries", "top-blocked", struct {
-		Window   string
-		Windows  []string
-		Since    time.Time
-		Binaries []store.BlockedBinary
-		Pager    pager
+	other := topAllowedPage
+	if page.Kind == store.TopKindAllowed {
+		other = topBlockedPage
+	}
+	computed := !list.GeneratedAt.IsZero()
+	s.render(w, r, http.StatusOK, "toplist", page.Title, page.Nav, struct {
+		List        topListPage
+		Days        int
+		Windows     []topWindowLink
+		OtherTitle  string
+		OtherURL    string
+		Computed    bool
+		GeneratedAt time.Time
+		Stale       bool
+		Binaries    []store.TopBinary
+		Pager       pager
 	}{
-		Window:   window,
-		Windows:  topBlockedWindows,
-		Since:    since,
-		Binaries: page.Items,
-		Pager:    p,
+		List:        page,
+		Days:        days,
+		Windows:     windows,
+		OtherTitle:  other.Title,
+		OtherURL:    topListURL(other.Path, days),
+		Computed:    computed,
+		GeneratedAt: list.GeneratedAt,
+		Stale:       computed && s.now().Sub(list.GeneratedAt) > topListStaleAfter,
+		Binaries:    list.Items,
+		Pager:       links(page.Path, url.Values{"days": {strconv.Itoa(days)}}, pr.Cursor, list.NextCursor),
 	})
 }
 
