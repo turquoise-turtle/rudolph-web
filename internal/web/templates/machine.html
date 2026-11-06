@@ -9,7 +9,7 @@
   <dt>macOS</dt><dd>{{orDash .OSVersion}} ({{orDash .OSBuild}})</dd>
   <dt>Santa</dt><dd>{{orDash .SantaVersion}}</dd>
   <dt>Client mode (reported)</dt><dd>{{.ClientMode}}</dd>
-  <dt>Client mode (configured)</dt><dd>{{with .ConfiguredClientMode}}{{.}}{{else}}not set: global config applies{{end}}</dd>
+  <dt>Client mode (configured)</dt><dd>{{if $.Health.TemporaryActive}}{{.TemporaryClientMode}} (temporary until {{ts .TemporaryClientModeUntil}}; then {{with .ConfiguredClientMode}}{{.}}{{else}}the global config's mode{{end}}){{else}}{{with .ConfiguredClientMode}}{{.}}{{else}}not set: global config applies{{end}}{{end}}</dd>
   <dt>Primary user</dt><dd>{{orDash .PrimaryUser}}</dd>
   <dt>SIP status</dt><dd>{{orDash .SIPStatus}}</dd>
   <dt>Last seen</dt><dd>{{ts .LastSeen}}</dd>
@@ -31,6 +31,17 @@
 </dl>
 </section>
 <p><a href="{{eventsForMachineURL .MachineID}}">Events for this machine</a></p>
+{{end}}
+<h2>Sync health</h2>
+{{with .Health}}
+{{if not .Problems}}<p>No problems found.</p>{{end}}
+{{if .Items}}
+<ul class="health">
+{{range .Items}}
+<li>{{if .Warning}}<strong>Warning:</strong> {{end}}{{.Text}}</li>
+{{end}}
+</ul>
+{{end}}
 {{end}}
 <h2>Machine-specific rules</h2>
 {{if .Rules}}

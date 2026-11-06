@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/turquoise-turtle/rudolph-web/internal/store"
 )
@@ -38,6 +39,8 @@ type Store struct {
 	machines     map[string]store.Machine
 	syncStates   map[string]store.SyncState
 	configModes  map[string]store.ClientMode
+	tempModes    map[string]tempMode
+	cleanSyncs   map[string]bool
 	globalRules  map[string]store.Rule
 	machineRules map[string]map[string]store.Rule
 	execEvents   []store.ExecutionEvent
@@ -63,6 +66,8 @@ func New() *Store {
 		machines:     map[string]store.Machine{},
 		syncStates:   map[string]store.SyncState{},
 		configModes:  map[string]store.ClientMode{},
+		tempModes:    map[string]tempMode{},
+		cleanSyncs:   map[string]bool{},
 		globalRules:  map[string]store.Rule{},
 		machineRules: map[string]map[string]store.Rule{},
 	}
@@ -88,6 +93,31 @@ func (s *Store) SetConfiguredClientMode(machineID string, mode store.ClientMode)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.configModes[machineID] = mode
+}
+
+type tempMode struct {
+	mode  store.ClientMode
+	until time.Time
+}
+
+// SetTemporaryClientMode sets a machine config's temporary client mode and
+// when it ends ("" or a zero until removes it, as Rudolph ignores an expiry
+// of 0). until may be past, like an ended mode Rudolph leaves on the row.
+func (s *Store) SetTemporaryClientMode(machineID string, mode store.ClientMode, until time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if mode == "" || until.IsZero() {
+		delete(s.tempModes, machineID)
+		return
+	}
+	s.tempModes[machineID] = tempMode{mode: mode, until: until}
+}
+
+// SetCleanSyncRequested sets a machine config's CleanSync flag.
+func (s *Store) SetCleanSyncRequested(machineID string, requested bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cleanSyncs[machineID] = requested
 }
 
 // AddGlobalRule inserts or replaces a global rule (keyed by type+identifier).
@@ -197,7 +227,14 @@ func (s *Store) GetMachine(_ context.Context, machineID string) (store.MachineDe
 	if !ok {
 		return store.MachineDetail{}, store.ErrNotFound
 	}
-	d := store.MachineDetail{Machine: m, ConfiguredClientMode: s.configModes[machineID]}
+	tm := s.tempModes[machineID]
+	d := store.MachineDetail{
+		Machine:                  m,
+		ConfiguredClientMode:     s.configModes[machineID],
+		TemporaryClientMode:      tm.mode,
+		TemporaryClientModeUntil: tm.until,
+		CleanSyncRequested:       s.cleanSyncs[machineID],
+	}
 	if st, ok := s.syncStates[machineID]; ok {
 		d.Sync = &st
 	}

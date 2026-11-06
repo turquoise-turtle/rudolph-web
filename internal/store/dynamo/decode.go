@@ -72,6 +72,8 @@ func DecodeMachinePartition(items []map[string]types.AttributeValue) (store.Mach
 			d.Sync = &st
 		case skConfig:
 			d.ConfiguredClientMode = r.configClientMode()
+			d.TemporaryClientMode, d.TemporaryClientModeUntil = r.configTemporaryClientMode()
+			d.CleanSyncRequested = r.configCleanSync()
 		}
 		if r.err != nil {
 			return store.MachineDetail{}, fmt.Errorf("dynamo: decoding %s row %q: %w", r.str("PK"), sk, r.err)
@@ -210,15 +212,44 @@ func (r *reader) clientMode() store.ClientMode {
 // machine config attribute it cannot decode and applies the global value, so a
 // mistyped one is shown as not set instead of failing the machine page.
 func (r *reader) configClientMode() store.ClientMode {
-	v, ok := r.item["ClientMode"].(*types.AttributeValueMemberN)
+	n, ok := r.configNum("ClientMode")
 	if !ok {
 		return ""
 	}
-	n, err := strconv.ParseInt(v.Value, 10, 64)
-	if err != nil {
-		return ""
-	}
 	return enum(n, clientModes)
+}
+
+// configTemporaryClientMode reads TemporaryClientMode and
+// TemporaryClientModeExpiresAt (Unix seconds) from a machine config row.
+// Rudolph applies a temporary mode only when both decode and the mode is a
+// known one and the expiry is positive, so anything else is shown as no
+// temporary mode.
+func (r *reader) configTemporaryClientMode() (store.ClientMode, time.Time) {
+	mode, ok1 := r.configNum("TemporaryClientMode")
+	until, ok2 := r.configNum("TemporaryClientModeExpiresAt")
+	known, ok3 := clientModes[mode]
+	if !ok1 || !ok2 || !ok3 || until <= 0 {
+		return "", time.Time{}
+	}
+	return known, time.Unix(until, 0).UTC()
+}
+
+// configCleanSync reads CleanSync from a machine config row; a mistyped value
+// is shown as no request rather than failing the machine page.
+func (r *reader) configCleanSync() bool {
+	v, ok := r.item["CleanSync"].(*types.AttributeValueMemberBOOL)
+	return ok && v.Value
+}
+
+// configNum reads an integer from a machine config row without failing the
+// row, for settings Rudolph ignores when they are mistyped.
+func (r *reader) configNum(name string) (int64, bool) {
+	v, ok := r.item[name].(*types.AttributeValueMemberN)
+	if !ok {
+		return 0, false
+	}
+	n, err := strconv.ParseInt(v.Value, 10, 64)
+	return n, err == nil
 }
 
 func enum[T ~string](n int64, known map[int64]T) T {

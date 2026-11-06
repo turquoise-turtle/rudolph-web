@@ -8,6 +8,7 @@ Admins use it to see:
 
 - **Machines**: a paginated list you can filter by serial number or hostname prefix,
   plus a detail page with last sync, client mode, rule counts and machine-specific rules.
+  Its "Sync health" section lists signs that a Mac is not syncing as it should: not seen for more than a day, a last sync without postflight 30 minutes after its preflight, a pending clean sync request, and a temporary client mode (running, ended, or ignored because it ends more than 30 days ahead).
 - **Global rules**: a paginated list you can filter by rule type and policy.
 - **Execution events**: a paginated list you can filter by machine, decision and team ID.
 - **Top blocked binaries**: the binaries blocked most often in a time window.
@@ -77,6 +78,7 @@ The read models follow Rudolph's single-table DynamoDB layout (`PK`/`SK`):
 |---|---|
 | `store.Machine` | `PK=Machine#<id>, SK=Current` (sensor data; adds Hostname and ModelIdentifier when Rudolph stores them, and SIPStatus, where a missing attribute means enabled) |
 | `store.SyncState` | `PK=Machine#<id>, SK=SyncState` (PreflightAt, PostflightAt; adds LastSyncType, RulesProcessed) |
+| `store.MachineDetail` config fields | `PK=Machine#<id>, SK=Config` (ClientMode, TemporaryClientMode with TemporaryClientModeExpiresAt, CleanSync; mistyped values are left out) |
 | `store.Rule` (global) | `PK=GlobalRules, SK=<Type>#<identifier>` |
 | `store.Rule` (machine) | `PK=MachineRules#<id>` |
 | `store.ExecutionEvent` | events table: `PK=Exec#<id>, SK=<TS>#<sha256>#<pid>`, indexes `Fleet_TS`, `Decision_TS`, `TeamID_TS` |
