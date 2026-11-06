@@ -72,6 +72,8 @@ func TestBuilderRendersExactlyTheContractExamples(t *testing.T) {
 		must(t)(b.TemporaryMode(machine, store.ClientModeMonitor, "2h")),
 		must(t)(b.EndTemporaryMode(machine)),
 		must(t)(b.GroupAdd(machine, "eng")),
+		must(t)(b.Rule("deny", store.RuleTypeSigningID, "EQHXZ8M8AV:com.google.GeminiMacOS", clicmd.Group("rudolph:ungrouped"))),
+		must(t)(b.Rule("deny", store.RuleTypeSigningID, "platform:com.apple.Terminal", clicmd.Global())),
 	}
 	want := examples(t)
 	sort.Strings(got)
