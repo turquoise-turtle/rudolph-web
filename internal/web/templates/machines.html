@@ -17,7 +17,7 @@
   <td>{{.SerialNum}}</td>
   <td>{{.ModelIdentifier}}</td>
   <td>{{.OSVersion}}</td>
-  <td>{{.SantaVersion}}</td>
+  <td>{{.SantaVersion}}{{if legacySanta .SantaVersion}} <span class="legacy" title="Below Santa 2026.8: supported only on macOS 13, with limits">legacy client</span>{{end}}</td>
   <td>{{.ClientMode}}</td>
   <td>{{.PrimaryUser}}</td>
   <td>{{day .LastSeen}}</td>

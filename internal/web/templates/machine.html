@@ -7,7 +7,7 @@
   <dt>Serial</dt><dd>{{orDash .SerialNum}}</dd>
   <dt>Model</dt><dd>{{orDash .ModelIdentifier}}</dd>
   <dt>macOS</dt><dd>{{orDash .OSVersion}} ({{orDash .OSBuild}})</dd>
-  <dt>Santa</dt><dd>{{orDash .SantaVersion}}</dd>
+  <dt>Santa</dt><dd>{{orDash .SantaVersion}}{{if legacySanta .SantaVersion}} <span class="legacy">legacy client</span> <span class="muted">(below 2026.8: supported only on macOS 13, with limits)</span>{{end}}</dd>
   <dt>Client mode (reported)</dt><dd>{{.ClientMode}}</dd>
   <dt>Client mode (configured)</dt><dd>{{if $.Health.TemporaryActive}}{{.TemporaryClientMode}} (temporary until {{ts .TemporaryClientModeUntil}}; then {{with .ConfiguredClientMode}}{{.}}{{else}}the global config's mode{{end}}){{else}}{{with .ConfiguredClientMode}}{{.}}{{else}}not set: global config applies{{end}}{{end}}</dd>
   <dt>Primary user</dt><dd>{{orDash .PrimaryUser}}</dd>

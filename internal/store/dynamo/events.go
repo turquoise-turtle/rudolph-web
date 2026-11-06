@@ -179,6 +179,9 @@ func DecodeExecutionEvent(item map[string]types.AttributeValue) (store.Execution
 		TeamID:        r.str("TeamID"),
 		SigningID:     r.str("SigningID"),
 		CDHash:        r.str("CDHash"),
+		// Rudolph stores this only when true; anything but a BOOL is read as
+		// false rather than failing the page.
+		IdentityUnverified: boolOrFalse(item["IdentityUnverified"]),
 	}
 	if e.MachineID == "" {
 		e.MachineID = strings.TrimPrefix(r.str("PK"), execPartitionPrefix)
@@ -187,6 +190,11 @@ func DecodeExecutionEvent(item map[string]types.AttributeValue) (store.Execution
 		return store.ExecutionEvent{}, fmt.Errorf("dynamo: decoding execution event %q: %w", r.str("SK"), r.err)
 	}
 	return e, nil
+}
+
+func boolOrFalse(v types.AttributeValue) bool {
+	b, ok := v.(*types.AttributeValueMemberBOOL)
+	return ok && b.Value
 }
 
 // microTS reads a required time stored as zero-padded decimal microseconds

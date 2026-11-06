@@ -8,9 +8,10 @@ Admins use it to see:
 
 - **Machines**: a paginated list you can filter by serial number or hostname prefix,
   plus a detail page with last sync, client mode, rule counts and machine-specific rules.
+  Both mark a Santa version below 2026.8 as "legacy client" (Rudolph supports 2025.12 only for macOS 13 Macs, with limits); an empty or unparseable version is not marked.
   Its "Sync health" section lists signs that a Mac is not syncing as it should: not seen for more than a day, a last sync without postflight 30 minutes after its preflight, a pending clean sync request, and a temporary client mode (running, ended, or ignored because it ends more than 30 days ahead).
 - **Global rules**: a paginated list you can filter by rule type and policy.
-- **Execution events**: a paginated list you can filter by machine, decision and team ID.
+- **Execution events**: a paginated list you can filter by machine, decision and team ID. Events Santa marked identity_unverified (Santa 2026.9: it could not confirm the file it evaluated was the image that ran) show "identity not verified", since their hash and file details are not verified.
 - **Top blocked and top allowed binaries**: the binaries blocked or allowed most often in the last 1, 7, 30 or 90 days, as computed every hour by Rudolph's ranker, with the time the list was generated and a warning when that is more than 3 hours ago.
 
 v1 is read-only. `/admin` is a placeholder for future write actions and needs the

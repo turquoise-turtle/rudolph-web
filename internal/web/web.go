@@ -179,6 +179,7 @@ var funcs = template.FuncMap{
 	"eventsForMachineURL": func(id string) string {
 		return "/events?" + url.Values{"machine": {id}}.Encode()
 	},
+	"legacySanta": store.LegacySantaVersion,
 	"orDash": func(s string) string {
 		if s == "" {
 			return "—"
