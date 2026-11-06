@@ -42,10 +42,11 @@ func newStore(t *testing.T) *dynamo.Store {
 		t.Fatal(err)
 	}
 	s, err := dynamo.New(dynamo.Options{
-		Client:  ddblocal.Raw(t),
-		Table:   ddblocal.TableName,
-		Cursors: codec,
-		Now:     func() time.Time { return now },
+		Client:      ddblocal.Raw(t),
+		Table:       ddblocal.TableName,
+		EventsTable: ddblocal.EventsTableName,
+		Cursors:     codec,
+		Now:         func() time.Time { return now },
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -342,9 +343,6 @@ func TestListGlobalRules_InvalidArguments(t *testing.T) {
 func TestNotYetAvailable(t *testing.T) {
 	s := newStore(t)
 	p := store.PageRequest{Limit: 10}
-	if _, err := s.ListExecutionEvents(ctx, store.EventFilter{}, p); !errors.Is(err, store.ErrUnavailable) {
-		t.Errorf("ListExecutionEvents: %v", err)
-	}
 	if _, err := s.TopBlockedBinaries(ctx, store.TopBlockedFilter{}, p); !errors.Is(err, store.ErrUnavailable) {
 		t.Errorf("TopBlockedBinaries: %v", err)
 	}
