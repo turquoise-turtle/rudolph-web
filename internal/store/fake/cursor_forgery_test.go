@@ -18,7 +18,7 @@ import (
 func TestCursors_ForgedOrEditedAreRejected(t *testing.T) {
 	s := fake.New()
 	for i := 0; i < 9; i++ {
-		s.AddMachine(store.Machine{MachineID: fmt.Sprintf("m-%d", i)})
+		s.AddMachine(store.Machine{MachineID: fmt.Sprintf("m-%d", i), SerialNum: fmt.Sprintf("SN%d", i)})
 	}
 
 	// Hand-minted in the unauthenticated layout: base64url(JSON{q, k}).
