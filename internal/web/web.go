@@ -164,7 +164,7 @@ var funcs = template.FuncMap{
 		if t.IsZero() {
 			return "—"
 		}
-		return t.UTC().Format("2006-01-02 15:04:05") + " UTC"
+		return timeText(t)
 	},
 	// The machine list's last seen is a UTC date (Rudolph's LastSeenDay), not
 	// a time, so showing midnight would be misleading.

@@ -120,10 +120,12 @@ func (s *server) machineDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	s.render(w, r, http.StatusOK, "machine", "Machine "+title, "machines", struct {
 		Machine store.MachineDetail
+		Health  syncHealth
 		Rules   []store.Rule
 		Pager   pager
 	}{
 		Machine: machine,
+		Health:  machineHealth(machine, s.now()),
 		Rules:   rules.Items,
 		Pager:   links("/machines/"+url.PathEscape(id), url.Values{}, pr.Cursor, rules.NextCursor),
 	})

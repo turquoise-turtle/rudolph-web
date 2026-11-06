@@ -190,6 +190,16 @@ type MachineDetail struct {
 	// Empty when the machine config does not set one, so the global config
 	// applies.
 	ConfiguredClientMode ClientMode
+	// TemporaryClientMode is a temporary mode from the machine config, sent
+	// instead of the usual mode until TemporaryClientModeUntil. Both are left
+	// empty unless the row holds a known mode and an expiry. The expiry may
+	// already be past: Rudolph leaves ended values on the row, so readers
+	// compare it with the current time.
+	TemporaryClientMode      ClientMode
+	TemporaryClientModeUntil time.Time
+	// CleanSyncRequested is the machine config's CleanSync flag: a clean sync
+	// was requested and has not completed yet.
+	CleanSyncRequested bool
 }
 
 // MachineFilter narrows ListMachines. At most one prefix may be set; each maps

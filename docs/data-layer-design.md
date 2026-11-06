@@ -106,6 +106,7 @@ A (Athena over Firehose) stays an optional later addition for full history beyon
 7. Decisions: add ALLOW_PLATFORM and pass unknown values through; map file access decisions; event times are float seconds.
 8. Events come from the new table, not from Rudolph's table; Athena search is a separate method that needs a time window.
 9. The top-blocked filter becomes a fixed window (1, 7, 30 or 90 days), not a minute-precise "since". A top-allowed summary is added alongside it.
+10. Machine config: `TemporaryClientMode` (number, as ClientMode) and `TemporaryClientModeExpiresAt` (number, Unix seconds) are read together; if either is missing or mistyped, or the mode is unknown, there is no temporary mode, as in Rudolph. Ended values stay on the row, so the web layer compares the expiry with its own clock (and, like Rudolph, ignores an expiry more than 30 days and 10 minutes ahead). `CleanSync` (BOOL) is a pending clean sync request; any other type reads as none. None of these fail the machine page.
 
 ## Implementation order (tests first)
 
