@@ -122,7 +122,8 @@ func DecodeRule(item map[string]types.AttributeValue, now time.Time) (store.Rule
 }
 
 // DecodeMachineListItem decodes one item of the machine list indexes, which
-// project only what the list shows. Its last seen is LastSeenDay, a UTC date
+// project only what the list shows. SerialNum is shown as reported, not the
+// upper-case SerialKey the serial index is keyed on. Its last seen is LastSeenDay, a UTC date
 // Rudolph rewrites at most once a day so the indexes are not written on every
 // sync; a missing or unreadable one is shown as unknown rather than failing
 // the list.

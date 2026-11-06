@@ -19,10 +19,10 @@ A Mac syncs at most every 600 s, so 144 syncs a day: 4.32 million syncs a month 
 
 | Page / method | Access |
 |---|---|
-| Machines, no filter | Query GSI `DataType_SerialNum`: `DataType = "SensorData"`, Limit n. Ordered by serial. |
-| Machines, serial prefix | Same index, `begins_with(SerialNum, upper(trim(p)))` |
+| Machines, no filter | Query GSI `DataType_SerialKey`: `DataType = "SensorData"`, Limit n. Ordered by serial. |
+| Machines, serial prefix | Same index, `begins_with(SerialKey, upper(trim(p)))` (case-insensitive; SerialNum stays as reported and is what the page shows, since some VMs report mixed-case serials) |
 | Machines, hostname prefix | Query GSI `DataType_HostnameKey`: `begins_with(HostnameKey, lower(trim(p)))` (case-insensitive) |
-| Machine list projection | INCLUDE MachineID, SerialNum, Hostname, ModelIdentifier, OSVersion, SantaVersion, ClientMode, PrimaryUser, `LastSeenDay`. About 4 read units per page of 100. `DataType_HostnameKey` as Rudolph defines it does not project SerialNum (it is neither a table key nor that index's key), so hostname search results show no serial until Rudolph adds it to the projection. |
+| Machine list projection | INCLUDE MachineID, SerialNum, Hostname, ModelIdentifier, OSVersion, SantaVersion, ClientMode, PrimaryUser, `LastSeenDay`. About 4 read units per page of 100. |
 | Machine detail | Query `PK = Machine#<id>`, Limit 5: config, current sensor data and sync state in one call, leaving out tracking internals. No sensor data row (90-day TTL) means not found. |
 | Machine rules | Query `PK = MachineRules#<id>`; state (in force, removing, expired) computed per the contract |
 | Global rules, all or by type | Query `PK = GlobalRules` [`begins_with(SK, "Binary#" / "Cert#" / "TeamID#" / "SigningID#" / "CDHash#")`] |
@@ -43,7 +43,7 @@ The machine list's last seen is `LastSeenDay` read as midnight UTC and shown as 
 | R1 | `Hostname` becomes `omitempty` | yes | 0. Required before any hostname GSI. |
 | R2 | `HostnameKey = lower(trim(Hostname))` on sensor data, omitempty | yes, about 40 B | 0 while the item stays under 1 KB |
 | R3 (optional) | `LastSeenDay` (UTC date) projected into both machine GSIs | yes | One index write per GSI per Mac per day: about $0.04/month at 1k Macs, $3.75 at 100k. Projecting the exact `Time` instead would add 2 write units per sync (about $5.40 at 1k, $540 at 100k). |
-| R4 | GSIs `DataType_SerialNum` and `DataType_HostnameKey` (INCLUDE projection above), one per apply | index only | 0 in steady state; an OS, Santa, hostname, mode or user change costs 1 to 2 write units per GSI |
+| R4 | `SerialKey = upper(trim(SerialNum))` on sensor data (omitempty), GSIs `DataType_SerialKey` and `DataType_HostnameKey` (INCLUDE projection above), one per apply | index only | 0 in steady state; an OS, Santa, hostname, mode or user change costs 1 to 2 write units per GSI |
 | R5 | `GlobalRulePolicy` (number) on global rule rows only, GSI `GlobalRulePolicy_SK`, one-off backfill | no | Backfill of 80k rules about $0.10 once |
 | R6 | New table `<prefix>_rudolph_events` (on-demand, TTL, KMS) with GSIs `Fleet_TS`, `Decision_TS`, `TeamID_TS`; read-only IAM for the web role | no | see below |
 | R7 | Event writer in the eventupload Lambda for every uploaded execution event (blocked and allowed); file access, audit and bundle events skipped in v1 | no | An upload without execution events makes no DynamoDB calls |

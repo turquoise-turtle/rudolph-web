@@ -154,8 +154,9 @@ func (s *Store) ListMachines(_ context.Context, f store.MachineFilter, p store.P
 	if err := s.record(Call{Method: "ListMachines", Filter: f, Page: p}); err != nil {
 		return store.Page[store.Machine]{}, err
 	}
-	// Matches the DynamoDB reader: serials compare upper case, hostnames
-	// without case, and a prefix that is only spaces is no filter.
+	// Matches the DynamoDB reader: serials and hostnames compare without case,
+	// a prefix that is only spaces is no filter, and a serial or hostname
+	// prefix only finds Macs that have one.
 	f = store.MachineFilter{
 		SerialPrefix:   strings.ToUpper(strings.TrimSpace(f.SerialPrefix)),
 		HostnamePrefix: strings.ToLower(strings.TrimSpace(f.HostnamePrefix)),
@@ -167,21 +168,21 @@ func (s *Store) ListMachines(_ context.Context, f store.MachineFilter, p store.P
 	for _, m := range s.machines {
 		var k string
 		switch {
-		case f.SerialPrefix != "":
-			if m.SerialNum == "" || !strings.HasPrefix(m.SerialNum, f.SerialPrefix) {
+		case f.HostnamePrefix == "":
+			serialKey := strings.ToUpper(strings.TrimSpace(m.SerialNum))
+			// Unlike the DynamoDB serial index, the unfiltered list keeps Macs
+			// without a serial (sorted first): the fake's own tests seed Macs
+			// with only a machine ID.
+			if !strings.HasPrefix(serialKey, f.SerialPrefix) {
 				continue
 			}
-			k = m.SerialNum + "\x00" + m.MachineID
-		case f.HostnamePrefix != "":
+			k = serialKey + "\x00" + m.MachineID
+		default:
 			hostnameKey := strings.ToLower(strings.TrimSpace(m.Hostname))
 			if hostnameKey == "" || !strings.HasPrefix(hostnameKey, f.HostnamePrefix) {
 				continue
 			}
 			k = hostnameKey + "\x00" + m.MachineID
-		default:
-			// Ordered by serial like the DynamoDB reader. Unlike its serial
-			// index, the fake keeps Macs without a serial, first.
-			k = m.SerialNum + "\x00" + m.MachineID
 		}
 		keyed = append(keyed, keyedItem[store.Machine]{key: k, item: m})
 	}

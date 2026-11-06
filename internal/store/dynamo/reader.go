@@ -150,29 +150,30 @@ func (s *Store) ListGlobalRules(ctx context.Context, f store.RuleFilter, p store
 // follow-up reads. A Mac is in an index only if it reported that attribute.
 const (
 	dataTypeSensorData = "SensorData"
-	indexSerialNum     = "DataType_SerialNum"
+	indexSerialKey     = "DataType_SerialKey"
 	indexHostnameKey   = "DataType_HostnameKey"
-	attrSerialNum      = "SerialNum"
+	attrSerialKey      = "SerialKey"
 	attrHostnameKey    = "HostnameKey"
 	listMachinesMethod = "ListMachines"
 )
 
 // ListMachines implements store.MachineReader with one Query on
-// DataType_SerialNum (no filter, or a serial prefix) or DataType_HostnameKey
+// DataType_SerialKey (no filter, or a serial prefix) or DataType_HostnameKey
 // (a hostname prefix). Never a FilterExpression: Limit applies before the
 // filter, so pages would come back short.
 func (s *Store) ListMachines(ctx context.Context, f store.MachineFilter, p store.PageRequest) (store.Page[store.Machine], error) {
 	if err := checkLimit(p); err != nil {
 		return store.Page[store.Machine]{}, err
 	}
-	// Rudolph stores serials as Santa reports them (upper case) and
-	// HostnameKey as the trimmed lower-case hostname.
+	// Rudolph keeps SerialNum as reported (some VMs report mixed case) and
+	// indexes SerialKey, the trimmed upper-case serial, and HostnameKey, the
+	// trimmed lower-case hostname.
 	serial := strings.ToUpper(strings.TrimSpace(f.SerialPrefix))
 	hostname := strings.ToLower(strings.TrimSpace(f.HostnamePrefix))
 	if serial != "" && hostname != "" {
 		return store.Page[store.Machine]{}, fmt.Errorf("%w: filter by serial or hostname, not both", store.ErrInvalidArgument)
 	}
-	q := machineQuery{index: indexSerialNum, rangeKey: attrSerialNum, prefix: serial}
+	q := machineQuery{index: indexSerialKey, rangeKey: attrSerialKey, prefix: serial}
 	if hostname != "" {
 		q = machineQuery{index: indexHostnameKey, rangeKey: attrHostnameKey, prefix: hostname}
 	}
@@ -245,11 +246,11 @@ func (s *Store) decodeMachineCursor(q machineQuery, cursor string) (map[string]t
 		return nil, store.ErrInvalidCursor
 	}
 	pk, hasPK := plain["PK"]
-	_, hasSK := plain["SK"]
+	sk, hasSK := plain["SK"]
 	dt, hasDT := plain["DataType"]
 	rk, hasRK := plain[q.rangeKey]
 	if !hasPK || !hasSK || !hasDT || !hasRK || !strings.HasPrefix(pk, "Machine#") ||
-		dt != dataTypeSensorData || !strings.HasPrefix(rk, q.prefix) {
+		sk != skCurrent || dt != dataTypeSensorData || !strings.HasPrefix(rk, q.prefix) {
 		return nil, store.ErrInvalidCursor
 	}
 	key := make(map[string]types.AttributeValue, len(plain))

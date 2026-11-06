@@ -41,7 +41,7 @@ You only do this once.
 rudolph-web reads Rudolph's DynamoDB table. Note its name (`<rudolph prefix>_rudolph_store` by
 default) and, if the table is encrypted with a customer managed KMS key, that key's ARN.
 
-The function reads the table named by its `RUDOLPH_WEB_DYNAMODB_TABLE` environment variable. The machine list, machine detail, machine rules and global rules come from it; the machine list needs Rudolph's `DataType_SerialNum` and `DataType_HostnameKey` indexes, and fails against a Rudolph table without them. The policy filter on global rules and the event pages return 503 until Rudolph's storage changes land. Without `RUDOLPH_WEB_DYNAMODB_TABLE` every data page returns 503, while authentication, authorization and everything else in this guide still work.
+The function reads the table named by its `RUDOLPH_WEB_DYNAMODB_TABLE` environment variable. The machine list, machine detail, machine rules and global rules come from it; the machine list needs Rudolph's `DataType_SerialKey` and `DataType_HostnameKey` indexes, and fails against a Rudolph table without them. The policy filter on global rules and the event pages return 503 until Rudolph's storage changes land. Without `RUDOLPH_WEB_DYNAMODB_TABLE` every data page returns 503, while authentication, authorization and everything else in this guide still work.
 
 The Terraform module sets `RUDOLPH_WEB_DYNAMODB_TABLE` from `dynamodb_table_name`. The reader only calls `dynamodb:Query` on the table itself, which the `ReadRudolphStore` statement below already allows.
 
