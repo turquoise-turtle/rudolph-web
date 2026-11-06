@@ -79,9 +79,10 @@ The read models follow Rudolph's single-table DynamoDB layout (`PK`/`SK`):
 | `store.SyncState` | `PK=Machine#<id>, SK=SyncState` (PreflightAt, PostflightAt; adds LastSyncType, RulesProcessed) |
 | `store.Rule` (global) | `PK=GlobalRules, SK=<Type>#<identifier>` |
 | `store.Rule` (machine) | `PK=MachineRules#<id>` |
-| `store.ExecutionEvent`, `store.FileAccessEvent` | not queryable in Rudolph yet: interface + fake only |
+| `store.ExecutionEvent` | events table: `PK=Exec#<id>, SK=<TS>#<sha256>#<pid>`, indexes `Fleet_TS`, `Decision_TS`, `TeamID_TS` |
+| `store.BlockedBinary`, `store.FileAccessEvent` | not read yet: interface + fake only |
 
-`internal/store/dynamo` reads the machine list (all, or by serial or hostname prefix), machine detail, machine rules and global rules (all, or by rule type, policy or both) from Rudolph's table, each page with one bounded Query. The machine list reads Rudolph's `DataType_SerialKey` and `DataType_HostnameKey` indexes and the policy filter reads `GlobalRulePolicy_SK`, so they need a Rudolph version that has them; its last seen is a UTC date (`LastSeenDay`), while the machine detail page shows the exact time. `cmd/lambda` uses it when `RUDOLPH_WEB_DYNAMODB_TABLE` is set, and serves 503 for every data page otherwise. The event pages still answer 503: they need Rudolph's storage changes first (see [docs/data-layer-design.md](docs/data-layer-design.md)).
+`internal/store/dynamo` reads the machine list (all, or by serial or hostname prefix), machine detail, machine rules and global rules (all, or by rule type, policy or both) from Rudolph's table, each page with one bounded Query. The machine list reads Rudolph's `DataType_SerialKey` and `DataType_HostnameKey` indexes and the policy filter reads `GlobalRulePolicy_SK`, so they need a Rudolph version that has them; its last seen is a UTC date (`LastSeenDay`), while the machine detail page shows the exact time. `cmd/lambda` uses it when `RUDOLPH_WEB_DYNAMODB_TABLE` is set, and serves 503 for every data page otherwise. Execution events come from Rudolph's separate events table, named by `RUDOLPH_WEB_EVENTS_TABLE`, newest first: all of them (`Fleet_TS`), one Mac's (its `Exec#<id>` partition), one decision's (`Decision_TS`) or one team ID's (`TeamID_TS`), one bounded Query per page. The real reader serves one filter at a time and answers 400 to a combination (the fake also combines them). Decisions the view does not know, such as `ALLOW_PLATFORM`, are shown as stored. Without the events table the events page answers 503; top blocked binaries and file access events still answer 503 (see [docs/data-layer-design.md](docs/data-layer-design.md)).
 
 One thing the event implementation will need:
 
@@ -151,6 +152,7 @@ Role changes take effect at the next sign-in, which is at most one session TTL l
 | `RUDOLPH_WEB_CLIENT_SECRET_SSM_PARAMETER` | no | SSM parameter holding the client secret, instead of the variable above |
 | `RUDOLPH_WEB_COOKIE_KEY_SSM_PARAMETER` | no | SSM parameter holding the cookie key, instead of the variable above |
 | `RUDOLPH_WEB_DYNAMODB_TABLE` | no | Rudolph's DynamoDB table, read by `cmd/lambda`; unset, data pages return 503. Cursors are signed with a key derived from the cookie key |
+| `RUDOLPH_WEB_EVENTS_TABLE` | no | Rudolph's execution events table (`<prefix>_rudolph_events`), read by `cmd/lambda`; unset, the events page returns 503. Needs `RUDOLPH_WEB_DYNAMODB_TABLE` |
 
 \* Each secret has exactly one source. Set the plain variable, as local development does, or name a
 SecureString parameter with its `*_SSM_PARAMETER` variable; setting both is an error. `cmd/lambda`

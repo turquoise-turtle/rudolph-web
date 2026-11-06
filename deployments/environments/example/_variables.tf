@@ -85,6 +85,12 @@ variable "dynamodb_kms_key_arn" {
   default     = ""
 }
 
+variable "events_dynamodb_table_name" {
+  type        = string
+  description = "Name of Rudolph's execution events table, typically <rudolph prefix>_rudolph_events. Empty leaves the events pages unavailable"
+  default     = ""
+}
+
 variable "log_retention_in_days" {
   type        = number
   description = "Retention of the function's CloudWatch log group, in days"

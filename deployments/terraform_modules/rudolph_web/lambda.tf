@@ -44,6 +44,7 @@ resource "aws_lambda_function" "web" {
 
       # Read by the DynamoDB data layer that replaces store.Unavailable.
       RUDOLPH_WEB_DYNAMODB_TABLE = var.dynamodb_table_name
+      RUDOLPH_WEB_EVENTS_TABLE   = var.events_dynamodb_table_name
     }
   }
 

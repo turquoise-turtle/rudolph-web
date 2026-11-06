@@ -235,7 +235,9 @@ func (s *Store) ListGlobalRules(_ context.Context, f store.RuleFilter, p store.P
 	return paginate(s.cursors, keyed, fingerprint("ListGlobalRules", "", f), p)
 }
 
-// ListExecutionEvents implements store.EventReader.
+// ListExecutionEvents implements store.EventReader. Unlike the DynamoDB
+// reader, which has one key per filter and refuses a combination, it applies
+// every filter set, so the web layer's tests can pass filters through as given.
 func (s *Store) ListExecutionEvents(_ context.Context, f store.EventFilter, p store.PageRequest) (store.Page[store.ExecutionEvent], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

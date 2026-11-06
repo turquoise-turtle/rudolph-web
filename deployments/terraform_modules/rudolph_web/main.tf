@@ -25,6 +25,9 @@ locals {
 
   dynamodb_table_arn = var.dynamodb_table_arn != "" ? var.dynamodb_table_arn : "arn:aws:dynamodb:${var.region}:${var.aws_account_id}:table/${var.dynamodb_table_name}"
 
+  events_enabled            = var.events_dynamodb_table_name != ""
+  events_dynamodb_table_arn = var.events_dynamodb_table_arn != "" ? var.events_dynamodb_table_arn : "arn:aws:dynamodb:${var.region}:${var.aws_account_id}:table/${var.events_dynamodb_table_name}"
+
   tags = merge({
     Name        = "rudolph-web"
     Application = "rudolph-web"

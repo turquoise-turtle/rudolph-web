@@ -81,8 +81,9 @@ func newReader(ctx context.Context, cfg config.Config) (store.Reader, error) {
 		return nil, fmt.Errorf("loading AWS configuration: %w", err)
 	}
 	return dynamo.New(dynamo.Options{
-		Client:  dynamodb.NewFromConfig(awsCfg),
-		Table:   cfg.TableName,
-		Cursors: codec,
+		Client:      dynamodb.NewFromConfig(awsCfg),
+		Table:       cfg.TableName,
+		EventsTable: cfg.EventsTableName,
+		Cursors:     codec,
 	})
 }

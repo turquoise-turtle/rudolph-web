@@ -1,5 +1,5 @@
 #
-# IAM: read two parameters, decrypt them, read Rudolph's table, write its own logs. Nothing else.
+# IAM: read two parameters, decrypt them, read Rudolph's two tables, write its own logs. Nothing else.
 #
 
 resource "aws_iam_role" "web" {
@@ -72,6 +72,25 @@ data "aws_iam_policy_document" "web" {
       local.dynamodb_table_arn,
       "${local.dynamodb_table_arn}/index/*",
     ]
+  }
+
+  # Execution events: one bounded Query per page on the table (a Mac's partition) or one of its
+  # TS indexes. GetItem is for the top lists, which read single day counters.
+  dynamic "statement" {
+    for_each = local.events_enabled ? [local.events_dynamodb_table_arn] : []
+
+    content {
+      sid    = "ReadRudolphEvents"
+      effect = "Allow"
+      actions = [
+        "dynamodb:GetItem",
+        "dynamodb:Query",
+      ]
+      resources = [
+        statement.value,
+        "${statement.value}/index/*",
+      ]
+    }
   }
 
   dynamic "statement" {
