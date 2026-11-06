@@ -2,7 +2,7 @@ package dynamo_test
 
 // Decoding Rudolph's DynamoDB rows into the web read models, checked against the web contract fixture
 // (testdata/webcontract/rows.json, vendored from Rudolph). The fixture replaces values that differ on every run with
-// "<timestamp>" and "<number>"; loadRows puts concrete values back.
+// "<timestamp>", "<day>" and "<number>"; loadRows puts concrete values back.
 
 import (
 	"bytes"
@@ -74,6 +74,7 @@ func toAV(t *testing.T, key, name string, v any) types.AttributeValue {
 		case "S":
 			s := val.(string)
 			s = strings.ReplaceAll(s, "<timestamp>", fixtureTime.Format(time.RFC3339))
+			s = strings.ReplaceAll(s, "<day>", fixtureTime.Format("2006-01-02"))
 			return &types.AttributeValueMemberS{Value: s}
 		case "N":
 			n := val.(string)
