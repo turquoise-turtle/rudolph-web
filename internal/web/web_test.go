@@ -557,13 +557,18 @@ func TestEvents_FiltersAndPagination(t *testing.T) {
 	mustContain(t, body, "evt-e")
 	mustNotContain(t, body, "evt-a", "evt-b", "evt-c", "evt-d")
 
+	// The events table has one index per filter, so filters are used one at a time; several at once are refused
+	// with a message rather than read with a filter that would return short pages.
 	code, body = a.viewerGet(t, "/events?decision=BLOCK_UNKNOWN&team_id=TEAMAAAAAA&machine=m2")
+	if code != http.StatusBadRequest {
+		t.Fatalf("combined filters: status %d, want 400", code)
+	}
+	mustContain(t, body, "one")
+	code, body = a.viewerGet(t, "/events?team_id=TEAMAAAAAA")
 	if code != http.StatusOK {
 		t.Fatalf("status %d", code)
 	}
-	mustContain(t, body, "evt-c")
-	mustNotContain(t, body, "evt-a", "evt-b", "evt-d", "evt-e")
-	if calls := s.Calls(); calls[len(calls)-1].Filter != (store.EventFilter{MachineID: "m2", Decision: store.DecisionBlockUnknown, TeamID: "TEAMAAAAAA"}) {
+	if calls := s.Calls(); calls[len(calls)-1].Filter != (store.EventFilter{TeamID: "TEAMAAAAAA"}) {
 		t.Errorf("last call filter %+v", calls[len(calls)-1].Filter)
 	}
 
@@ -737,7 +742,7 @@ func TestQueryBudget_OneBoundedPaginatedQueryPerList(t *testing.T) {
 		{"/rules", "ListGlobalRules", 0},
 		{"/rules?type=BINARY&policy=ALLOWLIST", "ListGlobalRules", 0},
 		{"/events", "ListExecutionEvents", 0},
-		{"/events?machine=machine-001&decision=BLOCK_UNKNOWN", "ListExecutionEvents", 0},
+		{"/events?machine=machine-001", "ListExecutionEvents", 0},
 		{"/events/top-blocked", "TopBlockedBinaries", 0},
 	}
 	for _, tc := range cases {
