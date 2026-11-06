@@ -154,6 +154,13 @@ func (s *Store) ListMachines(_ context.Context, f store.MachineFilter, p store.P
 	if err := s.record(Call{Method: "ListMachines", Filter: f, Page: p}); err != nil {
 		return store.Page[store.Machine]{}, err
 	}
+	// Matches the DynamoDB reader: serials and hostnames compare without case,
+	// a prefix that is only spaces is no filter, and a Mac is listed by serial
+	// only if it has one and by hostname only if it has one.
+	f = store.MachineFilter{
+		SerialPrefix:   strings.ToUpper(strings.TrimSpace(f.SerialPrefix)),
+		HostnamePrefix: strings.ToLower(strings.TrimSpace(f.HostnamePrefix)),
+	}
 	if f.SerialPrefix != "" && f.HostnamePrefix != "" {
 		return store.Page[store.Machine]{}, fmt.Errorf("%w: filter by serial or hostname, not both", store.ErrInvalidArgument)
 	}
@@ -161,18 +168,18 @@ func (s *Store) ListMachines(_ context.Context, f store.MachineFilter, p store.P
 	for _, m := range s.machines {
 		var k string
 		switch {
-		case f.SerialPrefix != "":
-			if !strings.HasPrefix(m.SerialNum, f.SerialPrefix) {
+		case f.HostnamePrefix == "":
+			serialKey := strings.ToUpper(strings.TrimSpace(m.SerialNum))
+			if serialKey == "" || !strings.HasPrefix(serialKey, f.SerialPrefix) {
 				continue
 			}
-			k = m.SerialNum + "\x00" + m.MachineID
-		case f.HostnamePrefix != "":
-			if !strings.HasPrefix(m.Hostname, f.HostnamePrefix) {
-				continue
-			}
-			k = m.Hostname + "\x00" + m.MachineID
+			k = serialKey + "\x00" + m.MachineID
 		default:
-			k = m.MachineID
+			hostnameKey := strings.ToLower(strings.TrimSpace(m.Hostname))
+			if hostnameKey == "" || !strings.HasPrefix(hostnameKey, f.HostnamePrefix) {
+				continue
+			}
+			k = hostnameKey + "\x00" + m.MachineID
 		}
 		keyed = append(keyed, keyedItem[store.Machine]{key: k, item: m})
 	}
