@@ -18,7 +18,8 @@ import (
 )
 
 // ReadAPI is the DynamoDB calls the reader makes: every page is a bounded
-// Query, and the top lists also read their pointer with GetItem, so the
+// Query, and the top lists (their pointer) and the group registry are read
+// with GetItem, so the
 // deployment grants dynamodb:Query and dynamodb:GetItem and nothing else.
 type ReadAPI interface {
 	Query(ctx context.Context, in *dynamodb.QueryInput, optFns ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error)
@@ -76,11 +77,11 @@ func New(o Options) (*Store, error) {
 	return &Store{client: o.Client, table: o.Table, eventsTable: o.EventsTable, cursors: o.Cursors, now: now, log: log}, nil
 }
 
-// machineDetailLimit bounds the machine detail Query. Config, Current and
-// SyncState are the first rows of the SK range below, so a handful is enough,
-// and rows Rudolph may add inside the range (sync tracking items, say) cannot
-// make the read unbounded.
-const machineDetailLimit = 5
+// machineDetailLimit bounds the machine detail Query. Config, Current,
+// Groups, ReportedGroups and SyncState are the only rows Rudolph writes in the
+// SK range below, so this leaves room for a few more, and rows Rudolph may add
+// inside the range later cannot make the read unbounded.
+const machineDetailLimit = 8
 
 // GetMachine implements store.MachineReader with one Query on the
 // Machine#<id> partition.
@@ -89,8 +90,7 @@ func (s *Store) GetMachine(ctx context.Context, machineID string) (store.Machine
 		return store.MachineDetail{}, store.ErrNotFound
 	}
 	// The SK range runs from Config to SyncState so that rows sorting outside
-	// it, however many, never push the three rows the page needs past the
-	// Limit.
+	// it, however many, never push the rows the page needs past the Limit.
 	out, err := s.client.Query(ctx, &dynamodb.QueryInput{
 		TableName:              aws.String(s.table),
 		KeyConditionExpression: aws.String("PK = :pk AND SK BETWEEN :first AND :last"),
@@ -116,6 +116,33 @@ func (s *Store) ListMachineRules(ctx context.Context, machineID string, p store.
 		method:    "ListMachineRules",
 		partition: "MachineRules#" + machineID,
 		machineID: machineID,
+	}, p)
+}
+
+// ListGroups implements store.GroupReader with one GetItem of the registry.
+func (s *Store) ListGroups(ctx context.Context) ([]store.Group, error) {
+	out, err := s.client.GetItem(ctx, &dynamodb.GetItemInput{
+		TableName: aws.String(s.table),
+		Key: map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: "GroupRegistry"},
+			"SK": &types.AttributeValueMemberS{Value: "Current"},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("dynamo: reading the group registry: %w", err)
+	}
+	return DecodeGroupRegistry(out.Item), nil
+}
+
+// ListGroupRules implements store.GroupReader.
+func (s *Store) ListGroupRules(ctx context.Context, group string, p store.PageRequest) (store.Page[store.Rule], error) {
+	if err := checkLimit(p); err != nil {
+		return store.Page[store.Rule]{}, err
+	}
+	return s.queryRules(ctx, ruleQuery{
+		method:    "ListGroupRules",
+		partition: "GroupRules#" + group,
+		group:     group,
 	}, p)
 }
 
@@ -312,6 +339,7 @@ type ruleQuery struct {
 	method    string
 	partition string
 	machineID string
+	group     string
 	ruleType  store.RuleType
 	skPrefix  string
 	index     string
@@ -319,10 +347,10 @@ type ruleQuery struct {
 	policyNum string
 }
 
-// fingerprint binds a cursor to the method, machine, index and filter, but
+// fingerprint binds a cursor to the method, machine or group, index and filter, but
 // not to the page size, so a reader may change the page size and keep going.
 func (q ruleQuery) fingerprint() string {
-	b, _ := json.Marshal([]string{q.method, q.machineID, string(q.ruleType), q.index, string(q.policy)})
+	b, _ := json.Marshal([]string{q.method, q.machineID, q.group, string(q.ruleType), q.index, string(q.policy)})
 	return string(b)
 }
 

@@ -9,6 +9,10 @@
 //	PK=Machine#<id>       SK=Config       machine config   -> MachineDetail.ConfiguredClientMode
 //	PK=GlobalRules        SK=<Type>#<id>  global rules     -> Rule
 //	PK=MachineRules#<id>  SK=<Type>#<id>  machine rules    -> Rule
+//	PK=Machine#<id>       SK=Groups       a Mac's groups   -> MachineDetail.AssignedGroups, ReportedGroups
+//	PK=Machine#<id>       SK=ReportedGroups  groups as sent -> MachineDetail.ReportedAsSent
+//	PK=GroupRegistry      SK=Current      group registry   -> Group
+//	PK=GroupRules#<name>  SK=<Type>#<id>  group rules      -> Rule
 //
 // Execution events come from Rudolph's separate events table:
 //
@@ -239,6 +243,29 @@ type MachineDetail struct {
 	// CleanSyncRequested is the machine config's CleanSync flag: a clean sync
 	// was requested and has not completed yet.
 	CleanSyncRequested bool
+	// AssignedGroups are the groups assigned to the Mac in Rudolph (rudolph
+	// group add), sorted.
+	AssignedGroups []string
+	// ReportedGroups are the groups the Mac reported that count: registered,
+	// accepting reported membership and normalised, as of its last preflight.
+	ReportedGroups []string
+	// ReportedAsSent is the primary user's groups as Santa last sent them,
+	// unnormalised and including ones Rudolph does not know.
+	ReportedAsSent []string
+}
+
+// UngroupedGroup is Rudolph's reserved group of the Macs in no group. It has
+// rules but is never in the registry.
+const UngroupedGroup = "rudolph:ungrouped"
+
+// Group is a registered device group.
+type Group struct {
+	Name        string
+	Description string
+	// AcceptReported is whether a Mac reporting the group (through its
+	// primary user's directory groups) becomes a member; when false only
+	// assignment in Rudolph counts.
+	AcceptReported bool
 }
 
 // MachineFilter narrows ListMachines. At most one prefix may be set; each maps
@@ -412,6 +439,15 @@ type RuleReader interface {
 	ListGlobalRules(ctx context.Context, f RuleFilter, p PageRequest) (Page[Rule], error)
 }
 
+// GroupReader reads device groups and their rules.
+type GroupReader interface {
+	// ListGroups returns the registered groups sorted by name; none when
+	// there is no registry.
+	ListGroups(ctx context.Context) ([]Group, error)
+	// ListGroupRules returns rules in PK=GroupRules#<group>, in SK order.
+	ListGroupRules(ctx context.Context, group string, p PageRequest) (Page[Rule], error)
+}
+
 // EventReader reads uploaded events and summaries.
 type EventReader interface {
 	// ListExecutionEvents returns events newest first.
@@ -428,6 +464,7 @@ type EventReader interface {
 type Reader interface {
 	MachineReader
 	RuleReader
+	GroupReader
 	EventReader
 }
 
@@ -453,6 +490,14 @@ func (Unavailable) ListMachineRules(context.Context, string, PageRequest) (Page[
 }
 
 func (Unavailable) ListGlobalRules(context.Context, RuleFilter, PageRequest) (Page[Rule], error) {
+	return Page[Rule]{}, ErrUnavailable
+}
+
+func (Unavailable) ListGroups(context.Context) ([]Group, error) {
+	return nil, ErrUnavailable
+}
+
+func (Unavailable) ListGroupRules(context.Context, string, PageRequest) (Page[Rule], error) {
 	return Page[Rule]{}, ErrUnavailable
 }
 

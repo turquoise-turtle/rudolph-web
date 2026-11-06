@@ -163,6 +163,84 @@ func (s *server) rules(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---------------------------------------------------------------------------
+// Groups
+
+// groupRow is one group in the groups list. Reported is "yes" or "no", or ""
+// for the reserved ungrouped group, which has no members of its own.
+type groupRow struct {
+	store.Group
+	Reported string
+}
+
+func (s *server) groups(w http.ResponseWriter, r *http.Request) {
+	groups, err := s.store.ListGroups(r.Context())
+	if err != nil {
+		s.storeError(w, r, err)
+		return
+	}
+	rows := make([]groupRow, 0, len(groups)+1)
+	for _, g := range groups {
+		if g.Name == store.UngroupedGroup {
+			continue
+		}
+		reported := "no"
+		if g.AcceptReported {
+			reported = "yes"
+		}
+		rows = append(rows, groupRow{Group: g, Reported: reported})
+	}
+	// Rudolph never registers the ungrouped group, but it can have rules, so
+	// it is always listed, last.
+	rows = append(rows, groupRow{Group: store.Group{Name: store.UngroupedGroup}})
+	s.render(w, r, http.StatusOK, "groups", "Groups", "groups", struct {
+		Groups []groupRow
+	}{rows})
+}
+
+func (s *server) groupDetail(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	group := store.Group{Name: name}
+	if name != store.UngroupedGroup {
+		groups, err := s.store.ListGroups(r.Context())
+		if err != nil {
+			s.storeError(w, r, err)
+			return
+		}
+		i := slices.IndexFunc(groups, func(g store.Group) bool { return g.Name == name })
+		if i < 0 {
+			s.renderError(w, r, http.StatusNotFound, "Group not found.")
+			return
+		}
+		group = groups[i]
+	}
+	pr := s.pageRequest(r.URL.Query())
+	page, err := s.store.ListGroupRules(r.Context(), name, pr)
+	if err != nil {
+		s.storeError(w, r, err)
+		return
+	}
+	s.render(w, r, http.StatusOK, "group", "Group "+groupLabel(name), "groups", struct {
+		Group store.Group
+		Rules []store.Rule
+		Pager pager
+	}{
+		Group: group,
+		Rules: page.Items,
+		Pager: links(groupURL(name), url.Values{}, pr.Cursor, page.NextCursor),
+	})
+}
+
+// groupLabel is how a group is named on the page.
+func groupLabel(name string) string {
+	if name == store.UngroupedGroup {
+		return "Macs in no group"
+	}
+	return name
+}
+
+func groupURL(name string) string { return "/groups/" + url.PathEscape(name) }
+
+// ---------------------------------------------------------------------------
 // Events
 
 func (s *server) events(w http.ResponseWriter, r *http.Request) {

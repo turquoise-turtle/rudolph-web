@@ -1,0 +1,17 @@
+{{define "content"}}
+<p class="hint">A Mac's groups are those assigned to it in Rudolph and, for groups that accept it, those its primary user's directory groups report.</p>
+<div class="scroll">
+<table>
+<thead><tr><th>Group</th><th>Description</th><th>Reported membership counts</th></tr></thead>
+<tbody>
+{{range .Groups}}
+<tr data-row>
+  <td><a href="{{groupURL .Name}}">{{groupLabel .Name}}</a></td>
+  <td>{{orDash .Description}}</td>
+  <td>{{orDash .Reported}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+</div>
+{{end}}

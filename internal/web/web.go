@@ -107,6 +107,8 @@ func New(opts Options) (http.Handler, error) {
 	mux.Handle("GET /machines", viewer(s.machines))
 	mux.Handle("GET /machines/{id}", viewer(s.machineDetail))
 	mux.Handle("GET /rules", viewer(s.rules))
+	mux.Handle("GET /groups", viewer(s.groups))
+	mux.Handle("GET /groups/{name}", viewer(s.groupDetail))
 	mux.Handle("GET /events", viewer(s.events))
 	mux.Handle("GET /events/top-blocked", viewer(s.topBlocked))
 	mux.Handle("GET /events/top-allowed", viewer(s.topAllowed))
@@ -180,6 +182,9 @@ var funcs = template.FuncMap{
 		return "/events?" + url.Values{"machine": {id}}.Encode()
 	},
 	"legacySanta": store.LegacySantaVersion,
+	"groupURL":    groupURL,
+	"groupLabel":  groupLabel,
+	"ungrouped":   func() string { return store.UngroupedGroup },
 	"orDash": func(s string) string {
 		if s == "" {
 			return "—"
