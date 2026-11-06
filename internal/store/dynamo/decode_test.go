@@ -599,6 +599,7 @@ func TestDecodeMachinePartition_TemporaryModeAndCleanSync(t *testing.T) {
 	for name, bad := range map[string]item{
 		"mode is a string":   {"TemporaryClientMode": &types.AttributeValueMemberS{Value: "MONITOR"}, "TemporaryClientModeExpiresAt": n(int(until.Unix()))},
 		"no expiry":          {"TemporaryClientMode": n(1)},
+		"expiry 0":           {"TemporaryClientMode": n(1), "TemporaryClientModeExpiresAt": n(0)},
 		"expiry is a string": {"TemporaryClientMode": n(1), "TemporaryClientModeExpiresAt": &types.AttributeValueMemberS{Value: "soon"}},
 		"clean sync string":  {"CleanSync": &types.AttributeValueMemberS{Value: "true"}},
 	} {
