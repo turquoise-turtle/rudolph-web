@@ -214,3 +214,25 @@ func TestListExecutionEvents_UnavailableWithoutAnEventsTable(t *testing.T) {
 	}
 	queriesOnly(t, 0)
 }
+
+// Events are only shown. A row the reader cannot decode (a malformed TS, a wrongly typed attribute, a newer Rudolph's
+// format) is skipped and logged rather than failing its page, which would make every older event of the list
+// unreachable until that row expires.
+func TestListExecutionEvents_UndecodableRowIsSkipped(t *testing.T) {
+	s := seedEvents(t)
+	bad := map[string]types.AttributeValue{
+		"PK": &types.AttributeValueMemberS{Value: "Exec#" + machineA}, "SK": &types.AttributeValueMemberS{Value: "99999999999999999999#bad#1"},
+		"MachineID": &types.AttributeValueMemberS{Value: machineA}, "TS": &types.AttributeValueMemberS{Value: "not-a-time"},
+		"Fleet": &types.AttributeValueMemberS{Value: "Exec"}, "Decision": &types.AttributeValueMemberN{Value: "3"},
+	}
+	if _, err := ddblocal.Raw(t).PutItem(ctx, &awsdynamodb.PutItemInput{TableName: aws.String(ddblocal.EventsTableName), Item: bad}); err != nil {
+		t.Fatal(err)
+	}
+	for name, f := range map[string]store.EventFilter{"fleet": {}, "machine": {MachineID: machineA}} {
+		got, _ := allEvents(t, s, f, 2)
+		want := map[string]string{"fleet": "5,4,3,2,1", "machine": "5,3,1"}[name]
+		if eventNames(got) != want {
+			t.Errorf("%s: %s, want %s with the bad row skipped", name, eventNames(got), want)
+		}
+	}
+}
