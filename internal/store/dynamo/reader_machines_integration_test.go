@@ -2,8 +2,8 @@
 
 package dynamo_test
 
-// Step 6 of docs/data-layer-design.md: the machine list, from Rudolph's GSIs DataType_SerialNum (no filter, or a
-// serial prefix) and DataType_HostnameKey (a hostname prefix). One Query per page, Limit = page size, never a Scan or
+// Step 6 of docs/data-layer-design.md: the machine list, from Rudolph's GSIs DataType_SerialKey (no filter, or a
+// serial prefix; SerialKey is the trimmed upper-case serial) and DataType_HostnameKey (a hostname prefix). One Query per page, Limit = page size, never a Scan or
 // a FilterExpression. The fixture Mac (serial C02AAAAAAAA1) is in the table too.
 
 import (
@@ -28,8 +28,8 @@ const (
 	listMac4 = "44444444-4444-4444-8444-444444444444" // C02CCC000003, no hostname
 )
 
-// putSensorData writes a sensor data row the way Rudolph does: SerialNum, Hostname and HostnameKey are left out when
-// empty, HostnameKey is the trimmed lower-case hostname.
+// putSensorData writes a sensor data row the way Rudolph does: SerialNum, SerialKey, Hostname and HostnameKey are left
+// out when empty, SerialKey is the trimmed upper-case serial and HostnameKey the trimmed lower-case hostname.
 func putSensorData(t *testing.T, id, serial, hostname string, extra map[string]types.AttributeValue) {
 	t.Helper()
 	s := func(v string) types.AttributeValue { return &types.AttributeValueMemberS{Value: v} }
@@ -49,6 +49,7 @@ func putSensorData(t *testing.T, id, serial, hostname string, extra map[string]t
 	}
 	if serial != "" {
 		it["SerialNum"] = s(serial)
+		it["SerialKey"] = s(strings.ToUpper(strings.TrimSpace(serial)))
 	}
 	if hostname != "" {
 		it["Hostname"] = s(hostname)
@@ -273,5 +274,17 @@ func TestListMachines_UndecodableRowIsAnError(t *testing.T) {
 	if _, err := s.ListMachines(ctx, store.MachineFilter{SerialPrefix: "FVF"}, store.PageRequest{Limit: 10}); err == nil ||
 		errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrUnavailable) {
 		t.Errorf("got %v, want a plain decode error", err)
+	}
+}
+
+// Some virtual machines report mixed-case serials. Rudolph indexes the upper-case form and keeps SerialNum as reported.
+func TestListMachines_MixedCaseSerial(t *testing.T) {
+	s := newListStore(t)
+	putSensorData(t, listMac2, "VMk3xQ9pLr2a", "vm-02.corp.example", nil)
+	for _, prefix := range []string{"VMk3", "vmk3x", " VMK3XQ9PLR2A "} {
+		page, err := s.ListMachines(ctx, store.MachineFilter{SerialPrefix: prefix}, store.PageRequest{Limit: 10})
+		if err != nil || len(page.Items) != 1 || page.Items[0].MachineID != listMac2 || page.Items[0].SerialNum != "VMk3xQ9pLr2a" {
+			t.Errorf("serial prefix %q: %v %+v, want %s shown with serial VMk3xQ9pLr2a", prefix, err, page.Items, listMac2)
+		}
 	}
 }

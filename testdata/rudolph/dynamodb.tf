@@ -42,6 +42,11 @@ resource "aws_dynamodb_table" "store" {
     type = "S"
   }
 
+  attribute {
+    name = "SerialKey"
+    type = "S"
+  }
+
   ttl {
     attribute_name = "ExpiresAfter"
     enabled        = true
@@ -65,11 +70,11 @@ resource "aws_dynamodb_table" "store" {
   }
 
   global_secondary_index {
-    name               = "DataType_SerialNum"
+    name               = "DataType_SerialKey"
     hash_key           = "DataType"
-    range_key          = "SerialNum"
+    range_key          = "SerialKey"
     projection_type    = "INCLUDE"
-    non_key_attributes = ["MachineID", "Hostname", "HostnameKey", "ModelIdentifier", "OSVersion", "SantaVersion", "ClientMode", "PrimaryUser", "LastSeenDay"]
+    non_key_attributes = ["MachineID", "SerialNum", "Hostname", "HostnameKey", "ModelIdentifier", "OSVersion", "SantaVersion", "ClientMode", "PrimaryUser", "LastSeenDay"]
   }
 
   global_secondary_index {
