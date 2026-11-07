@@ -33,7 +33,7 @@ You only do this once.
 * **Terraform** 1.5 or newer (tested with 1.16), with the `hashicorp/aws` provider `~> 6.0`.
 * **AWS CLI**, authenticated as a role that may create Lambda functions, IAM roles, SSM parameters,
   CloudWatch log groups and, if you enable it, CloudFront distributions, ACM certificates and
-  Route 53 records.
+  Route 53 records. With a cost budget (see [The monthly cost budget](#the-monthly-cost-budget)) the role also needs `budgets:ViewBudget`, `budgets:ModifyBudget`, `budgets:TagResource`, `budgets:UntagResource` and `budgets:ListTagsForResource`; the tag permissions are needed because the provider's default tags are applied to the budget.
 * An **S3 bucket** for the Terraform state. It must already exist.
 
 ### A Rudolph deployment
@@ -107,6 +107,8 @@ Environment directories hold the account ID, the tenant and client IDs and the d
 ### The monthly cost budget
 
 Set `monthly_budget_usd` (for example `10`) and `budget_alert_emails` to give rudolph-web its own AWS Budgets cost budget. It emails every address when actual spend passes 80% and 100% of the amount, and when forecast spend for the month passes 100%. `0`, the default, creates no budget, and a budget above `0` with no addresses fails the plan.
+
+The deploying role needs `budgets:ViewBudget`, `budgets:ModifyBudget`, `budgets:TagResource`, `budgets:UntagResource` and `budgets:ListTagsForResource`. The tag permissions are needed because the provider's default tags are applied to the budget itself.
 
 A budget **only alerts**: it never stops, throttles or caps anything, and rudolph-web keeps running and costing money past it.
 
