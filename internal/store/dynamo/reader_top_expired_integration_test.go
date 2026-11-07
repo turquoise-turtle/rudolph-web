@@ -52,3 +52,27 @@ func TestTopBinaries_CursorToAnExpiredSnapshotIsInvalid(t *testing.T) {
 		t.Errorf("first page after expiry %+v, %v", fresh, err)
 	}
 }
+
+// A live snapshot whose last page is exactly full: DynamoDB still hands out a cursor after it, and following that
+// cursor is an empty last page, not "expired".
+func TestTopBinaries_CursorPastTheLastRowOfALiveSnapshotIsAnEmptyPage(t *testing.T) {
+	st := newStore(t)
+	putSnapshot(t, "Allowed", 30, "20261105T110000Z-a", "alw", 4, true)
+	f := store.TopFilter{Kind: store.TopKindAllowed, WindowDays: 30}
+	cursor := ""
+	var names []string
+	for page := 0; page < 4; page++ {
+		got, err := st.TopBinaries(ctx, f, store.PageRequest{Limit: 2, Cursor: cursor})
+		if err != nil {
+			t.Fatalf("page %d: %v", page+1, err)
+		}
+		names = append(names, topNames(got.Items))
+		if got.NextCursor == "" {
+			break
+		}
+		cursor = got.NextCursor
+	}
+	if joined := fmt.Sprint(names); joined != "[alw-1,alw-2 alw-3,alw-4 ]" && joined != "[alw-1,alw-2 alw-3,alw-4]" {
+		t.Errorf("pages %q, want alw-1,alw-2 then alw-3,alw-4 (then at most one empty page)", names)
+	}
+}
