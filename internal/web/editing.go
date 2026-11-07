@@ -183,7 +183,7 @@ func (s *server) addRule(w http.ResponseWriter, r *http.Request) {
 		rule.ExpiresAt = s.now().Add(d).UTC()
 	}
 	if err := s.writer.AddRule(r.Context(), actorOf(r), target, rule); err != nil {
-		s.writeError(w, r, err, "")
+		s.writeError(w, r, err, "Not saved: Rudolph has nothing for this machine (no sync, configuration or rules), so a rule for it would never reach a Mac.")
 		return
 	}
 	http.Redirect(w, r, back, http.StatusSeeOther)
@@ -206,7 +206,7 @@ func (s *server) removeRule(w http.ResponseWriter, r *http.Request) {
 	}
 	err := s.writer.RemoveRule(r.Context(), actorOf(r), target, ruleType, strings.TrimSpace(f.Get("identifier")))
 	if err != nil {
-		s.writeError(w, r, err, "There is no such rule to remove; it may have been removed already.")
+		s.writeError(w, r, err, "There is no such rule to remove: it may have been removed already, or Rudolph has nothing for this machine.")
 		return
 	}
 	http.Redirect(w, r, back, http.StatusSeeOther)
@@ -236,7 +236,7 @@ func (s *server) setTemporaryMode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.writer.SetTemporaryMode(r.Context(), actorOf(r), id, mode, s.now().Add(d).UTC()); err != nil {
-		s.writeError(w, r, err, "")
+		s.writeError(w, r, err, "Machine not found.")
 		return
 	}
 	http.Redirect(w, r, "/machines/"+url.PathEscape(id), http.StatusSeeOther)
@@ -248,7 +248,7 @@ func (s *server) endTemporaryMode(w http.ResponseWriter, r *http.Request) {
 	}
 	id := r.PathValue("id")
 	if err := s.writer.EndTemporaryMode(r.Context(), actorOf(r), id); err != nil {
-		s.writeError(w, r, err, "")
+		s.writeError(w, r, err, "Machine not found.")
 		return
 	}
 	http.Redirect(w, r, "/machines/"+url.PathEscape(id), http.StatusSeeOther)
@@ -292,18 +292,25 @@ func (s *server) audit(w http.ResponseWriter, r *http.Request) {
 // person's to fix, so its message (Rudolph's validation) is shown; anything
 // else is logged and described without details.
 func (s *server) writeError(w http.ResponseWriter, r *http.Request, err error, notFound string) {
+	// Not audited comes first: a write that failed part-way and could not be
+	// audited either may also carry an invalid-argument error, and the
+	// unaudited change is what the person must hear about.
 	switch {
+	case errors.Is(err, store.ErrNotAudited):
+		s.log.Error("write not audited", "path", r.URL.Path, "err", err)
+		s.renderError(w, r, http.StatusInternalServerError, "The change was saved, at least in part, but it could not be recorded in the audit trail. Tell whoever looks after Rudolph.")
 	case errors.Is(err, store.ErrInvalidArgument):
+		// The store's own messages, from Rudolph's validation; never an AWS error.
 		msg := strings.TrimPrefix(err.Error(), store.ErrInvalidArgument.Error()+": ")
+		if len(msg) > 300 {
+			msg = msg[:300] + "…"
+		}
 		s.renderError(w, r, http.StatusBadRequest, "Not saved: "+msg)
 	case errors.Is(err, store.ErrNotFound):
 		if notFound == "" {
 			notFound = "Not found."
 		}
 		s.renderError(w, r, http.StatusNotFound, notFound)
-	case errors.Is(err, store.ErrNotAudited):
-		s.log.Error("write not audited", "path", r.URL.Path, "err", err)
-		s.renderError(w, r, http.StatusInternalServerError, "The change was saved, but it could not be recorded in the audit trail. Tell whoever looks after Rudolph.")
 	case errors.Is(err, store.ErrUnavailable):
 		s.renderError(w, r, http.StatusServiceUnavailable, "The data store is not available.")
 	default:

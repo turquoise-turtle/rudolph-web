@@ -242,7 +242,7 @@ or on a 403 if your account has neither role.
 
 ### The role
 
-Four or five statements, no AWS managed policies and no wildcard resources:
+Four to seven statements, no AWS managed policies and no wildcard resources:
 
 | Statement | Actions | Resources |
 |---|---|---|
@@ -252,7 +252,7 @@ Four or five statements, no AWS managed policies and no wildcard resources:
 | `ReadRudolphStore` | `dynamodb:GetItem`, `dynamodb:Query` | the table and `<table>/index/*` |
 | `ReadRudolphEvents` | `dynamodb:GetItem`, `dynamodb:Query` | the events table and `<events table>/index/*`; only with `events_dynamodb_table_name` set |
 
-With `dynamodb_kms_key_arn` set there is one more, `kms:Decrypt` conditioned on the DynamoDB service. With `enable_editing` there is one more, `WriteRudolphRulesAndAudit`, described under [Editing](#editing-optional); without it the role has no write action of any kind. There is deliberately no `dynamodb:Scan`: every list in the app is one bounded query.
+With `dynamodb_kms_key_arn` set there is one more, `kms:Decrypt` conditioned on the DynamoDB service. With `enable_editing` there are two more, `WriteRudolphRules` and `AppendRudolphAudit`, described under [Editing](#editing-optional); without it the role has no write action of any kind. There is deliberately no `dynamodb:Scan`: every list in the app is one bounded query.
 
 Terraform creates the log group itself, so Lambda cannot create one without retention, and the
 function does not need `logs:CreateLogGroup`.
@@ -294,21 +294,28 @@ By default the view is read-only. With `enable_editing = true` (in `config.auto.
 * set a temporary client mode for a Mac (monitor, lockdown or standalone, for `1m` to `30d`) and end it now, on the Mac's page;
 * add and remove the rules of a device group, or of the Macs in no group, on the group's page.
 
-Macs get each change at their next sync. Removing asks nothing more than the clearly labelled button: the forms are plain HTML, since the CSP allows no script. Viewers never see the forms and get 403 from the write routes; every write is a same-origin POST (`http.CrossOriginProtection`). Without editing the forms are not shown and the write routes do not exist (404).
+Macs get each change at their next sync. Rules and temporary modes for a Mac go under its machine ID exactly as Rudolph stores it: like the CLI, the web view looks the ID up as given, in upper case and in lower case (sensor data first, then a machine configuration, then machine rules). A machine Rudolph has nothing for answers 404 rather than getting a rule no Mac would ever read. The shortest temporary mode, `1m`, gets a few seconds' allowance for the time the request takes before Rudolph checks its one-minute minimum. Removing asks nothing more than the clearly labelled button: the forms are plain HTML, since the CSP allows no script. Viewers never see the forms and get 403 from the write routes; every write is a same-origin POST (`http.CrossOriginProtection`). Without editing the forms are not shown and the write routes do not exist (404).
 
 ### What it changes
 
 Every write goes through Rudolph's own Go packages (`pkg/model/globalrules`, `machinerules`, `groups`, `machineconfiguration`, `eventcollection` and `audit`, with Rudolph's `pkg/dynamodb` client), so the web view refuses exactly what the CLI refuses (identifier shapes, policies, machine UUIDs, group names, the temporary mode limits) and writes the same rows, feed entries included. Invalid input answers 400 with the reason; removing a rule that does not exist answers 404.
 
-`enable_editing` sets `RUDOLPH_WEB_EDITING=true` on the function and adds one statement to its role:
+`enable_editing` sets `RUDOLPH_WEB_EDITING=true` on the function and adds two statements to its role:
 
 | Statement | Actions | Resources | Condition |
 |---|---|---|---|
-| `WriteRudolphRulesAndAudit` | `dynamodb:PutItem`, `dynamodb:UpdateItem`, `dynamodb:DeleteItem` | the store table only (no index, not the events table) | `ForAllValues:StringLike` on `dynamodb:LeadingKeys`: `GlobalRules`, `RulesFeed`, `MachineRules#*`, `Machine#*`, `GroupRules#*`, `GroupRegistry`, `EventCollection`, `Audit#*` |
+| `WriteRudolphRules` | `dynamodb:PutItem`, `dynamodb:UpdateItem`, `dynamodb:DeleteItem` | the store table only (no index, not the events table) | `ForAllValues:StringLike` on `dynamodb:LeadingKeys`: `GlobalRules`, `RulesFeed`, `MachineRules#*`, `Machine#*`, `GroupRules#*`, `GroupRegistry`, `EventCollection` |
+| `AppendRudolphAudit` | `dynamodb:PutItem` only | the store table only | `ForAllValues:StringLike` on `dynamodb:LeadingKeys`: `Audit#*` |
 
-Global rule and group rule changes are `TransactWriteItems` calls, which have no IAM action of their own: DynamoDB checks `PutItem`, `UpdateItem` or `DeleteItem` for each item in them. The partitions are the ones these writes touch: global rules and their rules feed rows, machine rules, the machine config row (`Machine#<id>`, `SK=Config`) holding a temporary mode, group rules and the group registry's rules version, the index of rules whose allowed executions are collected (a replaced or removed rule is taken out of it, as the CLI does), and the audit trail's day partitions. `dynamodb:LeadingKeys` cannot limit the sort key, so `Machine#*` also covers a Mac's other rows (sensor data, sync state, groups); the code writes only the config row. Nothing else of the table can be written. With `dynamodb_kms_key_arn` set, the existing `kms:Decrypt` grant is also what writes need.
+Global rule and group rule changes are `TransactWriteItems` calls, which have no IAM action of their own: DynamoDB checks `PutItem`, `UpdateItem` or `DeleteItem` for each item in them. The partitions are the ones these writes touch: global rules and their rules feed rows, machine rules, the machine config row (`Machine#<id>`, `SK=Config`) holding a temporary mode, group rules and the group registry's rules version, the index of rules whose allowed executions are collected (a replaced or removed rule is taken out of it, as the CLI does), and the audit trail's day partitions. Audit entries are in a statement of their own with `PutItem` only, so the role can add entries but never change or delete one.
 
-To turn it on: assign `Rudolph.Admin` to the people who may change rules (see [the app registration](#the-entra-id-app-registration)), set `enable_editing` to `true`, and `make deploy`. Role changes take effect at their next sign-in. To turn it off again, set it back to `false` and deploy: the statement and the forms go away together.
+IAM cannot restrict a write by sort key: `dynamodb:LeadingKeys` matches the partition key only. So `Machine#*`, which the temporary mode needs for a Mac's config row (`SK=Config`), also lets the role write that Mac's sensor data (`SK=Current`), sync state (`SK=SyncState`) and group rows. The code writes only the config row; the grant is broader than the code. Nothing else of the table can be written. With `dynamodb_kms_key_arn` set, the existing `kms:Decrypt` grant is also what writes need.
+
+To turn it on: assign `Rudolph.Admin` to the people who may change rules (see [the app registration](#the-entra-id-app-registration)), set `enable_editing` to `true`, and `make deploy`.
+
+Role changes take effect at the next sign-in. A session keeps the roles it was signed in with until it expires, `session_ttl` later (default one hour), and the app does not ask Entra again before then. So removing someone's `Rudolph.Admin` assignment stops their edits only when their session ends: wait up to `session_ttl`, or, to cut every session off now, [roll the cookie key](#the-cookie-key-1), which signs everyone out.
+
+To turn editing off again, set `enable_editing` back to `false` and deploy: the two statements and the forms go away together.
 
 ### The audit trail
 
@@ -335,7 +342,7 @@ go mod tidy
 go test ./...    # and the integration tests, against DynamoDB Local
 ```
 
-Check `git diff go.mod` afterwards: Rudolph's own requirements must not force an upgrade you did not intend. When Rudolph changes a writer the web view uses, or adds a partition one of them writes, update the `WriteRudolphRulesAndAudit` leading keys to match.
+Check `git diff go.mod` afterwards: Rudolph's own requirements must not force an upgrade you did not intend. When Rudolph changes a writer the web view uses, or adds a partition one of them writes, update the `WriteRudolphRules` leading keys to match.
 
 To develop against a local Rudolph checkout without pushing, do not commit a `replace` to a local path. Use a workspace instead, which `go.mod` never sees:
 

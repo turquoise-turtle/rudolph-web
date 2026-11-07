@@ -98,34 +98,31 @@ data "aws_iam_policy_document" "web" {
   # remove and its temporary client mode: PutItem, UpdateItem and DeleteItem, also inside TransactWriteItems, which
   # has no IAM action of its own. Only on the store table itself (never an index or the events table), and only to the
   # partitions those writes touch:
-  #   GlobalRules, RulesFeed     global rules and the feed rows that tell Macs about each change (globalrules)
-  #   MachineRules#*             machine rules (machinerules)
-  #   Machine#*                  the machine config row holding a temporary client mode (machineconfiguration)
+  #   GlobalRules, RulesFeed       global rules and the feed rows that tell Macs about each change (globalrules)
+  #   MachineRules#*               machine rules (machinerules)
+  #   Machine#*                    the machine config row holding a temporary client mode (machineconfiguration);
+  #                                LeadingKeys cannot limit the sort key, so this also covers a Mac's other rows
   #   GroupRules#*, GroupRegistry  group rules and the rules version bumped with each (groups)
-  #   EventCollection            the index of rules whose allowed executions are collected (eventcollection)
-  #   Audit#*                    one audit trail partition per UTC day (audit)
-  # The actions are in for_each so that they exist only when editing is on.
+  #   EventCollection              the index of rules whose allowed executions are collected (eventcollection)
+  # The audit trail (one partition per UTC day) is a statement of its own with PutItem only: the role can add entries
+  # but never change or delete one. The actions are in for_each so that they exist only when editing is on; each
+  # element is one statement.
   dynamic "statement" {
-    for_each = var.enable_editing ? [{
-      actions = [
-        "dynamodb:PutItem",
-        "dynamodb:UpdateItem",
-        "dynamodb:DeleteItem",
-      ]
-      leading_keys = [
-        "GlobalRules",
-        "RulesFeed",
-        "MachineRules#*",
-        "Machine#*",
-        "GroupRules#*",
-        "GroupRegistry",
-        "EventCollection",
-        "Audit#*",
-      ]
-    }] : []
+    for_each = var.enable_editing ? [
+      {
+        sid          = "WriteRudolphRules"
+        actions      = ["dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:DeleteItem"]
+        leading_keys = ["GlobalRules", "RulesFeed", "MachineRules#*", "Machine#*", "GroupRules#*", "GroupRegistry", "EventCollection"]
+      },
+      {
+        sid          = "AppendRudolphAudit"
+        actions      = ["dynamodb:PutItem"]
+        leading_keys = ["Audit#*"]
+      },
+    ] : []
 
     content {
-      sid       = "WriteRudolphRulesAndAudit"
+      sid       = statement.value.sid
       effect    = "Allow"
       actions   = statement.value.actions
       resources = [local.dynamodb_table_arn]

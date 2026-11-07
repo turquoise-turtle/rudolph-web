@@ -15,6 +15,33 @@ import (
 
 var _ store.Writer = (*Store)(nil)
 
+// storedMachineID finds the spelling a machine ID is stored under, as the
+// DynamoDB writer does: one with sensor data, else with configuration, else
+// with machine rules; ErrNotFound when the fake has nothing for it. The
+// caller holds s.mu.
+func (s *Store) storedMachineID(id string) (string, error) {
+	spellings := rudolphrules.Spellings(id)
+	for _, sp := range spellings {
+		if _, ok := s.machines[sp]; ok {
+			return sp, nil
+		}
+	}
+	for _, sp := range spellings {
+		_, mode := s.configModes[sp]
+		_, temp := s.tempModes[sp]
+		_, clean := s.cleanSyncs[sp]
+		if mode || temp || clean {
+			return sp, nil
+		}
+	}
+	for _, sp := range spellings {
+		if len(s.machineRules[sp]) > 0 {
+			return sp, nil
+		}
+	}
+	return "", rudolphrules.UnknownMachine(id)
+}
+
 // AddRule implements store.Writer.
 func (s *Store) AddRule(_ context.Context, actor store.Actor, target store.RuleTarget, r store.NewRule) error {
 	add, err := rudolphrules.CheckAdd(actor, target, r)
@@ -25,6 +52,11 @@ func (s *Store) AddRule(_ context.Context, actor store.Actor, target store.RuleT
 	defer s.mu.Unlock()
 	if s.err != nil {
 		return s.err
+	}
+	if add.Target.Kind == store.TargetMachine {
+		if add.Target.MachineID, err = s.storedMachineID(add.Target.MachineID); err != nil {
+			return err
+		}
 	}
 	rule := store.Rule{
 		RuleType: r.RuleType, Policy: r.Policy, Identifier: r.Identifier, CustomMessage: r.CustomMessage,
@@ -67,6 +99,11 @@ func (s *Store) RemoveRule(_ context.Context, actor store.Actor, target store.Ru
 	if s.err != nil {
 		return s.err
 	}
+	if rm.Target.Kind == store.TargetMachine {
+		if rm.Target.MachineID, err = s.storedMachineID(rm.Target.MachineID); err != nil {
+			return err
+		}
+	}
 	key := ruleKey(store.Rule{RuleType: ruleType, Identifier: identifier})
 	var rules map[string]store.Rule
 	switch rm.Target.Kind {
@@ -105,6 +142,9 @@ func (s *Store) SetTemporaryMode(_ context.Context, actor store.Actor, machineID
 	if s.err != nil {
 		return s.err
 	}
+	if machineID, err = s.storedMachineID(machineID); err != nil {
+		return err
+	}
 	// Rudolph stores the end in whole seconds.
 	until = time.Unix(until.Unix(), 0).UTC()
 	s.tempModes[machineID] = tempMode{mode: mode, until: until}
@@ -125,6 +165,9 @@ func (s *Store) EndTemporaryMode(_ context.Context, actor store.Actor, machineID
 	defer s.mu.Unlock()
 	if s.err != nil {
 		return s.err
+	}
+	if machineID, err = s.storedMachineID(machineID); err != nil {
+		return err
 	}
 	if _, ok := s.tempModes[machineID]; !ok {
 		return nil

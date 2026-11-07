@@ -7,6 +7,7 @@ package rudolphrules
 import (
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/airbnb/rudolph/pkg/model/groups"
@@ -257,4 +258,24 @@ func SummaryOf(ruleType store.RuleType, identifier string, policy store.Policy, 
 		summary += ", " + extra
 	}
 	return summary
+}
+
+// Spellings are the spellings of a machine ID to look for, in the order the
+// CLI's ResolveMachineID tries them: as given, upper case, lower case. Rudolph
+// keeps a machine ID exactly as the Mac sends it and matches it exactly, so a
+// rule or configuration under another spelling never reaches the Mac.
+func Spellings(id string) []string {
+	out := []string{id}
+	for _, s := range []string{strings.ToUpper(id), strings.ToLower(id)} {
+		if !slices.Contains(out, s) {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// UnknownMachine is the error for a machine ID Rudolph has nothing stored
+// under in any spelling: no sensor data, configuration or machine rules.
+func UnknownMachine(id string) error {
+	return fmt.Errorf("%w: Rudolph has nothing for machine %s", store.ErrNotFound, id)
 }
