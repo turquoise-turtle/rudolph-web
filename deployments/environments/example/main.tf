@@ -22,6 +22,9 @@ module "rudolph_web" {
   # The ENV= of the copy-and-paste Rudolph CLI commands on the pages.
   cli_env = var.cli_env
 
+  # How old a top list may be before its page warns; fit it to the ranker's schedule.
+  top_list_stale_after = var.top_list_stale_after
+
   create_ssm_parameters = var.create_ssm_parameters
   ssm_kms_key_arn       = var.ssm_kms_key_arn
 

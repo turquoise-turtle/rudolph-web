@@ -68,6 +68,12 @@ variable "cli_env" {
   default     = ""
 }
 
+variable "top_list_stale_after" {
+  type        = string
+  description = "How old a top list may be before its page warns that Rudolph's ranker may have stopped, in whole hours from 1h to 168h. Raise it when the ranker runs on a schedule, e.g. weekdays only."
+  default     = "3h"
+}
+
 variable "create_ssm_parameters" {
   type        = bool
   description = "Create the two SecureString parameters with a placeholder value instead of creating them yourself"

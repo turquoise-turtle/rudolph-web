@@ -26,6 +26,11 @@ const (
 	EnvSessionTTL            = "RUDOLPH_WEB_SESSION_TTL"
 	EnvAddr                  = "RUDOLPH_WEB_ADDR"
 
+	// EnvTopListStaleAfter is how old a top list may be before its page warns
+	// that the ranker may have stopped. A ranker scheduled for working hours
+	// only needs more than the default.
+	EnvTopListStaleAfter = "RUDOLPH_WEB_TOP_LIST_STALE_AFTER"
+
 	// EnvTableName names Rudolph's DynamoDB table. Unset, cmd/lambda has no data
 	// layer and the data pages answer 503.
 	EnvTableName = "RUDOLPH_WEB_DYNAMODB_TABLE"
@@ -52,7 +57,11 @@ const (
 	minSessionTTL     = 5 * time.Minute
 	maxSessionTTL     = 12 * time.Hour
 	defaultAddr       = "127.0.0.1:8080"
-	entraAuthority    = "https://login.microsoftonline.com"
+
+	defaultTopListStaleAfter = 3 * time.Hour
+	minTopListStaleAfter     = time.Hour
+	maxTopListStaleAfter     = 168 * time.Hour
+	entraAuthority           = "https://login.microsoftonline.com"
 )
 
 // cliEnvRe matches environment names that can follow ENV= in a shell command
@@ -74,6 +83,7 @@ type Config struct {
 	TableName             string // empty: no data layer
 	EventsTableName       string // empty: no execution events
 	CLIEnv                string // empty: CLI commands without ENV=
+	TopListStaleAfter     time.Duration
 }
 
 // FromEnv reads and validates configuration. Error messages name variables
@@ -91,6 +101,7 @@ func FromEnv(getenv func(string) string) (Config, error) {
 		TableName:             get(EnvTableName),
 		EventsTableName:       get(EnvEventsTableName),
 		CLIEnv:                get(EnvCLIEnv),
+		TopListStaleAfter:     defaultTopListStaleAfter,
 	}
 	var errs []error
 	required := func(name, v string) bool {
@@ -136,6 +147,17 @@ func FromEnv(getenv func(string) string) (Config, error) {
 			errs = append(errs, fmt.Errorf("%s must be between %v and %v", EnvSessionTTL, minSessionTTL, maxSessionTTL))
 		default:
 			c.SessionTTL = d
+		}
+	}
+	if v := get(EnvTopListStaleAfter); v != "" {
+		d, err := time.ParseDuration(v)
+		switch {
+		case err != nil:
+			errs = append(errs, fmt.Errorf("%s must be a Go duration such as 15h", EnvTopListStaleAfter))
+		case d < minTopListStaleAfter || d > maxTopListStaleAfter:
+			errs = append(errs, fmt.Errorf("%s must be between %v and %v", EnvTopListStaleAfter, minTopListStaleAfter, maxTopListStaleAfter))
+		default:
+			c.TopListStaleAfter = d
 		}
 	}
 	if c.EventsTableName != "" && c.TableName == "" {

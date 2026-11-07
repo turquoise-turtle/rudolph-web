@@ -48,6 +48,9 @@ resource "aws_lambda_function" "web" {
 
       # The ENV= the pages' copy-and-paste Rudolph CLI commands start with.
       RUDOLPH_WEB_CLI_ENV = var.cli_env
+
+      # How old a top list may be before its page warns; depends on the ranker's schedule.
+      RUDOLPH_WEB_TOP_LIST_STALE_AFTER = var.top_list_stale_after
     }
   }
 

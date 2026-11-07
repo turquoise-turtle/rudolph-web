@@ -19,7 +19,7 @@
 //	PK=Exec#<id>          SK=<TS>#<sha256>#<pid>          -> ExecutionEvent
 //
 // with the indexes Fleet_TS, Decision_TS and TeamID_TS, and the top lists
-// Rudolph's hourly ranker writes to the same table:
+// Rudolph's ranker writes to the same table:
 //
 //	PK=Top#<kind>#<days>                      SK=Current   pointer to the latest snapshot
 //	PK=TopSnapshot#<kind>#<days>#<snapshot>   SK=<rank>    -> TopBinary
@@ -374,7 +374,7 @@ const (
 var TopKinds = []TopKind{TopKindBlocked, TopKindAllowed}
 
 // TopWindowDays are the windows, in days ending today (UTC), that Rudolph's
-// hourly ranker computes. No other window exists in the table.
+// ranker computes. No other window exists in the table.
 var TopWindowDays = []int{1, 7, 30, 90}
 
 // TopFilter selects one ranker list.

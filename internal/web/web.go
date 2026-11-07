@@ -38,6 +38,9 @@ type Options struct {
 	// CLIEnv is the Rudolph environment the copy-and-paste CLI commands name
 	// (ENV=<CLIEnv>); empty leaves ENV to the operator's shell.
 	CLIEnv string
+	// TopListStaleAfter is how old a top list may be before its page warns
+	// that the ranker may have stopped; 0 means DefaultTopListStaleAfter.
+	TopListStaleAfter time.Duration
 }
 
 type server struct {
@@ -47,6 +50,8 @@ type server struct {
 	now      func() time.Time
 	log      *slog.Logger
 	pages    map[string]*template.Template
+
+	topListStaleAfter time.Duration
 }
 
 // New returns the complete application handler: auth routes, static assets
@@ -65,6 +70,12 @@ func New(opts Options) (http.Handler, error) {
 	if opts.PageSize < 1 || opts.PageSize > store.MaxPageSize {
 		return nil, fmt.Errorf("web: PageSize must be 1..%d", store.MaxPageSize)
 	}
+	if opts.TopListStaleAfter == 0 {
+		opts.TopListStaleAfter = DefaultTopListStaleAfter
+	}
+	if opts.TopListStaleAfter < 0 {
+		return nil, errors.New("web: TopListStaleAfter must not be negative")
+	}
 	if opts.Now == nil {
 		opts.Now = time.Now
 	}
@@ -82,6 +93,8 @@ func New(opts Options) (http.Handler, error) {
 		now:      opts.Now,
 		log:      opts.Logger,
 		pages:    pages,
+
+		topListStaleAfter: opts.TopListStaleAfter,
 	}
 
 	mux := http.NewServeMux()

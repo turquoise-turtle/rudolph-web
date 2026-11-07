@@ -16,7 +16,7 @@ import (
 	"github.com/turquoise-turtle/rudolph-web/internal/store"
 )
 
-// Rudolph's hourly ranker (internal/ranker, docs/events-table.md "Top
+// Rudolph's ranker (internal/ranker, docs/events-table.md "Top
 // binaries") writes each list as a snapshot of ranked rows in
 // TopSnapshot#<kind>#<days>#<snapshot ID>, SK the rank as six digits, then
 // moves the pointer Top#<kind>#<days> / Current to it. Snapshot rows expire 8

@@ -303,8 +303,9 @@ var (
 
 const defaultTopWindowDays = 7
 
-// topListStaleAfter is three missed runs of Rudolph's hourly ranker.
-const topListStaleAfter = 3 * time.Hour
+// DefaultTopListStaleAfter is three missed runs of a ranker that runs every
+// hour around the clock.
+const DefaultTopListStaleAfter = 3 * time.Hour
 
 // topWindowLink is one window in the window navigation.
 type topWindowLink struct {
@@ -374,6 +375,7 @@ func (s *server) topList(w http.ResponseWriter, r *http.Request, page topListPag
 		Computed    bool
 		GeneratedAt time.Time
 		Stale       bool
+		StaleHours  string
 		Binaries    []store.TopBinary
 		Pager       pager
 	}{
@@ -384,7 +386,8 @@ func (s *server) topList(w http.ResponseWriter, r *http.Request, page topListPag
 		OtherURL:    topListURL(other.Path, days),
 		Computed:    computed,
 		GeneratedAt: list.GeneratedAt,
-		Stale:       computed && s.now().Sub(list.GeneratedAt) > topListStaleAfter,
+		Stale:       computed && s.now().Sub(list.GeneratedAt) > s.topListStaleAfter,
+		StaleHours:  strconv.FormatFloat(s.topListStaleAfter.Hours(), 'f', -1, 64),
 		Binaries:    list.Items,
 		Pager:       links(page.Path, url.Values{"days": {strconv.Itoa(days)}}, pr.Cursor, list.NextCursor),
 	})

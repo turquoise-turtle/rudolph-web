@@ -59,6 +59,17 @@ variable "cli_env" {
   }
 }
 
+variable "top_list_stale_after" {
+  type        = string
+  description = "How old a top blocked or allowed list may be before its page warns that Rudolph's ranker may have stopped (RUDOLPH_WEB_TOP_LIST_STALE_AFTER), in whole hours from 1h to 168h. Raise it when the ranker runs on a schedule, e.g. weekdays only."
+  default     = "3h"
+
+  validation {
+    condition     = can(regex("^[1-9][0-9]*h$", var.top_list_stale_after)) && try(tonumber(trimsuffix(var.top_list_stale_after, "h")) <= 168, false)
+    error_message = "top_list_stale_after must be whole hours from 1h to 168h, e.g. 15h."
+  }
+}
+
 variable "session_ttl" {
   type        = string
   description = "Session cookie lifetime as a Go duration between 5m and 12h (RUDOLPH_WEB_SESSION_TTL). Role changes take effect at most one TTL after the next sign-in."
