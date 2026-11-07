@@ -51,6 +51,9 @@ resource "aws_lambda_function" "web" {
 
       # How old a top list may be before its page warns; depends on the ranker's schedule.
       RUDOLPH_WEB_TOP_LIST_STALE_AFTER = var.top_list_stale_after
+
+      # Admin writes; the role is only granted them when this is true (iam.tf).
+      RUDOLPH_WEB_EDITING = var.enable_editing
     }
   }
 

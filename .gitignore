@@ -4,6 +4,10 @@
 bootstrap
 .env
 
+# A Go workspace for developing against a local Rudolph checkout (docs/deploy.md); go.mod pins the pushed fork.
+go.work
+go.work.sum
+
 # Build output (scripts/build.sh)
 /build/
 

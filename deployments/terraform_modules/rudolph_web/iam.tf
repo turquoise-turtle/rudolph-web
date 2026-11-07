@@ -1,5 +1,6 @@
 #
-# IAM: read two parameters, decrypt them, read Rudolph's two tables, write its own logs. Nothing else.
+# IAM: read two parameters, decrypt them, read Rudolph's two tables, write its own logs. With enable_editing, also
+# write Rudolph's rules, temporary client modes and audit trail. Nothing else.
 #
 
 resource "aws_iam_role" "web" {
@@ -59,8 +60,8 @@ data "aws_iam_policy_document" "web" {
     }
   }
 
-  # Ready for the DynamoDB reader. Every list issues one bounded query, so there is no Scan here,
-  # and the view is read-only, so there is no write action either.
+  # The DynamoDB reader. Every list issues one bounded query, so there is no Scan here. Writes are
+  # in their own statement below, which exists only with enable_editing.
   statement {
     sid    = "ReadRudolphStore"
     effect = "Allow"
@@ -90,6 +91,47 @@ data "aws_iam_policy_document" "web" {
         statement.value,
         "${statement.value}/index/*",
       ]
+    }
+  }
+
+  # Admin writes (enable_editing), made with Rudolph's own packages, so exactly the writes of the CLI's rule add and
+  # remove and its temporary client mode: PutItem, UpdateItem and DeleteItem, also inside TransactWriteItems, which
+  # has no IAM action of its own. Only on the store table itself (never an index or the events table), and only to the
+  # partitions those writes touch:
+  #   GlobalRules, RulesFeed       global rules and the feed rows that tell Macs about each change (globalrules)
+  #   MachineRules#*               machine rules (machinerules)
+  #   Machine#*                    the machine config row holding a temporary client mode (machineconfiguration);
+  #                                LeadingKeys cannot limit the sort key, so this also covers a Mac's other rows
+  #   GroupRules#*, GroupRegistry  group rules and the rules version bumped with each (groups)
+  #   EventCollection              the index of rules whose allowed executions are collected (eventcollection)
+  # The audit trail (one partition per UTC day) is a statement of its own with PutItem only: the role can add entries
+  # but never change or delete one. The actions are in for_each so that they exist only when editing is on; each
+  # element is one statement.
+  dynamic "statement" {
+    for_each = var.enable_editing ? [
+      {
+        sid          = "WriteRudolphRules"
+        actions      = ["dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:DeleteItem"]
+        leading_keys = ["GlobalRules", "RulesFeed", "MachineRules#*", "Machine#*", "GroupRules#*", "GroupRegistry", "EventCollection"]
+      },
+      {
+        sid          = "AppendRudolphAudit"
+        actions      = ["dynamodb:PutItem"]
+        leading_keys = ["Audit#*"]
+      },
+    ] : []
+
+    content {
+      sid       = statement.value.sid
+      effect    = "Allow"
+      actions   = statement.value.actions
+      resources = [local.dynamodb_table_arn]
+
+      condition {
+        test     = "ForAllValues:StringLike"
+        variable = "dynamodb:LeadingKeys"
+        values   = statement.value.leading_keys
+      }
     }
   }
 

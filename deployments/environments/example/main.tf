@@ -28,9 +28,10 @@ module "rudolph_web" {
   create_ssm_parameters = var.create_ssm_parameters
   ssm_kms_key_arn       = var.ssm_kms_key_arn
 
-  # Rudolph's data store, read-only.
+  # Rudolph's data store, read-only unless enable_editing lets admins change rules and temporary modes.
   dynamodb_table_name  = var.dynamodb_table_name
   dynamodb_kms_key_arn = var.dynamodb_kms_key_arn
+  enable_editing       = var.enable_editing
 
   # Rudolph's execution events table, read-only. Empty leaves the events pages unavailable.
   events_dynamodb_table_name = var.events_dynamodb_table_name

@@ -51,7 +51,14 @@ func main() {
 		log.Error("data layer setup", "err", err)
 		os.Exit(1)
 	}
-	h, err := web.New(web.Options{Auth: a, Store: reader, Logger: log, CLIEnv: cfg.CLIEnv, TopListStaleAfter: cfg.TopListStaleAfter})
+	opts := web.Options{Auth: a, Store: reader, Logger: log, CLIEnv: cfg.CLIEnv, TopListStaleAfter: cfg.TopListStaleAfter}
+	// Without RUDOLPH_WEB_EDITING=true the view stays read-only: no forms, and
+	// the write routes do not exist. The role is only granted writes with
+	// enable_editing, which sets the variable.
+	if w, ok := reader.(store.Writer); ok && cfg.Editing {
+		opts.Writer = w
+	}
+	h, err := web.New(opts)
 	if err != nil {
 		log.Error("web setup", "err", err)
 		os.Exit(1)

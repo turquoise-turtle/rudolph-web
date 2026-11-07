@@ -118,11 +118,13 @@ func (s *server) machineDetail(w http.ResponseWriter, r *http.Request) {
 		Health  syncHealth
 		Rules   []store.Rule
 		Pager   pager
+		Edit    editForms
 	}{
 		Machine: machine,
 		Health:  machineHealth(machine, s.now()),
 		Rules:   rules.Items,
 		Pager:   links("/machines/"+url.PathEscape(id), url.Values{}, pr.Cursor, rules.NextCursor),
+		Edit:    s.editForms(r),
 	})
 }
 
@@ -152,11 +154,13 @@ func (s *server) rules(w http.ResponseWriter, r *http.Request) {
 		Policies  []store.Policy
 		Rules     []store.Rule
 		Pager     pager
+		Edit      editForms
 	}{
 		Filter:    filter,
 		RuleTypes: store.RuleTypes,
 		Policies:  store.Policies,
 		Rules:     page.Items,
+		Edit:      s.editForms(r),
 		Pager: links("/rules", url.Values{"type": {string(filter.RuleType)}, "policy": {string(filter.Policy)}},
 			pr.Cursor, page.NextCursor),
 	})
@@ -223,10 +227,12 @@ func (s *server) groupDetail(w http.ResponseWriter, r *http.Request) {
 		Group store.Group
 		Rules []store.Rule
 		Pager pager
+		Edit  editForms
 	}{
 		Group: group,
 		Rules: page.Items,
 		Pager: links(groupURL(name), url.Values{}, pr.Cursor, page.NextCursor),
+		Edit:  s.editForms(r),
 	})
 }
 
@@ -396,7 +402,7 @@ func (s *server) topList(w http.ResponseWriter, r *http.Request, page topListPag
 // ---------------------------------------------------------------------------
 // Admin
 
-// admin is a placeholder for future write actions (Rudolph.Admin only).
+// admin says where the admin actions are (Rudolph.Admin only).
 func (s *server) admin(w http.ResponseWriter, r *http.Request) {
-	s.render(w, r, http.StatusOK, "admin", "Admin", "admin", nil)
+	s.render(w, r, http.StatusOK, "admin", "Admin", "admin", struct{ Editing bool }{s.writer != nil})
 }

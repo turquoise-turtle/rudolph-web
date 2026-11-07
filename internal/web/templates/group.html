@@ -9,10 +9,11 @@
   {{end}}
 </dl>
 <h2>Rules</h2>
+{{if .Edit.On}}{{template "addrule" (addRuleForm "Add a rule for this group" "group" .Group.Name .Edit)}}{{end}}
 {{if .Rules}}
 <div class="scroll">
 <table>
-<thead><tr><th>Type</th><th>Policy</th><th>Identifier</th><th>Custom message</th><th>Description</th><th>State</th><th>Rudolph CLI</th></tr></thead>
+<thead><tr><th>Type</th><th>Policy</th><th>Identifier</th><th>Custom message</th><th>Description</th><th>State</th><th>Rudolph CLI</th>{{if .Edit.On}}<th>Change</th>{{end}}</tr></thead>
 <tbody>
 {{range .Rules}}
 <tr data-row>
@@ -25,6 +26,7 @@
   <td>{{with cliRuleGroup "deny" .RuleType .Identifier $.Group.Name}}<details class="cmds"><summary>Commands</summary><ul>
     {{template "cmd" (cmd "Block in this group" .)}}
   </ul></details>{{end}}</td>
+  {{if $.Edit.On}}<td>{{template "removerule" (removeRuleForm "group" $.Group.Name .)}}</td>{{end}}
 </tr>
 {{end}}
 </tbody>
