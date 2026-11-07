@@ -36,7 +36,7 @@ func TestAuditPage_Pages(t *testing.T) {
 		counts = append(counts, rows(body))
 		for i := 0; i < 25; i++ {
 			id := auditPagingID(i)
-			if strings.Contains(body, id[:16]) {
+			if strings.Contains(body, id) {
 				if seen[id] {
 					t.Errorf("entry %d appears on two pages", i)
 				}
@@ -56,8 +56,8 @@ func TestAuditPage_Pages(t *testing.T) {
 	}
 }
 
-// auditPagingID gives entry i a SHA-256-shaped identifier whose first 16 characters occur in no other entry's
-// identifier, so the page an entry is on can be found by substring.
+// auditPagingID gives entry i a distinct SHA-256-shaped identifier. The audit page shows identifiers in full and all
+// have the same length, so the page an entry is on can be found by substring.
 func auditPagingID(i int) string {
 	return fmt.Sprintf("%02x", i+1) + strings.Repeat("e", 62)
 }
