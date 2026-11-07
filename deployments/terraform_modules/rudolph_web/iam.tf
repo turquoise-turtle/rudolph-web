@@ -102,10 +102,11 @@ data "aws_iam_policy_document" "web" {
   #   MachineRules#*               machine rules (machinerules)
   #   Machine#*                    the machine config row holding a temporary client mode (machineconfiguration);
   #                                LeadingKeys cannot limit the sort key, so this also covers a Mac's other rows
-  #   GroupRules#*, GroupRegistry  group rules and the rules version bumped with each (groups)
+  #   GroupRules#*, GroupRegistry  group rules and the rules version bumped with each (groups); the registry and the
+  #                                Macs' Groups rows also allow creating groups and changing membership
   #   EventCollection              the index of rules whose allowed executions are collected (eventcollection)
-  # The audit trail (one partition per UTC day) is a statement of its own with PutItem only: the role can add entries
-  # but never change or delete one. The actions are in for_each so that they exist only when editing is on; each
+  # The audit trail (one partition per UTC day) is a statement of its own with PutItem only: the role cannot update or
+  # delete an entry; overwriting one is prevented by Rudolph's conditional put (attribute_not_exists), not by IAM. The actions are in for_each so that they exist only when editing is on; each
   # element is one statement.
   dynamic "statement" {
     for_each = var.enable_editing ? [
