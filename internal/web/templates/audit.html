@@ -1,5 +1,5 @@
 {{define "content"}}
-<p class="hint">Changes by the Rudolph CLI (cli:…) and this web view (web:…) in the last {{.Days}} days, newest first; at most {{.Limit}}. Use <code>rudolph audit</code> for older entries.</p>
+<p class="hint">Changes by the Rudolph CLI (cli:…) and this web view (web:…) in the last {{.Days}} days, newest first. Use <code>rudolph audit</code> for older entries.</p>
 {{if .Entries}}
 <div class="scroll">
 <table>
@@ -17,6 +17,7 @@
 </tbody>
 </table>
 </div>
+{{template "pager" .Pager}}
 {{else}}
 <p>No changes recorded in the last {{.Days}} days.</p>
 {{end}}

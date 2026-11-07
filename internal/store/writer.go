@@ -156,4 +156,8 @@ type Writer interface {
 	// ListAudit returns at most limit (1..MaxAuditEntries) audit entries
 	// recorded at or after since, newest first.
 	ListAudit(ctx context.Context, since time.Time, limit int) ([]AuditEntry, error)
+	// ListAuditPage returns one page (1..MaxPageSize entries) of the audit
+	// entries recorded at or after since, newest first, with a signed cursor
+	// to the next page. A cursor issued for another list is ErrInvalidCursor.
+	ListAuditPage(ctx context.Context, since time.Time, p PageRequest) (Page[AuditEntry], error)
 }

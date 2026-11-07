@@ -55,6 +55,14 @@ deps:
 	go mod download
 	go mod tidy
 
+# Checks the Go dependencies: known vulnerabilities that affect the code (fails if any), then every module in the
+# build graph that has a newer version or is deprecated (for information; it does not fail).
+#
+GOVULNCHECK_VERSION = v1.9.0
+deps-check:
+	go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
+	go list -m -u -f '{{if or .Update .Deprecated}}{{.Path}} {{.Version}}{{with .Update}} (newer: {{.Version}}){{end}}{{with .Deprecated}} (deprecated: {{.}}){{end}}{{end}}' all
+
 # Compiles the Lambda binary and packages it for provided.al2023 on arm64.
 #
 #
@@ -77,4 +85,4 @@ init-env: .check-args
 #
 #
 #
-.PHONY: .check-args deploy justdeploy plan tf-init destroy tf-check deps build test init-env
+.PHONY: .check-args deploy justdeploy plan tf-init destroy tf-check deps deps-check build test init-env

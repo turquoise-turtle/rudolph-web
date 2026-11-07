@@ -2,6 +2,8 @@ package fake
 
 import (
 	"context"
+	"fmt"
+	"math"
 	"time"
 
 	"github.com/turquoise-turtle/rudolph-web/internal/store"
@@ -194,6 +196,24 @@ func (s *Store) ListAudit(_ context.Context, since time.Time, limit int) ([]stor
 		}
 	}
 	return out, nil
+}
+
+// ListAuditPage implements store.Writer. An entry's key is its place in the
+// trail counted from the oldest, so a cursor stays on the same entry as newer
+// ones are recorded.
+func (s *Store) ListAuditPage(_ context.Context, since time.Time, p store.PageRequest) (store.Page[store.AuditEntry], error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.err != nil {
+		return store.Page[store.AuditEntry]{}, s.err
+	}
+	var keyed []keyedItem[store.AuditEntry]
+	for i := len(s.audit) - 1; i >= 0; i-- {
+		if !s.audit[i].Time.Before(since) {
+			keyed = append(keyed, keyedItem[store.AuditEntry]{key: fmt.Sprintf("%020d", math.MaxInt64-i), item: s.audit[i]})
+		}
+	}
+	return paginate(s.cursors, keyed, fingerprint("ListAuditPage", "", nil), p)
 }
 
 // recordAudit appends an entry; the caller holds s.mu. Entries are kept in
