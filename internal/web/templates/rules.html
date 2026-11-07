@@ -15,10 +15,11 @@
   <button type="submit">Filter</button>
   <a href="/rules">Clear</a>
 </form>
+{{if .Edit.On}}{{template "addrule" (addRuleForm "Add a global rule" "global" "" .Edit)}}{{end}}
 {{if .Rules}}
 <div class="scroll">
 <table>
-<thead><tr><th>Type</th><th>Policy</th><th>Identifier</th><th>Custom message</th><th>Description</th><th>State</th><th>Rudolph CLI</th></tr></thead>
+<thead><tr><th>Type</th><th>Policy</th><th>Identifier</th><th>Custom message</th><th>Description</th><th>State</th><th>Rudolph CLI</th>{{if .Edit.On}}<th>Change</th>{{end}}</tr></thead>
 <tbody>
 {{range .Rules}}
 <tr data-row>
@@ -31,6 +32,7 @@
   <td>{{with cliRemoveGlobal .RuleType .Identifier}}<details class="cmds"><summary>Commands</summary><ul>
     {{template "cmd" (cmd "Remove" .)}}
   </ul></details>{{end}}</td>
+  {{if $.Edit.On}}<td>{{template "removerule" (removeRuleForm "global" "" .)}}</td>{{end}}
 </tr>
 {{end}}
 </tbody>

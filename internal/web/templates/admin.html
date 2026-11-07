@@ -1,4 +1,9 @@
 {{define "content"}}
 <h2>Admin actions</h2>
-<p>No admin actions are available yet. This page is reserved for future write actions and requires the Rudolph.Admin role.</p>
+{{if .Editing}}
+<p>Editing is on. As a Rudolph.Admin you can add and remove global rules on the <a href="/rules">Rules</a> page, rules for one Mac and its temporary client mode on that Mac's page (under <a href="/machines">Machines</a>), and group rules on each group's page (under <a href="/groups">Groups</a>). Macs get every change at their next sync.</p>
+<p>Every change is recorded in Rudolph's audit trail with your name, as the CLI records its own: see the <a href="/admin/audit">audit trail</a>.</p>
+{{else}}
+<p>This deployment is read-only. Editing is turned on with the deployment's <code>enable_editing</code> setting, which also grants the web view's role the writes it needs; the pages keep their copy-and-paste Rudolph CLI commands either way.</p>
+{{end}}
 {{end}}

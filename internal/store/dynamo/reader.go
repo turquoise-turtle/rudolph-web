@@ -8,8 +8,10 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/airbnb/rudolph/pkg/clock"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
@@ -42,6 +44,14 @@ type Options struct {
 	Now func() time.Time
 	// Logger records rows the reader skips; slog.Default() if nil.
 	Logger *slog.Logger
+
+	// Region is the AWS region of the table, for the Rudolph client the
+	// writer creates on its first write. Empty takes it from Client when that
+	// is the AWS SDK's *dynamodb.Client.
+	Region string
+	// RudolphClient, when set, is used for writes instead of the client the
+	// writer creates with Rudolph's dynamodb.GetClient.
+	RudolphClient RudolphClient
 }
 
 // Store reads Rudolph's table. It implements store.Reader.
@@ -52,6 +62,11 @@ type Store struct {
 	cursors     *store.CursorCodec
 	now         func() time.Time
 	log         *slog.Logger
+
+	region     string
+	writeClock clock.TimeProvider
+	writerMu   sync.Mutex
+	writer     RudolphClient
 }
 
 var _ store.Reader = (*Store)(nil)
@@ -74,7 +89,14 @@ func New(o Options) (*Store, error) {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Store{client: o.Client, table: o.Table, eventsTable: o.EventsTable, cursors: o.Cursors, now: now, log: log}, nil
+	region := o.Region
+	if c, ok := o.Client.(interface{ Options() dynamodb.Options }); ok && region == "" {
+		region = c.Options().Region
+	}
+	return &Store{
+		client: o.Client, table: o.Table, eventsTable: o.EventsTable, cursors: o.Cursors, now: now, log: log,
+		region: region, writeClock: clock.ConcreteTimeProvider{}, writer: o.RudolphClient,
+	}, nil
 }
 
 // machineDetailLimit bounds the machine detail Query. Config, Current,

@@ -74,6 +74,12 @@ variable "top_list_stale_after" {
   default     = "3h"
 }
 
+variable "enable_editing" {
+  type        = bool
+  description = "Let Rudolph.Admin add and remove rules and set temporary client modes from the web view, each recorded in Rudolph's audit trail. Grants the role writes to Rudolph's rule, machine and audit partitions only."
+  default     = false
+}
+
 variable "create_ssm_parameters" {
   type        = bool
   description = "Create the two SecureString parameters with a placeholder value instead of creating them yourself"

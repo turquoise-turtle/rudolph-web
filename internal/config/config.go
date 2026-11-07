@@ -40,6 +40,13 @@ const (
 	// EnvTableName.
 	EnvEventsTableName = "RUDOLPH_WEB_EVENTS_TABLE"
 
+	// EnvEditing turns on the admin write paths: "true" lets Rudolph.Admin
+	// add and remove rules and set temporary client modes, each recorded in
+	// Rudolph's audit trail. Anything but "true", "false" or empty is an
+	// error, so a typo never silently leaves editing on or off. It needs
+	// EnvTableName, and the deployment's enable_editing for the IAM grant.
+	EnvEditing = "RUDOLPH_WEB_EDITING"
+
 	// EnvCLIEnv is the Rudolph environment name the copy-and-paste CLI
 	// commands start with (ENV=<name> rudolph ...). Unset, they start with
 	// plain rudolph and the operator's shell supplies ENV.
@@ -84,6 +91,7 @@ type Config struct {
 	EventsTableName       string // empty: no execution events
 	CLIEnv                string // empty: CLI commands without ENV=
 	TopListStaleAfter     time.Duration
+	Editing               bool // admins may write; needs TableName
 }
 
 // FromEnv reads and validates configuration. Error messages name variables
@@ -162,6 +170,16 @@ func FromEnv(getenv func(string) string) (Config, error) {
 	}
 	if c.EventsTableName != "" && c.TableName == "" {
 		errs = append(errs, fmt.Errorf("%s needs %s", EnvEventsTableName, EnvTableName))
+	}
+	switch get(EnvEditing) {
+	case "", "false":
+	case "true":
+		c.Editing = true
+		if c.TableName == "" {
+			errs = append(errs, fmt.Errorf("%s needs %s", EnvEditing, EnvTableName))
+		}
+	default:
+		errs = append(errs, fmt.Errorf("%s must be true, false or empty", EnvEditing))
 	}
 	if c.CLIEnv != "" && !cliEnvRe.MatchString(c.CLIEnv) {
 		errs = append(errs, fmt.Errorf("%s must be letters, digits, '.', '_' or '-' (at most 64)", EnvCLIEnv))

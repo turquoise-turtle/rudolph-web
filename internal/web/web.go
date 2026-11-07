@@ -41,6 +41,10 @@ type Options struct {
 	// TopListStaleAfter is how old a top list may be before its page warns
 	// that the ranker may have stopped; 0 means DefaultTopListStaleAfter.
 	TopListStaleAfter time.Duration
+	// Writer lets Rudolph.Admin add and remove rules and set temporary client
+	// modes, and shows them the audit trail. Nil keeps the view read-only:
+	// no forms are shown and the write routes do not exist.
+	Writer store.Writer
 }
 
 type server struct {
@@ -52,6 +56,7 @@ type server struct {
 	pages    map[string]*template.Template
 
 	topListStaleAfter time.Duration
+	writer            store.Writer
 }
 
 // New returns the complete application handler: auth routes, static assets
@@ -95,6 +100,7 @@ func New(opts Options) (http.Handler, error) {
 		pages:    pages,
 
 		topListStaleAfter: opts.TopListStaleAfter,
+		writer:            opts.Writer,
 	}
 
 	mux := http.NewServeMux()
@@ -129,7 +135,17 @@ func New(opts Options) (http.Handler, error) {
 	mux.Handle("GET /events", viewer(s.events))
 	mux.Handle("GET /events/top-blocked", viewer(s.topBlocked))
 	mux.Handle("GET /events/top-allowed", viewer(s.topAllowed))
-	mux.Handle("GET /admin", opts.Auth.Require(auth.RoleAdmin, http.HandlerFunc(s.admin)))
+	admin := func(h http.HandlerFunc) http.Handler { return opts.Auth.Require(auth.RoleAdmin, h) }
+	mux.Handle("GET /admin", admin(s.admin))
+	if s.writer != nil {
+		// Every POST passes the cross-origin protection below before it gets
+		// here, and only an admin's reaches the handler.
+		mux.Handle("POST /admin/rules", admin(s.addRule))
+		mux.Handle("POST /admin/rules/remove", admin(s.removeRule))
+		mux.Handle("POST /admin/machines/{id}/temporary-mode", admin(s.setTemporaryMode))
+		mux.Handle("POST /admin/machines/{id}/temporary-mode/end", admin(s.endTemporaryMode))
+		mux.Handle("GET /admin/audit", admin(s.audit))
+	}
 
 	csp := strings.Join([]string{
 		"default-src 'none'",
@@ -198,10 +214,12 @@ var funcs = template.FuncMap{
 	"eventsForMachineURL": func(id string) string {
 		return "/events?" + url.Values{"machine": {id}}.Encode()
 	},
-	"legacySanta": store.LegacySantaVersion,
-	"groupURL":    groupURL,
-	"groupLabel":  groupLabel,
-	"ungrouped":   func() string { return store.UngroupedGroup },
+	"legacySanta":    store.LegacySantaVersion,
+	"groupURL":       groupURL,
+	"groupLabel":     groupLabel,
+	"ungrouped":      func() string { return store.UngroupedGroup },
+	"addRuleForm":    editFuncs["addRuleForm"],
+	"removeRuleForm": editFuncs["removeRuleForm"],
 	"orDash": func(s string) string {
 		if s == "" {
 			return "—"

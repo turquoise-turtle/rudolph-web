@@ -10,7 +10,8 @@ CloudFront for a custom domain. Idle, it costs nothing.
                                              ┌────────────┴─────────────┐
                                              ▼                          ▼
                                     SSM Parameter Store        DynamoDB (Rudolph's tables)
-                                    (client secret, cookie key)   GetItem / Query, read-only
+                                    (client secret, cookie key)   GetItem / Query; writes only
+                                                                  with enable_editing
 ```
 
 Everything is in `deployments/`:
@@ -45,7 +46,7 @@ The function reads the table named by its `RUDOLPH_WEB_DYNAMODB_TABLE` environme
 
 The Terraform module sets `RUDOLPH_WEB_DYNAMODB_TABLE` from `dynamodb_table_name` and `RUDOLPH_WEB_EVENTS_TABLE` from `events_dynamodb_table_name` (Rudolph's `events_dynamodb_table_name` output, typically `<rudolph prefix>_rudolph_events`; leave it empty if your Rudolph has no events table). The reader only calls `dynamodb:Query` and `dynamodb:GetItem` (the latter for the group registry and the top list pointers), which the `ReadRudolphStore` and `ReadRudolphEvents` statements below allow. The events table is encrypted with the same key as the store table, so `dynamodb_kms_key_arn` covers both.
 
-The pages offer Rudolph CLI commands to copy (block or allow a binary from an event or a top list, a Mac's configuration and temporary monitor mode, removing a rule). Set `cli_env` (the module sets `RUDOLPH_WEB_CLI_ENV` from it) to the Rudolph environment name, e.g. `prod`, so each command starts with `ENV=prod rudolph`; left empty, the commands start with `rudolph` and the operator's shell supplies `ENV`. The web view itself never writes anything.
+The pages offer Rudolph CLI commands to copy (block or allow a binary from an event or a top list, a Mac's configuration and temporary monitor mode, removing a rule). Set `cli_env` (the module sets `RUDOLPH_WEB_CLI_ENV` from it) to the Rudolph environment name, e.g. `prod`, so each command starts with `ENV=prod rudolph`; left empty, the commands start with `rudolph` and the operator's shell supplies `ENV`. Unless you turn on [editing](#editing-optional), the web view itself never writes anything.
 
 Each top list page shows when the list was generated and warns when it is older than `top_list_stale_after` (the module sets `RUDOLPH_WEB_TOP_LIST_STALE_AFTER` from it; whole hours from `1h` to `168h`, default `3h`). The default suits a ranker that runs every hour around the clock: the warning means about three runs were missed. If Rudolph's ranker runs on a schedule, fit the threshold to it. For example, with the ranker running hourly on weekdays from 7am to 5pm, a list is normally up to 14 hours old overnight and about 62 hours old over a weekend. `15h` warns about missed weekday runs but also warns every weekend; `63h` never warns on a healthy schedule, at the cost of noticing a stopped ranker only after days.
 
@@ -75,7 +76,7 @@ In **Microsoft Entra admin center → App registrations → New registration**:
    into Parameter Store, never into Terraform.
 5. **App roles → Create app role**, twice, both *Users/Groups*:
    * `Rudolph.Viewer` — the read pages.
-   * `Rudolph.Admin` — the admin-only routes; includes Viewer.
+   * `Rudolph.Admin` — the admin-only routes, and with [editing](#editing-optional) the forms that change rules and temporary client modes; includes Viewer.
 
    The value must match exactly; the app reads them from the `roles` claim.
 6. **Enterprise applications → your app → Properties → Assignment required: Yes.** Then
@@ -251,9 +252,7 @@ Four or five statements, no AWS managed policies and no wildcard resources:
 | `ReadRudolphStore` | `dynamodb:GetItem`, `dynamodb:Query` | the table and `<table>/index/*` |
 | `ReadRudolphEvents` | `dynamodb:GetItem`, `dynamodb:Query` | the events table and `<events table>/index/*`; only with `events_dynamodb_table_name` set |
 
-With `dynamodb_kms_key_arn` set there is one more, `kms:Decrypt` conditioned on the DynamoDB service.
-There is deliberately no `dynamodb:Scan` — every list in the app is one bounded query — and no write
-action of any kind, because the view is read-only.
+With `dynamodb_kms_key_arn` set there is one more, `kms:Decrypt` conditioned on the DynamoDB service. With `enable_editing` there is one more, `WriteRudolphRulesAndAudit`, described under [Editing](#editing-optional); without it the role has no write action of any kind. There is deliberately no `dynamodb:Scan`: every list in the app is one bounded query.
 
 Terraform creates the log group itself, so Lambda cannot create one without retention, and the
 function does not need `logs:CreateLogGroup`.
@@ -283,6 +282,68 @@ Worth knowing before you change any of it:
   The Function URL stays publicly reachable when CloudFront is in front of it. Restricting that
   needs OAC with `authorization_type = AWS_IAM`, which changes how the app is invoked, and is not
   part of this module.
+
+---
+
+## Editing (optional)
+
+By default the view is read-only. With `enable_editing = true` (in `config.auto.tfvars.json`), people with the `Rudolph.Admin` app role can, from the pages:
+
+* add a global rule (type, identifier, policy, custom message, description) on **Rules**, and remove any global rule with its **Remove rule** button;
+* add a rule for one Mac (with an expiry: a duration such as `2h` or `7d`, default `24h`, or `never`) and remove its rules, on the Mac's page;
+* set a temporary client mode for a Mac (monitor, lockdown or standalone, for `1m` to `30d`) and end it now, on the Mac's page;
+* add and remove the rules of a device group, or of the Macs in no group, on the group's page.
+
+Macs get each change at their next sync. Removing asks nothing more than the clearly labelled button: the forms are plain HTML, since the CSP allows no script. Viewers never see the forms and get 403 from the write routes; every write is a same-origin POST (`http.CrossOriginProtection`). Without editing the forms are not shown and the write routes do not exist (404).
+
+### What it changes
+
+Every write goes through Rudolph's own Go packages (`pkg/model/globalrules`, `machinerules`, `groups`, `machineconfiguration`, `eventcollection` and `audit`, with Rudolph's `pkg/dynamodb` client), so the web view refuses exactly what the CLI refuses (identifier shapes, policies, machine UUIDs, group names, the temporary mode limits) and writes the same rows, feed entries included. Invalid input answers 400 with the reason; removing a rule that does not exist answers 404.
+
+`enable_editing` sets `RUDOLPH_WEB_EDITING=true` on the function and adds one statement to its role:
+
+| Statement | Actions | Resources | Condition |
+|---|---|---|---|
+| `WriteRudolphRulesAndAudit` | `dynamodb:PutItem`, `dynamodb:UpdateItem`, `dynamodb:DeleteItem` | the store table only (no index, not the events table) | `ForAllValues:StringLike` on `dynamodb:LeadingKeys`: `GlobalRules`, `RulesFeed`, `MachineRules#*`, `Machine#*`, `GroupRules#*`, `GroupRegistry`, `EventCollection`, `Audit#*` |
+
+Global rule and group rule changes are `TransactWriteItems` calls, which have no IAM action of their own: DynamoDB checks `PutItem`, `UpdateItem` or `DeleteItem` for each item in them. The partitions are the ones these writes touch: global rules and their rules feed rows, machine rules, the machine config row (`Machine#<id>`, `SK=Config`) holding a temporary mode, group rules and the group registry's rules version, the index of rules whose allowed executions are collected (a replaced or removed rule is taken out of it, as the CLI does), and the audit trail's day partitions. `dynamodb:LeadingKeys` cannot limit the sort key, so `Machine#*` also covers a Mac's other rows (sensor data, sync state, groups); the code writes only the config row. Nothing else of the table can be written. With `dynamodb_kms_key_arn` set, the existing `kms:Decrypt` grant is also what writes need.
+
+To turn it on: assign `Rudolph.Admin` to the people who may change rules (see [the app registration](#the-entra-id-app-registration)), set `enable_editing` to `true`, and `make deploy`. Role changes take effect at their next sign-in. To turn it off again, set it back to `false` and deploy: the statement and the forms go away together.
+
+### The audit trail
+
+Every change is recorded in Rudolph's audit trail (Rudolph's `pkg/model/audit`, in the store table under `Audit#<UTC day>`), exactly as the CLI records its own: the same actions (`rule.add`, `rule.remove`, `config.temporary-mode`, `config.end-temporary-mode`), targets (`global`, `machine:<machine ID>`, `group:<name>`, `ungrouped`) and summaries, with the actor `web:<username> (<Entra object ID>)` instead of the CLI's `cli:<user>@<host>`. Entries are never expired. A write that fails records nothing; a write that succeeded but could not be audited is kept, as with the CLI, and the page says so (500) and the function logs it.
+
+`/admin/audit` (admins only, linked from `/admin`) lists the entries of the last 30 days, newest first, at most 200, from the CLI and the web view alike. `rudolph audit` reads older ones.
+
+### The Rudolph module pin
+
+The writer imports Rudolph's packages under their module path, `github.com/airbnb/rudolph`, from the owner's fork, which has the audit trail and the web contract. `go get` cannot resolve a fork under another module path, so `go.mod` pins it with a `replace` to a pseudo-version of a pushed commit:
+
+```
+require github.com/airbnb/rudolph v0.0.0-20261107033524-9c2551adfa64
+replace github.com/airbnb/rudolph => github.com/turquoise-turtle/rudolph v0.0.0-20261107033524-9c2551adfa64
+```
+
+To move to a newer Rudolph commit, push it, then:
+
+```sh
+COMMIT=<full or 12-character commit hash>
+V=$(go list -m -f '{{.Version}}' github.com/turquoise-turtle/rudolph@$COMMIT)
+go mod edit -require=github.com/airbnb/rudolph@$V -replace=github.com/airbnb/rudolph=github.com/turquoise-turtle/rudolph@$V
+go mod tidy
+go test ./...    # and the integration tests, against DynamoDB Local
+```
+
+Check `git diff go.mod` afterwards: Rudolph's own requirements must not force an upgrade you did not intend. When Rudolph changes a writer the web view uses, or adds a partition one of them writes, update the `WriteRudolphRulesAndAudit` leading keys to match.
+
+To develop against a local Rudolph checkout without pushing, do not commit a `replace` to a local path. Use a workspace instead, which `go.mod` never sees:
+
+```sh
+go work init . ../rudolph      # go.work is ignored by .gitignore
+go test ./...
+rm go.work go.work.sum         # back to the pinned commit
+```
 
 ---
 

@@ -15,8 +15,9 @@ Admins use it to see:
 - **Execution events**: a paginated list you can filter by machine, decision and team ID. Events Santa marked identity_unverified (Santa 2026.9: it could not confirm the file it evaluated was the image that ran) show "identity not verified", since their hash and file details are not verified.
 - **Top blocked and top allowed binaries**: the binaries blocked or allowed most often in the last 1, 7, 30 or 90 days, as computed by Rudolph's ranker, with the time the list was generated and a warning when that is longer ago than a configurable threshold (default 3 hours).
 
-v1 is read-only. `/admin` is a placeholder for future write actions and needs the
-`Rudolph.Admin` role.
+- **Editing (optional, v2)**: with editing turned on (`enable_editing`), people with the `Rudolph.Admin` role add and remove global rules on the rules page, rules for one Mac and its temporary client mode (a mode and a duration from 1m to 30d, or end it now) on that Mac's page, and group rules on each group's page. Every change is made with Rudolph's own Go packages, so validation and the rows written match the CLI exactly, and is recorded in Rudolph's audit trail with the signed-in Entra user (`web:<username> (<object ID>)`). `/admin/audit` lists the last 30 days of changes by the CLI and the web view, newest first.
+
+Without editing the view is read-only: no forms, and the write routes do not exist. `/admin` needs the `Rudolph.Admin` role.
 
 ## Architecture
 
@@ -50,7 +51,7 @@ v1 is read-only. `/admin` is a placeholder for future write actions and needs th
 - **Server-rendered.** It uses `net/http` and `html/template`, with contextual
   auto-escaping on all data and no `template.HTML` on data. It has no JavaScript,
   and the CSP includes `script-src 'none'`.
-- **Commands to copy, not write actions.** The pages are read-only. Event rows
+- **Commands to copy, and plain forms for admins.** Without editing the pages are read-only. With it, admins get plain HTML forms that POST to `/admin/...` and redirect back (no JavaScript); every POST is same-origin only and admin-only. Event rows
   and top-list entries, the machine page, and global, machine and group rule
   rows offer Rudolph CLI commands (`internal/clicmd`) under a "Commands"
   disclosure, matching the contract in `testdata/webcontract/cli-examples.txt`
@@ -73,7 +74,9 @@ v1 is read-only. `/admin` is a placeholder for future write actions and needs th
 | `internal/web` | Routes, handlers, templates, security headers |
 | `internal/clicmd` | Builds the Rudolph CLI commands the pages offer to copy |
 | `internal/store` | Read models and data-access interfaces |
-| `internal/store/fake` | In-memory implementation that records calls (tests + local dev) |
+| `internal/store/fake` | In-memory implementation that records calls (tests + local dev); also writes, so `cmd/local` has editing on |
+| `internal/store/dynamo` | DynamoDB reader, and the writer over Rudolph's own packages (`github.com/airbnb/rudolph/pkg/...`) |
+| `internal/store/rudolphrules` | Checks edits with Rudolph's validation, shared by the writer and the fake |
 | `internal/lambdaadapter` | Payload format 2.0 event ⇄ `http.Handler` |
 | `internal/testutil/fakeidp` | Test-only fake Entra-like OIDC provider |
 | `deployments` | Terraform module, example environment and static checks on both |
@@ -159,6 +162,7 @@ Role changes take effect at the next sign-in, which is at most one session TTL l
 | `RUDOLPH_WEB_COOKIE_KEY_SSM_PARAMETER` | no | SSM parameter holding the cookie key, instead of the variable above |
 | `RUDOLPH_WEB_DYNAMODB_TABLE` | no | Rudolph's DynamoDB table, read by `cmd/lambda`; unset, data pages return 503. Cursors are signed with a key derived from the cookie key |
 | `RUDOLPH_WEB_CLI_ENV` | no | Rudolph environment name (letters, digits, `.`, `_`, `-`) the copy-and-paste CLI commands start with, as `ENV=<name> rudolph …`; unset, they start with `rudolph` |
+| `RUDOLPH_WEB_EDITING` | no | `true` lets `Rudolph.Admin` add and remove rules and set temporary client modes (needs `RUDOLPH_WEB_DYNAMODB_TABLE`, and the role's write grant from `enable_editing`); `false` or unset keeps the view read-only; anything else is an error |
 | `RUDOLPH_WEB_TOP_LIST_STALE_AFTER` | no | Go duration, 1h–168h, default `3h`: how old a top list may be before its page warns that Rudolph's ranker may have stopped |
 | `RUDOLPH_WEB_EVENTS_TABLE` | no | Rudolph's execution events table (`<prefix>_rudolph_events`), read by `cmd/lambda`; unset, the events and top list pages return 503. Needs `RUDOLPH_WEB_DYNAMODB_TABLE` |
 

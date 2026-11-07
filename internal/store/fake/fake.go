@@ -52,6 +52,7 @@ type Store struct {
 	topLists     map[store.TopFilter]topList
 	calls        []Call
 	err          error
+	audit        []store.AuditEntry
 
 	// cursors authenticates page cursors with a per-store key, as the real
 	// implementation will with a key derived from the application secret.

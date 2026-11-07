@@ -39,6 +39,24 @@
   {{template "cmd" (cmd "End a temporary mode" (cliEndTemporary $.Machine.MachineID))}}
 </ul></details>
 {{end}}
+{{if $.Edit.On}}
+<h2>Temporary client mode</h2>
+<p class="hint">Sent to the Mac instead of its usual mode until the time is up; its own mode is left as it is. The Mac switches at its next sync, and returns to its usual mode at its first sync after the end.</p>
+<form class="edit-form" method="post" action="/admin{{machineURL .MachineID}}/temporary-mode">
+  <label>Mode
+    <select name="mode" required>{{range $.Edit.ClientModes}}<option value="{{.}}">{{.}}</option>{{end}}</select>
+  </label>
+  <label>For <span class="hint">(1m to 30d, e.g. 2h or 3d)</span>
+    <input name="for" required value="2h" size="8" autocomplete="off">
+  </label>
+  <button type="submit">Set temporary mode</button>
+</form>
+{{if .TemporaryClientMode}}
+<form class="edit-form" method="post" action="/admin{{machineURL .MachineID}}/temporary-mode/end">
+  <button type="submit" class="danger">End temporary mode now</button>
+</form>
+{{end}}
+{{end}}
 <h2>Groups</h2>
 <dl>
   <dt>Assigned in Rudolph</dt><dd>{{range $i, $g := .AssignedGroups}}{{if $i}}, {{end}}<a href="{{groupURL $g}}">{{$g}}</a>{{else}}none{{end}}</dd>
@@ -59,10 +77,11 @@
 {{end}}
 {{end}}
 <h2>Machine-specific rules</h2>
+{{if .Edit.On}}{{template "addrule" (addRuleForm "Add a rule for this Mac" "machine" .Machine.MachineID .Edit)}}{{end}}
 {{if .Rules}}
 <div class="scroll">
 <table>
-<thead><tr><th>Type</th><th>Policy</th><th>Identifier</th><th>Custom message</th><th>Description</th><th>Expires</th><th>State</th><th>Rudolph CLI</th></tr></thead>
+<thead><tr><th>Type</th><th>Policy</th><th>Identifier</th><th>Custom message</th><th>Description</th><th>Expires</th><th>State</th><th>Rudolph CLI</th>{{if .Edit.On}}<th>Change</th>{{end}}</tr></thead>
 <tbody>
 {{range .Rules}}
 <tr data-row>
@@ -76,6 +95,7 @@
   <td>{{with cliRemoveMachine .RuleType .Identifier $.Machine.MachineID}}<details class="cmds"><summary>Commands</summary><ul>
     {{template "cmd" (cmd "Remove" .)}}
   </ul></details>{{end}}</td>
+  {{if $.Edit.On}}<td>{{if eq .State "IN_FORCE"}}{{template "removerule" (removeRuleForm "machine" $.Machine.MachineID .)}}{{end}}</td>{{end}}
 </tr>
 {{end}}
 </tbody>
