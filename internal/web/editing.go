@@ -34,7 +34,6 @@ const (
 	maxTemporaryMode = 30 * 24 * time.Hour
 
 	auditWindow = 30 * 24 * time.Hour
-	auditLimit  = 200
 )
 
 // canEdit reports whether the page should show edit forms: editing is on and
@@ -262,13 +261,14 @@ type auditRow struct {
 }
 
 func (s *server) audit(w http.ResponseWriter, r *http.Request) {
-	entries, err := s.writer.ListAudit(r.Context(), s.now().Add(-auditWindow), auditLimit)
+	pr := s.pageRequest(r.URL.Query())
+	page, err := s.writer.ListAuditPage(r.Context(), s.now().Add(-auditWindow), pr)
 	if err != nil {
 		s.storeError(w, r, err)
 		return
 	}
-	rows := make([]auditRow, len(entries))
-	for i, e := range entries {
+	rows := make([]auditRow, len(page.Items))
+	for i, e := range page.Items {
 		rows[i] = auditRow{AuditEntry: e}
 		switch {
 		case e.Target == "global":
@@ -284,8 +284,8 @@ func (s *server) audit(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, http.StatusOK, "audit", "Audit trail", "admin", struct {
 		Entries []auditRow
 		Days    int
-		Limit   int
-	}{rows, int(auditWindow / (24 * time.Hour)), auditLimit})
+		Pager   pager
+	}{rows, int(auditWindow / (24 * time.Hour)), links("/admin/audit", url.Values{}, pr.Cursor, page.NextCursor)})
 }
 
 // writeError maps a write's error to a response. Invalid input is the

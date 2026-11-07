@@ -30,8 +30,8 @@ You only do this once.
 
 ### Tools
 
-* **Go** — the version in `go.mod`.
-* **Terraform** 1.5 or newer (tested with 1.16), with the `hashicorp/aws` provider `~> 6.0`.
+* **Go** 1.27 or newer (`go.mod` names the toolchain, which the `go` command downloads when yours is older).
+* **Terraform** 1.10 or newer (tested with 1.17), with the `hashicorp/aws` provider `~> 6.72`.
 * **AWS CLI**, authenticated as a role that may create Lambda functions, IAM roles, SSM parameters,
   CloudWatch log groups and, if you enable it, CloudFront distributions, ACM certificates and
   Route 53 records. With a cost budget (see [The monthly cost budget](#the-monthly-cost-budget)) the role also needs `budgets:ViewBudget`, `budgets:ModifyBudget`, `budgets:TagResource`, `budgets:UntagResource` and `budgets:ListTagsForResource`; the tag permissions are needed because the provider's default tags are applied to the budget.
@@ -321,15 +321,15 @@ To turn editing off again, set `enable_editing` back to `false` and deploy: the 
 
 Every change is recorded in Rudolph's audit trail (Rudolph's `pkg/model/audit`, in the store table under `Audit#<UTC day>`), exactly as the CLI records its own: the same actions (`rule.add`, `rule.remove`, `config.temporary-mode`, `config.end-temporary-mode`), targets (`global`, `machine:<machine ID>`, `group:<name>`, `ungrouped`) and summaries, with the actor `web:<username> (<Entra object ID>)` instead of the CLI's `cli:<user>@<host>`. Entries are never expired. A write that fails records nothing; a write that succeeded but could not be audited is kept, as with the CLI, and the page says so (500) and the function logs it.
 
-`/admin/audit` (admins only, linked from `/admin`) lists the entries of the last 30 days, newest first, at most 200, from the CLI and the web view alike. `rudolph audit` reads older ones.
+`/admin/audit` (admins only, linked from `/admin`) lists the entries of the last 30 days, newest first, from the CLI and the web view alike, one page at a time like the other lists (50 entries a page, with a next-page link). The next-page link carries Rudolph's audit cursor inside the web view's signed cursor, so it cannot be edited or reused for another list. `rudolph audit` reads older entries.
 
 ### The Rudolph module pin
 
 The writer imports Rudolph's packages under their module path, `github.com/airbnb/rudolph`, from the owner's fork, which has the audit trail and the web contract. `go get` cannot resolve a fork under another module path, so `go.mod` pins it with a `replace` to a pseudo-version of a pushed commit:
 
 ```
-require github.com/airbnb/rudolph v0.0.0-20261107033524-9c2551adfa64
-replace github.com/airbnb/rudolph => github.com/turquoise-turtle/rudolph v0.0.0-20261107033524-9c2551adfa64
+require github.com/airbnb/rudolph v0.0.0-20261107050302-53fb7be5821b
+replace github.com/airbnb/rudolph => github.com/turquoise-turtle/rudolph v0.0.0-20261107050302-53fb7be5821b
 ```
 
 To move to a newer Rudolph commit, push it, then:
@@ -413,7 +413,10 @@ make deploy                # test, build, init, apply
 make destroy               # tear the environment down
 make tf-check              # fmt -check, init -backend=false, validate; touches no AWS account
 make test                  # go vet + go test, including the Terraform static checks
+make deps-check            # govulncheck (fails on a vulnerability), then outdated or deprecated modules
 ```
+
+`make deps-check` runs [govulncheck](https://go.dev/doc/security/vuln/) (pinned in the `Makefile`), which fails if a known vulnerability affects the web view's code, then lists every module in the build graph that has a newer version or is deprecated. That list is for information: it includes modules that only appear in other modules' `go.mod` files and are never built. Run it before a release and after updating dependencies (`go get -u ./...`, `go get -u -t ./...`, `go mod tidy`). The AWS SDK for Go v1 must not come back: `internal/depcheck` fails if it is required or built.
 
 `make destroy` leaves the two SSM parameters behind unless Terraform created them; delete them with
 `aws ssm delete-parameter` if you mean to.

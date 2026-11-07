@@ -15,7 +15,7 @@ Admins use it to see:
 - **Execution events**: a paginated list you can filter by machine, decision and team ID. Events Santa marked identity_unverified (Santa 2026.9: it could not confirm the file it evaluated was the image that ran) show "identity not verified", since their hash and file details are not verified.
 - **Top blocked and top allowed binaries**: the binaries blocked or allowed most often in the last 1, 7, 30 or 90 days, as computed by Rudolph's ranker, with the time the list was generated and a warning when that is longer ago than a configurable threshold (default 3 hours).
 
-- **Editing (optional, v2)**: with editing turned on (`enable_editing`), people with the `Rudolph.Admin` role add and remove global rules on the rules page, rules for one Mac and its temporary client mode (a mode and a duration from 1m to 30d, or end it now) on that Mac's page, and group rules on each group's page. Every change is made with Rudolph's own Go packages, so validation and the rows written match the CLI exactly, and is recorded in Rudolph's audit trail with the signed-in Entra user (`web:<username> (<object ID>)`). `/admin/audit` lists the last 30 days of changes by the CLI and the web view, newest first.
+- **Editing (optional, v2)**: with editing turned on (`enable_editing`), people with the `Rudolph.Admin` role add and remove global rules on the rules page, rules for one Mac and its temporary client mode (a mode and a duration from 1m to 30d, or end it now) on that Mac's page, and group rules on each group's page. Every change is made with Rudolph's own Go packages, so validation and the rows written match the CLI exactly, and is recorded in Rudolph's audit trail with the signed-in Entra user (`web:<username> (<object ID>)`). `/admin/audit` lists the last 30 days of changes by the CLI and the web view, newest first, a page at a time.
 
 Without editing the view is read-only: no forms, and the write routes do not exist. `/admin` needs the `Rudolph.Admin` role.
 
@@ -173,6 +173,8 @@ in its environment. See [docs/deploy.md](docs/deploy.md).
 
 ## Running locally
 
+You need Go 1.27 or newer; deploying also needs Terraform 1.10 or newer (see [docs/deploy.md](docs/deploy.md)).
+
 ```sh
 export RUDOLPH_WEB_TENANT_ID=<tenant-guid>
 export RUDOLPH_WEB_CLIENT_ID=<client-id>
@@ -211,6 +213,7 @@ two SecureString parameters, the first deploy, and how to roll the cookie key an
 ```sh
 go vet ./...
 go test ./...
+make deps-check    # govulncheck, then outdated or deprecated modules
 ```
 
 The tests cover the following:
