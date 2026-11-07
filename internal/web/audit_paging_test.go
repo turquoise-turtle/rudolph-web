@@ -19,7 +19,7 @@ func TestAuditPage_Pages(t *testing.T) {
 	admin := a.cookie(t, auth.RoleAdmin)
 	for i := 0; i < 25; i++ {
 		form := globalRule()
-		form.Set("identifier", fmt.Sprintf("%064x", i+1))
+		form.Set("identifier", auditPagingID(i))
 		if rec := a.post(t, "/admin/rules", form, admin, true); rec.Code != http.StatusSeeOther {
 			t.Fatalf("write %d: status %d", i, rec.Code)
 		}
@@ -35,8 +35,8 @@ func TestAuditPage_Pages(t *testing.T) {
 		body := rec.Body.String()
 		counts = append(counts, rows(body))
 		for i := 0; i < 25; i++ {
-			id := fmt.Sprintf("%064x", i+1)
-			if strings.Contains(body, id[48:]) {
+			id := auditPagingID(i)
+			if strings.Contains(body, id[:16]) {
 				if seen[id] {
 					t.Errorf("entry %d appears on two pages", i)
 				}
@@ -54,4 +54,10 @@ func TestAuditPage_Pages(t *testing.T) {
 	if rec := a.get(t, "/admin/audit?cursor="+url.QueryEscape("garbage"), admin); rec.Code != http.StatusBadRequest {
 		t.Errorf("tampered cursor: status %d, want 400", rec.Code)
 	}
+}
+
+// auditPagingID gives entry i a SHA-256-shaped identifier whose first 16 characters occur in no other entry's
+// identifier, so the page an entry is on can be found by substring.
+func auditPagingID(i int) string {
+	return fmt.Sprintf("%02x", i+1) + strings.Repeat("e", 62)
 }
