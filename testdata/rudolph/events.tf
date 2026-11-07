@@ -1,6 +1,6 @@
 #
 # DynamoDB table of execution events, read by the separate web view (rudolph-web's docs/data-layer-design.md, "D+ in
-# detail"). The eventupload Lambda writes it; the hourly ranker (../../ranker.tf) reads its day counters and machine
+# detail"). The eventupload Lambda writes it; the scheduled ranker (../../ranker.tf) reads its day counters and machine
 # markers and writes the top lists. Layout and costs: docs/events-table.md.
 #
 locals {
@@ -55,24 +55,42 @@ resource "aws_dynamodb_table" "events" {
   # Every event of the fleet, newest first. Fleet is the same on every event, so this index has one partition; at
   # the event rates in docs/events-table.md that is far below a partition's write limit.
   global_secondary_index {
-    name            = "Fleet_TS"
-    hash_key        = "Fleet"
-    range_key       = "TS"
+    name = "Fleet_TS"
+    key_schema {
+      attribute_name = "Fleet"
+      key_type       = "HASH"
+    }
+    key_schema {
+      attribute_name = "TS"
+      key_type       = "RANGE"
+    }
     projection_type = "ALL"
   }
 
   global_secondary_index {
-    name            = "Decision_TS"
-    hash_key        = "Decision"
-    range_key       = "TS"
+    name = "Decision_TS"
+    key_schema {
+      attribute_name = "Decision"
+      key_type       = "HASH"
+    }
+    key_schema {
+      attribute_name = "TS"
+      key_type       = "RANGE"
+    }
     projection_type = "ALL"
   }
 
   # Sparse: unsigned binaries have no team ID, and the writer leaves the attribute out.
   global_secondary_index {
-    name            = "TeamID_TS"
-    hash_key        = "TeamID"
-    range_key       = "TS"
+    name = "TeamID_TS"
+    key_schema {
+      attribute_name = "TeamID"
+      key_type       = "HASH"
+    }
+    key_schema {
+      attribute_name = "TS"
+      key_type       = "RANGE"
+    }
     projection_type = "ALL"
   }
 
@@ -84,6 +102,8 @@ resource "aws_dynamodb_table" "events" {
   point_in_time_recovery {
     enabled = true
   }
+
+  deletion_protection_enabled = var.table_deletion_protection
 }
 
 #

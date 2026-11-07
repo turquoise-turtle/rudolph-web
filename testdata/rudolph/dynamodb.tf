@@ -58,9 +58,15 @@ resource "aws_dynamodb_table" "store" {
   }
 
   global_secondary_index {
-    name               = "SerialNum_DataType_MachineID"
-    hash_key           = "SerialNum"
-    range_key          = "DataType"
+    name = "SerialNum_DataType_MachineID"
+    key_schema {
+      attribute_name = "SerialNum"
+      key_type       = "HASH"
+    }
+    key_schema {
+      attribute_name = "DataType"
+      key_type       = "RANGE"
+    }
     projection_type    = "INCLUDE"
     non_key_attributes = ["MachineID"]
   }
@@ -68,9 +74,15 @@ resource "aws_dynamodb_table" "store" {
   # Machine ID lookups by prefix (sensordata.MachineID_DataType_GSI). MachineID is the index range key, so KEYS_ONLY
   # already projects it.
   global_secondary_index {
-    name            = "DataType_MachineID"
-    hash_key        = "DataType"
-    range_key       = "MachineID"
+    name = "DataType_MachineID"
+    key_schema {
+      attribute_name = "DataType"
+      key_type       = "HASH"
+    }
+    key_schema {
+      attribute_name = "MachineID"
+      key_type       = "RANGE"
+    }
     projection_type = "KEYS_ONLY"
   }
 
@@ -79,11 +91,17 @@ resource "aws_dynamodb_table" "store" {
   # SerialNum is projected so the list shows the serial as reported. The projection is limited to attributes that
   # rarely change: projecting Time, ExpiresAfter, RulesHash or the rule counts would cost a write to this index on
   # every sync. Each machine list index also projects the other's key (HostnameKey here, SerialKey there), so both
-  # return the same row shape. Rudolph itself does not query these indexes.
+  # return the same row shape. Of Rudolph itself, only `rudolph machines` reads DataType_SerialKey.
   global_secondary_index {
-    name               = "DataType_SerialKey"
-    hash_key           = "DataType"
-    range_key          = "SerialKey"
+    name = "DataType_SerialKey"
+    key_schema {
+      attribute_name = "DataType"
+      key_type       = "HASH"
+    }
+    key_schema {
+      attribute_name = "SerialKey"
+      key_type       = "RANGE"
+    }
     projection_type    = "INCLUDE"
     non_key_attributes = ["SerialNum", "HostnameKey", "MachineID", "Hostname", "ModelIdentifier", "OSVersion", "SantaVersion", "ClientMode", "PrimaryUser", "LastSeenDay"]
   }
@@ -91,9 +109,15 @@ resource "aws_dynamodb_table" "store" {
   # The web view's case-insensitive hostname prefix search. HostnameKey is the trimmed, lower-case hostname
   # (sensordata.HostnameKey); same small projection as DataType_SerialKey, for the same reason.
   global_secondary_index {
-    name               = "DataType_HostnameKey"
-    hash_key           = "DataType"
-    range_key          = "HostnameKey"
+    name = "DataType_HostnameKey"
+    key_schema {
+      attribute_name = "DataType"
+      key_type       = "HASH"
+    }
+    key_schema {
+      attribute_name = "HostnameKey"
+      key_type       = "RANGE"
+    }
     projection_type    = "INCLUDE"
     non_key_attributes = ["SerialNum", "SerialKey", "MachineID", "Hostname", "ModelIdentifier", "OSVersion", "SantaVersion", "ClientMode", "PrimaryUser", "LastSeenDay"]
   }
@@ -103,9 +127,15 @@ resource "aws_dynamodb_table" "store" {
   # attribute, so the index projects them all; global rules change only when an administrator edits them, never per
   # sync, so the extra index writes cost next to nothing. Rudolph itself does not query this index.
   global_secondary_index {
-    name            = "GlobalRulePolicy_SK"
-    hash_key        = "GlobalRulePolicy"
-    range_key       = "SK"
+    name = "GlobalRulePolicy_SK"
+    key_schema {
+      attribute_name = "GlobalRulePolicy"
+      key_type       = "HASH"
+    }
+    key_schema {
+      attribute_name = "SK"
+      key_type       = "RANGE"
+    }
     projection_type = "ALL"
   }
 
@@ -117,4 +147,6 @@ resource "aws_dynamodb_table" "store" {
   point_in_time_recovery {
     enabled = true
   }
+
+  deletion_protection_enabled = var.table_deletion_protection
 }
