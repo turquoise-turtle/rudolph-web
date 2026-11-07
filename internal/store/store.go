@@ -454,7 +454,9 @@ type EventReader interface {
 	ListExecutionEvents(ctx context.Context, f EventFilter, p PageRequest) (Page[ExecutionEvent], error)
 	// TopBinaries returns a page of the ranker's latest list for f, or of the
 	// snapshot a cursor pinned. Returns ErrInvalidArgument for a kind or
-	// window that does not exist.
+	// window that does not exist, and ErrInvalidCursor for a cursor whose
+	// snapshot has expired (Rudolph deletes snapshot rows 8 days after
+	// writing them) rather than an empty page.
 	TopBinaries(ctx context.Context, f TopFilter, p PageRequest) (TopList, error)
 	// ListFileAccessEvents returns file access events newest first.
 	ListFileAccessEvents(ctx context.Context, f FileAccessEventFilter, p PageRequest) (Page[FileAccessEvent], error)

@@ -415,6 +415,12 @@ func (s *Store) TopBinaries(_ context.Context, f store.TopFilter, p store.PageRe
 	if err != nil {
 		return store.TopList{}, err
 	}
+	// paginate never hands out a cursor to an empty page, so an empty page here
+	// means the list was replaced by a shorter one: the fake's stand-in for the
+	// cursor's snapshot having expired.
+	if p.Cursor != "" && len(page.Items) == 0 {
+		return store.TopList{}, store.ErrInvalidCursor
+	}
 	return store.TopList{Items: page.Items, NextCursor: page.NextCursor, GeneratedAt: l.generatedAt}, nil
 }
 

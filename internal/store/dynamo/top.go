@@ -65,7 +65,8 @@ func (l topList) fingerprint() string {
 // (one GetItem) and the snapshot it names (one Query, Limit = page size).
 // Later pages read only the snapshot their cursor pins, so a listing stays
 // consistent while the ranker moves the pointer, and show the generation time
-// of that snapshot.
+// of that snapshot. A cursor to a snapshot that has expired returns
+// ErrInvalidCursor.
 func (s *Store) TopBinaries(ctx context.Context, f store.TopFilter, p store.PageRequest) (store.TopList, error) {
 	if s.eventsTable == "" {
 		return store.TopList{}, fmt.Errorf("%w: no execution events table configured", store.ErrUnavailable)
@@ -110,6 +111,11 @@ func (s *Store) TopBinaries(ctx context.Context, f store.TopFilter, p store.Page
 	if err != nil {
 		return store.TopList{}, fmt.Errorf("dynamo: reading top list snapshot: %w", err)
 	}
+	if p.Cursor != "" && len(out.Items) == 0 {
+		if err := s.checkTopSnapshotExists(ctx, partition); err != nil {
+			return store.TopList{}, err
+		}
+	}
 	list := store.TopList{Items: make([]store.TopBinary, 0, len(out.Items)), GeneratedAt: generatedAt}
 	for _, it := range out.Items {
 		b, err := DecodeTopBinary(it)
@@ -131,6 +137,34 @@ func (s *Store) TopBinaries(ctx context.Context, f store.TopFilter, p store.Page
 		}
 	}
 	return list, nil
+}
+
+// checkTopSnapshotExists runs after a cursor's page came back empty, which
+// happens either when the pinned snapshot has expired (its rows are deleted 8
+// days after the ranker wrote them) or when the previous page ended exactly on
+// the snapshot's last row: a Query that stops at its Limit returns a
+// LastEvaluatedKey without knowing whether more rows follow, so such a page
+// still hands out a cursor. Telling the two apart costs one more Query, but
+// only on this empty page, never on a page with rows. An expired snapshot
+// returns ErrInvalidCursor so the page asks the user to start again rather
+// than showing an empty list as if nothing had been blocked or allowed.
+func (s *Store) checkTopSnapshotExists(ctx context.Context, partition string) error {
+	out, err := s.client.Query(ctx, &dynamodb.QueryInput{
+		TableName:              aws.String(s.eventsTable),
+		KeyConditionExpression: aws.String("PK = :pk"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":pk": &types.AttributeValueMemberS{Value: partition},
+		},
+		ProjectionExpression: aws.String("PK"),
+		Limit:                aws.Int32(1),
+	})
+	if err != nil {
+		return fmt.Errorf("dynamo: checking top list snapshot: %w", err)
+	}
+	if len(out.Items) == 0 {
+		return store.ErrInvalidCursor
+	}
+	return nil
 }
 
 // readTopPointer reads the list's pointer. found is false when the ranker has
