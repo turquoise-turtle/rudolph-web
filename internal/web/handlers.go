@@ -130,7 +130,7 @@ func (s *server) machineDetail(w http.ResponseWriter, r *http.Request) {
 	}{
 		Machine:    machine,
 		GlobalMode: globalMode,
-		Health:     machineHealth(machine, s.now(), globalMode, s.times),
+		Health:     machineHealth(machine, s.now(), globalMode),
 		Rules:      rules.Items,
 		Pager:      links("/machines/"+url.PathEscape(id), url.Values{}, pr.Cursor, rules.NextCursor),
 		Edit:       s.editForms(r),

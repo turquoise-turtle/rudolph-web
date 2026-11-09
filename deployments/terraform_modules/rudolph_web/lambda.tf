@@ -52,9 +52,6 @@ resource "aws_lambda_function" "web" {
       # How old a top list may be before its page warns; depends on the ranker's schedule.
       RUDOLPH_WEB_TOP_LIST_STALE_AFTER = var.top_list_stale_after
 
-      # Pages show times in this zone beside UTC; pages run no scripts, so the browser's zone is not available.
-      RUDOLPH_WEB_DISPLAY_TIME_ZONE = var.display_time_zone
-
       # Admin writes; the role is only granted them when this is true (iam.tf).
       RUDOLPH_WEB_EDITING = var.enable_editing
     }

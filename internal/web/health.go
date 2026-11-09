@@ -20,10 +20,14 @@ const (
 )
 
 // healthItem is one entry of the machine page's "Sync health" section.
-// Warning marks a problem; other entries are information worth knowing.
+// Warning marks a problem; other entries are information worth knowing. An
+// entry that names a time reads Text, At, After; the template renders At as a
+// <time> element so the browser can show it in the viewer's zone.
 type healthItem struct {
 	Warning bool
 	Text    string
+	At      time.Time // zero: the entry names no time
+	After   string
 }
 
 // syncHealth is what the machine page shows about how a Mac syncs, worked
@@ -37,39 +41,17 @@ type syncHealth struct {
 	Problems bool
 }
 
-// timeFormat shows times on pages: in UTC, with the time in the display time
-// zone beside it unless that is UTC. Pages run no scripts, so the browser's
-// time zone is not available and the zone is configured instead.
-type timeFormat struct {
-	zone *time.Location // nil: UTC only
-}
-
-func newTimeFormat(zone *time.Location) timeFormat {
-	if zone == nil || zone.String() == "UTC" {
-		return timeFormat{}
-	}
-	return timeFormat{zone: zone}
-}
-
-func (f timeFormat) text(t time.Time) string {
-	s := t.UTC().Format("2006-01-02 15:04:05") + " UTC"
-	if f.zone != nil {
-		s += " (" + t.In(f.zone).Format("2006-01-02 15:04 MST") + ")"
-	}
-	return s
-}
-
 // machineHealth works out the sync health of m. globalMode is the global
 // config's client mode, or "" when it could not be read.
-func machineHealth(m store.MachineDetail, now time.Time, globalMode store.ClientMode, tf timeFormat) syncHealth {
-	timeText := tf.text
+func machineHealth(m store.MachineDetail, now time.Time, globalMode store.ClientMode) syncHealth {
 	var h syncHealth
-	warn := func(format string, a ...any) {
+	warn := func(it healthItem) {
 		h.Problems = true
-		h.Items = append(h.Items, healthItem{Warning: true, Text: fmt.Sprintf(format, a...)})
+		it.Warning = true
+		h.Items = append(h.Items, it)
 	}
-	note := func(format string, a ...any) {
-		h.Items = append(h.Items, healthItem{Text: fmt.Sprintf(format, a...)})
+	note := func(it healthItem) {
+		h.Items = append(h.Items, it)
 	}
 
 	if !m.LastSeen.IsZero() {
@@ -79,25 +61,25 @@ func machineHealth(m store.MachineDetail, now time.Time, globalMode store.Client
 			if days == 1 {
 				unit = "day"
 			}
-			warn("Not seen for %d %s (last seen %s).", days, unit, timeText(m.LastSeen))
+			warn(healthItem{Text: fmt.Sprintf("Not seen for %d %s (last seen ", days, unit), At: m.LastSeen, After: ")."})
 		}
 	}
 
 	if s := m.Sync; s != nil && !s.PreflightAt.IsZero() && s.PostflightAt.Before(s.PreflightAt) &&
 		now.Sub(s.PreflightAt) >= postflightGrace {
-		warn("The last sync did not report completion: no postflight after the preflight at %s.", timeText(s.PreflightAt))
+		warn(healthItem{Text: "The last sync did not report completion: no postflight after the preflight at ", At: s.PreflightAt, After: "."})
 	}
 
 	if m.CleanSyncRequested {
-		warn("Clean sync requested: the Mac will clear and download all its rules at its next sync.")
+		warn(healthItem{Text: "Clean sync requested: the Mac will clear and download all its rules at its next sync."})
 	}
 
 	if mode, until := m.TemporaryClientMode, m.TemporaryClientModeUntil; mode != "" {
 		switch {
 		case !now.Before(until):
-			note("Temporary %s ended %s and is ignored.", mode, timeText(until))
+			note(healthItem{Text: fmt.Sprintf("Temporary %s ended ", mode), At: until, After: " and is ignored."})
 		case until.Sub(now) > temporaryModeMaxAhead:
-			warn("Temporary %s is ignored: its end, %s, is more than 30 days ahead.", mode, timeText(until))
+			warn(healthItem{Text: fmt.Sprintf("Temporary %s is ignored: its end, ", mode), At: until, After: ", is more than 30 days ahead."})
 		default:
 			h.TemporaryActive = true
 			returnsTo := "the global config's mode"
@@ -107,7 +89,7 @@ func machineHealth(m store.MachineDetail, now time.Time, globalMode store.Client
 			case globalMode != "":
 				returnsTo = string(globalMode) + " (the global config's mode)"
 			}
-			note("Temporary %s until %s, then the Mac returns to %s at its next sync.", mode, timeText(until), returnsTo)
+			note(healthItem{Text: fmt.Sprintf("Temporary %s until ", mode), At: until, After: fmt.Sprintf(", then the Mac returns to %s at its next sync.", returnsTo)})
 		}
 	}
 	return h

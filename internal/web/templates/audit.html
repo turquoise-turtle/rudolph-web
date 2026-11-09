@@ -7,7 +7,7 @@
 <tbody>
 {{range .Entries}}
 <tr data-row>
-  <td>{{ts .Time}}</td>
+  <td>{{template "time" .Time}}</td>
   <td>{{.Actor}}</td>
   <td><code>{{.Action}}</code></td>
   <td>{{if .TargetURL}}<a href="{{.TargetURL}}">{{.Target}}</a>{{else}}{{.Target}}{{end}}</td>

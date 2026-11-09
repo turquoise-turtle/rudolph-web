@@ -3,7 +3,9 @@ package web
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"embed"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"html/template"
@@ -28,6 +30,20 @@ var templateFS embed.FS
 //go:embed static
 var staticFS embed.FS
 
+// localTimeScript rewrites each <time datetime> element's text to show the time in the browser's zone beside UTC. No
+// request header carries the browser's zone, so this is the one script the pages run; the CSP allows it by hash
+// only. It is kept out of static so it is never served as a file the CSP would have to allow.
+//
+//go:embed localtime.js
+var localTimeScript string
+
+// localTimeScriptHash is the CSP source for localTimeScript. The layout inserts the script as template.JS, which
+// html/template writes unchanged, so the hash matches the bytes the browser sees.
+var localTimeScriptHash = func() string {
+	sum := sha256.Sum256([]byte(localTimeScript))
+	return "'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "'"
+}()
+
 // Options configures the web handler.
 type Options struct {
 	Auth     *auth.Authenticator
@@ -45,9 +61,6 @@ type Options struct {
 	// modes, and shows them the audit trail. Nil keeps the view read-only:
 	// no forms are shown and the write routes do not exist.
 	Writer store.Writer
-	// DisplayTimeZone shows each time on the pages in this zone beside UTC.
-	// Nil or UTC shows UTC only.
-	DisplayTimeZone *time.Location
 }
 
 type server struct {
@@ -60,7 +73,6 @@ type server struct {
 
 	topListStaleAfter time.Duration
 	writer            store.Writer
-	times             timeFormat
 }
 
 // New returns the complete application handler: auth routes, static assets
@@ -91,8 +103,7 @@ func New(opts Options) (http.Handler, error) {
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()
 	}
-	times := newTimeFormat(opts.DisplayTimeZone)
-	pages, err := parseTemplates(cliFuncs(clicmd.New(opts.CLIEnv)), timeFuncs(times))
+	pages, err := parseTemplates(cliFuncs(clicmd.New(opts.CLIEnv)))
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +117,6 @@ func New(opts Options) (http.Handler, error) {
 
 		topListStaleAfter: opts.TopListStaleAfter,
 		writer:            opts.Writer,
-		times:             times,
 	}
 
 	mux := http.NewServeMux()
@@ -155,7 +165,7 @@ func New(opts Options) (http.Handler, error) {
 
 	csp := strings.Join([]string{
 		"default-src 'none'",
-		"script-src 'none'",
+		"script-src " + localTimeScriptHash,
 		"style-src 'self'",
 		"img-src 'self'",
 		// Logout POSTs to self and is then redirected to Entra's end-session endpoint.
@@ -201,19 +211,6 @@ type layoutData struct {
 	Page    any
 }
 
-// timeFuncs gives the templates ts, which shows a time in the server's
-// display time zone.
-func timeFuncs(f timeFormat) template.FuncMap {
-	return template.FuncMap{
-		"ts": func(t time.Time) string {
-			if t.IsZero() {
-				return "—"
-			}
-			return f.text(t)
-		},
-	}
-}
-
 var funcs = template.FuncMap{
 	// The machine list's last seen is a UTC date (Rudolph's LastSeenDay), not
 	// a time, so showing midnight would be misleading.
@@ -223,7 +220,9 @@ var funcs = template.FuncMap{
 		}
 		return t.UTC().Format(time.DateOnly)
 	},
-	"machineURL": func(id string) string { return "/machines/" + url.PathEscape(id) },
+	// The layout's one script, written unchanged (see localTimeScriptHash).
+	"localTimeScript": func() template.JS { return template.JS(localTimeScript) },
+	"machineURL":      func(id string) string { return "/machines/" + url.PathEscape(id) },
 	"eventsForMachineURL": func(id string) string {
 		return "/events?" + url.Values{"machine": {id}}.Encode()
 	},

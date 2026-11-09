@@ -246,7 +246,8 @@ func TestSecurityHeadersAndStaticAssets(t *testing.T) {
 	}
 	h := rec.Header()
 	csp := h.Get("Content-Security-Policy")
-	for _, d := range []string{"default-src 'none'", "frame-ancestors 'none'", "script-src 'none'"} {
+	// script-src allows only the hash of the inline script that shows times in the browser's zone (browser_time_test.go).
+	for _, d := range []string{"default-src 'none'", "frame-ancestors 'none'", "script-src 'sha256-"} {
 		if !strings.Contains(csp, d) {
 			t.Errorf("CSP %q missing %q", csp, d)
 		}
@@ -689,7 +690,11 @@ func TestHostileDataIsEscaped(t *testing.T) {
 			if code != http.StatusOK {
 				t.Fatalf("status %d", code)
 			}
-			mustNotContain(t, body, "<script", "<img", "<svg", "<iframe", "<b>SERIAL", `"onmouseover="`, "</table><script")
+			// The only script is the page's own inline one (browser_time_test.go); injected markup never appears.
+			if n := strings.Count(body, "<script"); n != 1 {
+				t.Errorf("want only the page's own script, got %d <script elements", n)
+			}
+			mustNotContain(t, body, "<script>alert", "<img", "<svg", "<iframe", "<b>SERIAL", `"onmouseover="`, "</table><script")
 		})
 	}
 	_, body := a.viewerGet(t, "/machines")
