@@ -9,14 +9,14 @@
   <dt>macOS</dt><dd>{{orDash .OSVersion}} ({{orDash .OSBuild}})</dd>
   <dt>Santa</dt><dd>{{orDash .SantaVersion}}{{if legacySanta .SantaVersion}} <span class="legacy">legacy client</span> <span class="muted">(below 2026.8: supported only on macOS 13, with limits)</span>{{end}}</dd>
   <dt>Client mode (reported)</dt><dd>{{.ClientMode}}</dd>
-  <dt>Client mode (configured)</dt><dd>{{if $.Health.TemporaryActive}}{{.TemporaryClientMode}} (temporary until {{ts .TemporaryClientModeUntil}}; then {{with .ConfiguredClientMode}}{{.}}{{else}}{{with $.GlobalMode}}{{.}} (global config){{else}}the global config's mode{{end}}{{end}}){{else}}{{with .ConfiguredClientMode}}{{.}}{{else}}{{with $.GlobalMode}}{{.}} (from the global config){{else}}not set: global config applies{{end}}{{end}}{{end}}</dd>
+  <dt>Client mode (configured)</dt><dd>{{if $.Health.TemporaryActive}}{{.TemporaryClientMode}} (temporary until {{template "time" .TemporaryClientModeUntil}}; then {{with .ConfiguredClientMode}}{{.}}{{else}}{{with $.GlobalMode}}{{.}} (global config){{else}}the global config's mode{{end}}{{end}}){{else}}{{with .ConfiguredClientMode}}{{.}}{{else}}{{with $.GlobalMode}}{{.}} (from the global config){{else}}not set: global config applies{{end}}{{end}}{{end}}</dd>
   <dt>Primary user</dt><dd>{{orDash .PrimaryUser}}</dd>
   <dt>SIP status</dt><dd>{{orDash .SIPStatus}}</dd>
-  <dt>Last seen</dt><dd>{{ts .LastSeen}}</dd>
+  <dt>Last seen</dt><dd>{{template "time" .LastSeen}}</dd>
 </dl>
 <dl>
-  <dt>Last preflight</dt><dd>{{if .Sync}}{{ts .Sync.PreflightAt}}{{else}}never{{end}}</dd>
-  <dt>Last postflight</dt><dd>{{if .Sync}}{{ts .Sync.PostflightAt}}{{else}}never{{end}}</dd>
+  <dt>Last preflight</dt><dd>{{if .Sync}}{{template "time" .Sync.PreflightAt}}{{else}}never{{end}}</dd>
+  <dt>Last postflight</dt><dd>{{if .Sync}}{{template "time" .Sync.PostflightAt}}{{else}}never{{end}}</dd>
   <dt>Last sync type</dt><dd>{{if .Sync}}{{orDash .Sync.LastSyncType}}{{else}}—{{end}}</dd>
   <dt>Rules processed</dt><dd>{{if .Sync}}{{.Sync.RulesProcessed}}{{else}}—{{end}}</dd>
 </dl>
@@ -72,7 +72,7 @@
 {{if .Items}}
 <ul class="health">
 {{range .Items}}
-<li>{{if .Warning}}<strong>Warning:</strong> {{end}}{{.Text}}</li>
+<li>{{if .Warning}}<strong>Warning:</strong> {{end}}{{.Text}}{{if not .At.IsZero}}{{template "time" .At}}{{end}}{{.After}}</li>
 {{end}}
 </ul>
 {{end}}
@@ -91,7 +91,7 @@
   <td><code>{{.Identifier}}</code>{{with .CELExpr}}<br><code class="cel">{{.}}</code>{{end}}</td>
   <td>{{.CustomMessage}}</td>
   <td>{{.Description}}</td>
-  <td>{{ts .ExpiresAt}}</td>
+  <td>{{template "time" .ExpiresAt}}</td>
   <td>{{with .State}}{{.}}{{else}}—{{end}}</td>
   <td>{{with cliRemoveMachine .RuleType .Identifier $.Machine.MachineID}}<details class="cmds"><summary>Commands</summary><ul>
     {{template "cmd" (cmd "Remove" .)}}

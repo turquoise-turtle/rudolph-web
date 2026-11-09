@@ -40,7 +40,7 @@ dd { margin: 0; }
 .cmds summary { cursor: pointer; color: var(--accent); white-space: nowrap; }
 .cmds ul { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 6px; min-width: 32em; }
 .cmd-label { display: block; color: var(--muted); font-size: 12px; }
-/* One click selects the whole command, ready to copy; the CSP allows no script for a copy button. */
+/* One click selects the whole command, ready to copy; the CSP allows no script for a copy button (only the time script, by hash). */
 code.cmd { display: block; padding: 4px 6px; border: 1px solid var(--line); background: var(--head); user-select: all; -webkit-user-select: all; }
 code.cmd:focus { outline: 2px solid var(--accent); }
 /* Admin edit forms */

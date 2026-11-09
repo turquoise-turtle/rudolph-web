@@ -52,12 +52,6 @@ const (
 	// plain rudolph and the operator's shell supplies ENV.
 	EnvCLIEnv = "RUDOLPH_WEB_CLI_ENV"
 
-	// EnvDisplayTimeZone is an IANA time zone name, such as Asia/Tokyo. Pages
-	// show each time in UTC with the time in this zone beside it; pages run
-	// no scripts, so the browser's zone is not available. Unset or UTC, pages
-	// show UTC only.
-	EnvDisplayTimeZone = "RUDOLPH_WEB_DISPLAY_TIME_ZONE"
-
 	// Names of SSM Parameter Store parameters holding the secrets. When one of
 	// these is set the matching plain variable must be unset, and the value is
 	// read once, at cold start.
@@ -97,8 +91,7 @@ type Config struct {
 	EventsTableName       string // empty: no execution events
 	CLIEnv                string // empty: CLI commands without ENV=
 	TopListStaleAfter     time.Duration
-	Editing               bool           // admins may write; needs TableName
-	DisplayTimeZone       *time.Location // time.UTC: pages show UTC only
+	Editing               bool // admins may write; needs TableName
 }
 
 // FromEnv reads and validates configuration. Error messages name variables
@@ -117,7 +110,6 @@ func FromEnv(getenv func(string) string) (Config, error) {
 		EventsTableName:       get(EnvEventsTableName),
 		CLIEnv:                get(EnvCLIEnv),
 		TopListStaleAfter:     defaultTopListStaleAfter,
-		DisplayTimeZone:       time.UTC,
 	}
 	var errs []error
 	required := func(name, v string) bool {
@@ -191,14 +183,6 @@ func FromEnv(getenv func(string) string) (Config, error) {
 	}
 	if c.CLIEnv != "" && !cliEnvRe.MatchString(c.CLIEnv) {
 		errs = append(errs, fmt.Errorf("%s must be letters, digits, '.', '_' or '-' (at most 64)", EnvCLIEnv))
-	}
-	if v := get(EnvDisplayTimeZone); v != "" {
-		loc, err := loadDisplayTimeZone(v)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("%s must be an IANA time zone name such as Asia/Tokyo or UTC", EnvDisplayTimeZone))
-		} else {
-			c.DisplayTimeZone = loc
-		}
 	}
 	if c.Addr == "" {
 		c.Addr = defaultAddr
@@ -300,23 +284,6 @@ func checkURL(raw, wantPath string) error {
 		return fmt.Errorf("path must be %s", wantPath)
 	}
 	return nil
-}
-
-// loadDisplayTimeZone refuses what time.LoadLocation would accept but is not a
-// fixed IANA zone: "Local" depends on the machine, and a path could read an
-// arbitrary file.
-func loadDisplayTimeZone(name string) (*time.Location, error) {
-	if name == "Local" || strings.HasPrefix(name, "/") || strings.Contains(name, "..") || strings.Contains(name, "\\") {
-		return nil, errors.New("not an IANA time zone name")
-	}
-	loc, err := time.LoadLocation(name)
-	if err != nil {
-		return nil, err
-	}
-	if loc.String() == "UTC" {
-		return time.UTC, nil
-	}
-	return loc, nil
 }
 
 func decodeKey(s string) ([]byte, error) {

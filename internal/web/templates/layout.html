@@ -29,19 +29,24 @@
 <h1>{{.Title}}</h1>
 {{template "content" .Page}}
 </main>
+<script>{{localTimeScript}}</script>
 </body>
 </html>
+{{/* A time: UTC from the server, which is what the page shows without the script;
+the script adds the viewer's own zone in the browser. Zero shows a dash. */}}
+{{define "time"}}{{if .IsZero}}—{{else}}<time datetime="{{.UTC.Format "2006-01-02T15:04:05Z"}}">{{.UTC.Format "2006-01-02 15:04:05"}} UTC</time>{{end}}{{end}}
 {{define "pager"}}
 <nav class="pager">
   {{with .First}}<a href="{{.}}">First page</a>{{end}}
   {{with .Next}}<a rel="next" href="{{.}}">Next page</a>{{end}}
 </nav>
 {{end}}
-{{/* One command to copy. There is no copy button: the CSP allows no script,
-so a click (or Tab to it) selects the whole command for the usual copy. */}}
+{{/* One command to copy. There is no copy button: the CSP allows only the
+time script, so a click (or Tab to it) selects the whole command for the usual
+copy. */}}
 {{define "cmd"}}{{if .Command}}<li><span class="cmd-label">{{.Label}}</span> <code class="cmd" tabindex="0">{{.Command}}</code></li>{{end}}{{end}}
-{{/* Edit forms (Rudolph.Admin, with editing on). Plain forms: the CSP allows no
-script, so removing asks nothing more than the clearly labelled button. */}}
+{{/* Edit forms (Rudolph.Admin, with editing on). Plain forms with no script,
+so removing asks nothing more than the clearly labelled button. */}}
 {{define "addrule"}}
 <details class="edit"><summary>{{.Title}}</summary>
 <form class="edit-form" method="post" action="/admin/rules">

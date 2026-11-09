@@ -27,7 +27,7 @@
 <tbody>
 {{range .Events}}
 <tr data-row>
-  <td>{{ts .ExecutionTime}}</td>
+  <td>{{template "time" .ExecutionTime}}</td>
   <td><a href="{{machineURL .MachineID}}">{{.MachineID}}</a></td>
   <td class="{{if .Decision.IsBlock}}block{{else}}allow{{end}}">{{.Decision}}</td>
   <td>{{.FileName}}<br><span class="muted">{{.FilePath}}</span>{{if .IdentityUnverified}}<br><span class="warn" title="Santa could not confirm the file it evaluated was the image that ran, so the hash and file details are not verified.">identity not verified</span>{{end}}</td>

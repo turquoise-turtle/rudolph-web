@@ -7,8 +7,8 @@
   <a href="{{.OtherURL}}">{{.OtherTitle}}</a>
 </div>
 {{if .Computed}}
-<p class="hint">Binaries with the most {{.List.Noun}} in the last {{.Days}} {{if eq .Days 1}}day (today so far, UTC){{else}}days (UTC){{end}}, highest first. Generated {{ts .GeneratedAt}} by Rudolph's ranker. Machines counts the Macs that uploaded any stored execution of the binary in the window; it is counted for the first 100 binaries only.</p>
-{{if .Stale}}<p class="error" role="status"><strong>Warning:</strong> this list was generated {{ts .GeneratedAt}}, more than {{.StaleHours}} {{if eq .StaleHours "1"}}hour{{else}}hours{{end}} ago. Check that Rudolph's ranker is still running on its schedule.</p>{{end}}
+<p class="hint">Binaries with the most {{.List.Noun}} in the last {{.Days}} {{if eq .Days 1}}day (today so far, UTC){{else}}days (UTC){{end}}, highest first. Generated {{template "time" .GeneratedAt}} by Rudolph's ranker. Machines counts the Macs that uploaded any stored execution of the binary in the window; it is counted for the first 100 binaries only.</p>
+{{if .Stale}}<p class="error" role="status"><strong>Warning:</strong> this list was generated {{template "time" .GeneratedAt}}, more than {{.StaleHours}} {{if eq .StaleHours "1"}}hour{{else}}hours{{end}} ago. Check that Rudolph's ranker is still running on its schedule.</p>{{end}}
 {{if .Binaries}}
 <div class="scroll">
 <table>

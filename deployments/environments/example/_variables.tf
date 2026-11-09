@@ -74,12 +74,6 @@ variable "top_list_stale_after" {
   default     = "3h"
 }
 
-variable "display_time_zone" {
-  type        = string
-  description = "IANA time zone name, e.g. Asia/Tokyo. Pages show each time in UTC with the time in this zone beside it; UTC shows UTC only."
-  default     = "UTC"
-}
-
 variable "enable_editing" {
   type        = bool
   description = "Let Rudolph.Admin add and remove rules and set temporary client modes from the web view, each recorded in Rudolph's audit trail. Grants the role writes to Rudolph's rule, machine and audit partitions only."

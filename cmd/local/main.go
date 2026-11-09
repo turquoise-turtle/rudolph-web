@@ -31,7 +31,7 @@ func main() {
 	// The demo store is in memory, so editing is always on: admins see the
 	// forms, and changes last until the server stops.
 	demo := fake.NewDemo(time.Now())
-	h, err := web.New(web.Options{Auth: a, Store: demo, Writer: demo, Logger: log, CLIEnv: cfg.CLIEnv, TopListStaleAfter: cfg.TopListStaleAfter, DisplayTimeZone: cfg.DisplayTimeZone})
+	h, err := web.New(web.Options{Auth: a, Store: demo, Writer: demo, Logger: log, CLIEnv: cfg.CLIEnv, TopListStaleAfter: cfg.TopListStaleAfter})
 	if err != nil {
 		log.Error("web setup", "err", err)
 		os.Exit(1)

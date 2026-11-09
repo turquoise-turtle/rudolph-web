@@ -31,7 +31,7 @@ Without editing the view is read-only: no forms, and the write routes do not exi
                      ▼                         ▼                          ▼
                internal/auth            html/template pages        internal/store
       (Entra ID OIDC + PKCE, AES-GCM    (embedded templates+CSS,     (read interfaces;
-       cookie sessions, App Roles)       no JavaScript)               fake in store/fake)
+       cookie sessions, App Roles)       one inline time script)      fake in store/fake)
 ```
 
 - **Serverless and cheap.** It runs as one arm64 Lambda (`cmd/lambda`) and costs
@@ -48,17 +48,15 @@ Without editing the view is read-only: no forms, and the write routes do not exi
   to point at another partition, or replayed against a different query or filter;
   anything that fails verification is `store.ErrInvalidCursor`, which the web layer
   renders as 400. The fake signs with a per-process random key. The DynamoDB implementation carries the marshalled `LastEvaluatedKey` as the position, and `cmd/lambda` derives its key with `store.DeriveCursorKey` (HKDF-SHA256 over the session cookie key, with a cursor-specific info string), so every instance signs alike and the cursor key stays independent of the cookie key.
-- **Server-rendered.** It uses `net/http` and `html/template`, with contextual
-  auto-escaping on all data and no `template.HTML` on data. It has no JavaScript,
-  and the CSP includes `script-src 'none'`.
-- **Commands to copy, and plain forms for admins.** Without editing the pages are read-only. With it, admins get plain HTML forms that POST to `/admin/...` and redirect back (no JavaScript); every POST is same-origin only and admin-only. Event rows
+- **Server-rendered.** It uses `net/http` and `html/template`, with contextual auto-escaping on all data and no `template.HTML` on data. The server renders every time in UTC inside a `<time datetime>` element. Each page carries one small inline script (`internal/web/localtime.js`), the only script it runs: it rewrites each time's text to add the viewer's own time zone, e.g. `2026-09-17 11:55:00 UTC (2026-09-17 20:55 JST)`, and does nothing else: it reads each time's `datetime` attribute and writes text, and loads nothing, stores nothing and builds no markup. The CSP's `script-src` allows that script by its SHA-256 hash and nothing else. If it does not run, the pages still work and show UTC only. Dates that are UTC days, such as the machine list's last seen, stay plain UTC dates.
+- **Commands to copy, and plain forms for admins.** Without editing the pages are read-only. With it, admins get plain HTML forms that POST to `/admin/...` and redirect back (no script); every POST is same-origin only and admin-only. Event rows
   and top-list entries, the machine page, and global, machine and group rule
   rows offer Rudolph CLI commands (`internal/clicmd`) under a "Commands"
   disclosure, matching the contract in `testdata/webcontract/cli-examples.txt`
   that Rudolph checks against its real CLI. Each identifier is checked against
   its type's shape (SHA-256, CDHash, team ID, signing ID, machine UUID) and no
   command is shown for one that does not fit; every value from a Mac is
-  single-quoted. With no JavaScript there is no copy button: a click selects the
+  single-quoted. With no copy script there is no copy button: a click selects the
   whole command. Add `--dry-run` to a pasted command to see what it would change without writing anything.
 - **The same handler runs locally.** `cmd/local` serves it with `net/http`.
 
@@ -126,8 +124,8 @@ The read models follow Rudolph's single-table DynamoDB layout (`PK`/`SK`):
   cross-origin request is rejected with 403. Set the redirect URL to the host
   users actually visit.
 - Every response, including redirects, 403s, 404s and cross-origin rejections,
-  carries the same headers: CSP (`default-src`, `script-src`, `frame-ancestors`
-  and `base-uri` all `'none'`; `form-action` limited to self and the Entra origin),
+  carries the same headers: CSP (`default-src`, `frame-ancestors`
+  and `base-uri` all `'none'`; `script-src` only the hash of the inline time script; `form-action` limited to self and the Entra origin),
   HSTS, `Referrer-Policy`, `X-Content-Type-Options: nosniff` and
   `Cache-Control: no-store`. Only the embedded stylesheet is cacheable.
 
@@ -165,7 +163,6 @@ Role changes take effect at the next sign-in, which is at most one session TTL l
 | `RUDOLPH_WEB_CLI_ENV` | no | Rudolph environment name (letters, digits, `.`, `_`, `-`) the copy-and-paste CLI commands start with, as `ENV=<name> rudolph …`; unset, they start with `rudolph` |
 | `RUDOLPH_WEB_EDITING` | no | `true` lets `Rudolph.Admin` add and remove rules and set temporary client modes (needs `RUDOLPH_WEB_DYNAMODB_TABLE`, and the role's write grant from `enable_editing`); `false` or unset keeps the view read-only; anything else is an error |
 | `RUDOLPH_WEB_TOP_LIST_STALE_AFTER` | no | Go duration, 1h–168h, default `3h`: how old a top list may be before its page warns that Rudolph's ranker may have stopped |
-| `RUDOLPH_WEB_DISPLAY_TIME_ZONE` | no | IANA time zone name, e.g. `Asia/Tokyo`, default `UTC`: pages show each time in UTC with the time in this zone beside it (pages run no scripts, so the browser's zone is not available); `UTC` shows UTC only. `Local` and paths are refused |
 | `RUDOLPH_WEB_EVENTS_TABLE` | no | Rudolph's execution events table (`<prefix>_rudolph_events`), read by `cmd/lambda`; unset, the events and top list pages return 503. Needs `RUDOLPH_WEB_DYNAMODB_TABLE` |
 
 \* Each secret has exactly one source. Set the plain variable, as local development does, or name a
