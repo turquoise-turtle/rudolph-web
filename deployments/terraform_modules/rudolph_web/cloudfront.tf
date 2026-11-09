@@ -22,7 +22,7 @@ data "aws_cloudfront_cache_policy" "optimized" {
 }
 
 # What reaches the origin. The session cookie, the query string carrying the OIDC callback
-# parameters and the pagination cursor, and the headers Go's cross-origin protection inspects.
+# parameters and the pagination cursor, and the headers the app reads.
 #
 # The viewer's Host header is deliberately not forwarded: a Lambda Function URL only answers
 # requests addressed to its own domain, which is why AWS ships Managed-AllViewerExceptHostHeader for
@@ -46,18 +46,13 @@ resource "aws_cloudfront_origin_request_policy" "web" {
     header_behavior = "whitelist"
 
     headers {
+      # Only what the app reads: Go's cross-origin protection checks Sec-Fetch-Site and Origin, and the
+      # editing forms need Content-Type. CloudFront allows at most 10 headers here and refuses Authorization
+      # outright (the app authenticates with its session cookie, not that header).
       items = [
-        "Origin",
-        "Referer",
-        "Authorization",
-        "Accept",
-        "Accept-Language",
         "Content-Type",
-        "Sec-Fetch-Dest",
-        "Sec-Fetch-Mode",
+        "Origin",
         "Sec-Fetch-Site",
-        "Sec-Fetch-User",
-        "User-Agent",
       ]
     }
   }

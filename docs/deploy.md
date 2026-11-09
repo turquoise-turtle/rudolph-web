@@ -265,8 +265,11 @@ Worth knowing before you change any of it:
   and carry `Cache-Control: no-store`; only the embedded stylesheet is cacheable.
 * **Cookies and query strings are forwarded in full.** The session lives in a cookie, and the OIDC
   callback and the pagination cursors are query parameters.
-* **`Origin`, `Referer` and the four `Sec-Fetch-*` headers are forwarded**, because Go's
-  `http.CrossOriginProtection` uses them to decide whether an unsafe request is cross-origin.
+* **Only `Content-Type`, `Origin` and `Sec-Fetch-Site` are forwarded.** Go's
+  `http.CrossOriginProtection` uses `Sec-Fetch-Site` and `Origin` to decide whether an unsafe request
+  is cross-origin, and the editing forms need `Content-Type`. Nothing else the browser sends is read by
+  the app. CloudFront allows at most 10 headers in an origin request policy and refuses
+  `Authorization` in one at all (the app authenticates with its session cookie, not that header).
 * **The viewer's `Host` header is *not* forwarded.** A Lambda Function URL only answers requests
   addressed to its own domain; this is why AWS publishes a managed policy called
   *AllViewerExceptHostHeader* for exactly this kind of origin. The function therefore sees
