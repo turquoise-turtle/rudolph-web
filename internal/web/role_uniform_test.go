@@ -114,12 +114,15 @@ func TestRoleUniform_ViewerOutsideAdminUnchanged(t *testing.T) {
 	}
 }
 
-// An admin still sees the truth: with editing off the write routes and the audit page do not exist.
+// An admin still sees the truth: with editing off the write routes do not exist.
 func TestRoleUniform_AdminUnchanged(t *testing.T) {
 	a := newEditApp(t, fake.New(), false)
 	admin := a.cookie(t, auth.RoleAdmin)
-	if rec := send(a, uniformCase{http.MethodGet, "/admin/audit"}, admin); rec.Code != http.StatusNotFound {
-		t.Errorf("admin GET /admin/audit with editing off: status %d, want 404", rec.Code)
+	if rec := send(a, uniformCase{http.MethodGet, "/admin/nothing"}, admin); rec.Code != http.StatusNotFound {
+		t.Errorf("admin GET /admin/nothing: status %d, want 404", rec.Code)
+	}
+	if rec := send(a, uniformCase{http.MethodPost, "/admin/rules"}, admin); rec.Code != http.StatusNotFound {
+		t.Errorf("admin POST /admin/rules with editing off: status %d, want 404", rec.Code)
 	}
 	if rec := send(a, uniformCase{http.MethodGet, "/admin"}, admin); rec.Code != http.StatusOK {
 		t.Errorf("admin GET /admin: status %d, want 200", rec.Code)

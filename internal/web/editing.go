@@ -262,7 +262,7 @@ type auditRow struct {
 
 func (s *server) audit(w http.ResponseWriter, r *http.Request) {
 	pr := s.pageRequest(r.URL.Query())
-	page, err := s.writer.ListAuditPage(r.Context(), s.now().Add(-auditWindow), pr)
+	page, err := s.store.ListAuditPage(r.Context(), s.now().Add(-auditWindow), pr)
 	if err != nil {
 		s.storeError(w, r, err)
 		return

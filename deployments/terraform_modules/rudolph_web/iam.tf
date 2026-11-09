@@ -61,7 +61,9 @@ data "aws_iam_policy_document" "web" {
   }
 
   # The DynamoDB reader. Every list issues one bounded query, so there is no Scan here. Writes are
-  # in their own statement below, which exists only with enable_editing.
+  # in their own statement below, which exists only with enable_editing. /admin/audit reads the
+  # Audit#<day> partitions through this statement with editing off too, so keep it unconditional
+  # and not limited by partition.
   statement {
     sid    = "ReadRudolphStore"
     effect = "Allow"

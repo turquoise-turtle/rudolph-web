@@ -467,12 +467,36 @@ type EventReader interface {
 	ListFileAccessEvents(ctx context.Context, f FileAccessEventFilter, p PageRequest) (Page[FileAccessEvent], error)
 }
 
+// AuditEntry is one change recorded in Rudolph's audit trail, by the CLI or
+// the web view.
+type AuditEntry struct {
+	Time    time.Time
+	Actor   string
+	Action  string
+	Target  string
+	Summary string
+}
+
+// MaxAuditEntries is the most entries one ListAudit returns.
+const MaxAuditEntries = 1000
+
+// AuditReader reads Rudolph's audit trail. It is a read, not part of Writer,
+// because admins see who changed what (with the CLI as well as the web view)
+// whether or not editing is on.
+type AuditReader interface {
+	// ListAuditPage returns one page (1..MaxPageSize entries) of the audit
+	// entries recorded at or after since, newest first, with a signed cursor
+	// to the next page. A cursor issued for another list is ErrInvalidCursor.
+	ListAuditPage(ctx context.Context, since time.Time, p PageRequest) (Page[AuditEntry], error)
+}
+
 // Reader is everything the web layer reads.
 type Reader interface {
 	MachineReader
 	RuleReader
 	GroupReader
 	EventReader
+	AuditReader
 }
 
 // ErrUnavailable is returned by Unavailable. The web layer renders it as 503.
@@ -522,4 +546,8 @@ func (Unavailable) TopBinaries(context.Context, TopFilter, PageRequest) (TopList
 
 func (Unavailable) ListFileAccessEvents(context.Context, FileAccessEventFilter, PageRequest) (Page[FileAccessEvent], error) {
 	return Page[FileAccessEvent]{}, ErrUnavailable
+}
+
+func (Unavailable) ListAuditPage(context.Context, time.Time, PageRequest) (Page[AuditEntry], error) {
+	return Page[AuditEntry]{}, ErrUnavailable
 }

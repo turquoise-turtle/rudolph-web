@@ -123,19 +123,6 @@ var AddablePolicies = []Policy{
 // ClientModes lists every valid ClientMode.
 var ClientModes = []ClientMode{ClientModeMonitor, ClientModeLockdown, ClientModeStandalone}
 
-// AuditEntry is one change recorded in Rudolph's audit trail, by the CLI or
-// the web view.
-type AuditEntry struct {
-	Time    time.Time
-	Actor   string
-	Action  string
-	Target  string
-	Summary string
-}
-
-// MaxAuditEntries is the most entries one ListAudit returns.
-const MaxAuditEntries = 1000
-
 // Writer changes rules and temporary client modes the way Rudolph's CLI does,
 // and records every change in Rudolph's audit trail with the actor. Invalid
 // input is refused with ErrInvalidArgument before anything is written, and
@@ -153,11 +140,4 @@ type Writer interface {
 	// EndTemporaryMode ends a Mac's temporary mode now. Nothing is written or
 	// recorded when it has none.
 	EndTemporaryMode(ctx context.Context, actor Actor, machineID string) error
-	// ListAudit returns at most limit (1..MaxAuditEntries) audit entries
-	// recorded at or after since, newest first.
-	ListAudit(ctx context.Context, since time.Time, limit int) ([]AuditEntry, error)
-	// ListAuditPage returns one page (1..MaxPageSize entries) of the audit
-	// entries recorded at or after since, newest first, with a signed cursor
-	// to the next page. A cursor issued for another list is ErrInvalidCursor.
-	ListAuditPage(ctx context.Context, since time.Time, p PageRequest) (Page[AuditEntry], error)
 }

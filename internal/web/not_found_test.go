@@ -16,14 +16,14 @@ import (
 )
 
 func TestNotFound_SignedInUsersGetTheSitePage(t *testing.T) {
-	a := newApp(t, fake.New(), 10) // editing off: /admin/audit does not exist
+	a := newApp(t, fake.New(), 10) // editing off: the write routes do not exist
 	for _, c := range []struct {
 		name   string
 		target string
 		cookie *http.Cookie
 	}{
 		{"viewer, unknown path", "/no/such/page", a.cookie(t, auth.RoleViewer)},
-		{"admin, audit with editing off", "/admin/audit", a.cookie(t, auth.RoleAdmin)},
+		{"admin, write route with editing off", "/admin/rules/remove", a.cookie(t, auth.RoleAdmin)},
 		{"admin, unknown admin path", "/admin/nothing", a.cookie(t, auth.RoleAdmin)},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -41,7 +41,7 @@ func TestNotFound_SignedInUsersGetTheSitePage(t *testing.T) {
 // real page does (sign-in redirect for GET/HEAD, 401 otherwise), so a signed-out visitor cannot tell which addresses
 // exist; only after sign-in does an unknown address get the 404. /auth/ and /static/ are the exceptions.
 func TestNotFound_SignedOutCannotTellRoutesApart(t *testing.T) {
-	a := newApp(t, fake.New(), 10) // editing off: /admin/audit and the write routes do not exist
+	a := newApp(t, fake.New(), 10) // editing off: the write routes do not exist
 	signedOut := func(method, target string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, origin+target, nil)
 		req.Header.Set("Sec-Fetch-Site", "same-origin")

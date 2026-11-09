@@ -100,3 +100,41 @@ func TestEditingExampleVariableDefaultsOn(t *testing.T) {
 		t.Error("the example's enable_editing does not default to true")
 	}
 }
+
+// The audit page reads the audit trail with editing off too (owner request), so the role's read statement must not
+// depend on enable_editing nor be limited by partition.
+func TestAuditReadableWithoutEditing(t *testing.T) {
+	module := loadTerraform(t, moduleDir)
+	found := false
+	for _, f := range module {
+		src := string(f.src)
+		i := strings.Index(src, `sid    = "ReadRudolphStore"`)
+		if i < 0 {
+			i = strings.Index(src, `sid = "ReadRudolphStore"`)
+		}
+		if i < 0 {
+			continue
+		}
+		found = true
+		start := strings.LastIndex(src[:i], "statement {")
+		end := strings.Index(src[i:], "\n  }\n")
+		if start < 0 || end < 0 {
+			t.Fatal("cannot find the ReadRudolphStore statement block")
+		}
+		block := src[start : i+end]
+		if strings.Contains(src[:start][strings.LastIndex(src[:start], "\n  ")+1:], "dynamic") {
+			t.Error("ReadRudolphStore is a dynamic statement; it must exist whether or not editing is on")
+		}
+		for _, want := range []string{`"dynamodb:Query"`, `"dynamodb:GetItem"`} {
+			if !strings.Contains(block, want) {
+				t.Errorf("ReadRudolphStore lacks %s", want)
+			}
+		}
+		if strings.Contains(block, "LeadingKeys") || strings.Contains(block, "enable_editing") {
+			t.Errorf("ReadRudolphStore is limited by partition or by editing:\n%s", block)
+		}
+	}
+	if !found {
+		t.Fatal("no ReadRudolphStore statement")
+	}
+}

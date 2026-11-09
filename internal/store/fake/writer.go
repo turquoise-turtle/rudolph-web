@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"slices"
 	"time"
 
 	"github.com/turquoise-turtle/rudolph-web/internal/store"
@@ -179,7 +180,9 @@ func (s *Store) EndTemporaryMode(_ context.Context, actor store.Actor, machineID
 	return nil
 }
 
-// ListAudit implements store.Writer.
+// ListAudit returns up to limit entries recorded at or after since, newest
+// first, for tests to check what a write recorded. It is not a store.Reader
+// call, so like the fake's other inspection helpers it is not recorded.
 func (s *Store) ListAudit(_ context.Context, since time.Time, limit int) ([]store.AuditEntry, error) {
 	if limit < 1 || limit > store.MaxAuditEntries {
 		return nil, store.Invalid("limit %d outside 1..%d", limit, store.MaxAuditEntries)
@@ -198,14 +201,14 @@ func (s *Store) ListAudit(_ context.Context, since time.Time, limit int) ([]stor
 	return out, nil
 }
 
-// ListAuditPage implements store.Writer. An entry's key is its place in the
-// trail counted from the oldest, so a cursor stays on the same entry as newer
-// ones are recorded.
+// ListAuditPage implements store.AuditReader. An entry's key is its place in
+// the trail counted from the oldest, so a cursor stays on the same entry as
+// newer ones are recorded.
 func (s *Store) ListAuditPage(_ context.Context, since time.Time, p store.PageRequest) (store.Page[store.AuditEntry], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.err != nil {
-		return store.Page[store.AuditEntry]{}, s.err
+	if err := s.record(Call{Method: "ListAuditPage", Page: p}); err != nil {
+		return store.Page[store.AuditEntry]{}, err
 	}
 	var keyed []keyedItem[store.AuditEntry]
 	for i := len(s.audit) - 1; i >= 0; i-- {
@@ -214,6 +217,19 @@ func (s *Store) ListAuditPage(_ context.Context, since time.Time, p store.PageRe
 		}
 	}
 	return paginate(s.cursors, keyed, fingerprint("ListAuditPage", "", nil), p)
+}
+
+// AddAuditEntry adds an entry to the audit trail as if another writer, such
+// as Rudolph's CLI, had recorded it. It goes after every entry not newer than
+// it, so the trail stays oldest first whatever order tests add entries in.
+func (s *Store) AddAuditEntry(e store.AuditEntry) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	i := len(s.audit)
+	for i > 0 && s.audit[i-1].Time.After(e.Time) {
+		i--
+	}
+	s.audit = slices.Insert(s.audit, i, e)
 }
 
 // recordAudit appends an entry; the caller holds s.mu. Entries are kept in
