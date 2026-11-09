@@ -31,8 +31,9 @@ certificates from us-east-1; it is required even with CloudFront disabled.
 
 ### `_variables.tf`
 
-Declares the variables `config.auto.tfvars.json` and `make deploy` supply. When you upgrade
-rudolph-web, compare it with this example to pick up new settings.
+Declares the variables `config.auto.tfvars.json` and `make deploy` supply. `make init-env` copies it and `main.tf` from this example once; when you upgrade rudolph-web, compare both with this example to pick up new settings.
+
+`make plan`, `make deploy` and `make justdeploy` check this first (`go run ./cmd/envcheck deployments/environments/$ENV`) and refuse to run Terraform when the environment lacks a variable the example declares or an argument the example's `module "rudolph_web"` block sets, or when a `*.auto.tfvars.json` or `terraform.tfvars.json` file sets a value the environment does not declare. Without the check, Terraform only warns "Value for undeclared variable" and plans without the setting. To fix it, compare the files (`diff -u deployments/environments/example/main.tf deployments/environments/$ENV/main.tf`, and the same for `_variables.tf`); copy the example's `main.tf` and `_variables.tf` over yours if you have not customised them, otherwise add what is missing. Variables and module arguments the example does not have are allowed, and variables may be declared in any `.tf` file in the environment.
 
 ### `versions.tf`
 

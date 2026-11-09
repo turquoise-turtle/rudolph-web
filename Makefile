@@ -13,19 +13,27 @@ endif
 
 TERRAFORM_DEPLOYMENTS_ENV_DIR = $(TERRAFORM_DEPLOYMENTS_DIR)/$(ENV)
 
+# make init-env copies the example environment once, so an environment created before a release that added a module
+# variable lacks it, and Terraform plans without the setting and only warns about the value in config.auto.tfvars.json.
+# Stops plan and apply until the environment has every variable and module argument the example has and declares every
+# value its .tfvars.json files set.
+#
+.check-env: .check-args
+	go run ./cmd/envcheck $(TERRAFORM_DEPLOYMENTS_ENV_DIR)
+
 # Default target for `make`; builds the Lambda and applies the Terraform.
 #
 #
-deploy: .check-args test build tf-init justdeploy
+deploy: .check-args .check-env test build tf-init justdeploy
 
 # Applies without running tests or rebuilding. Useful right after a build, but prefer `make deploy`.
-justdeploy: .check-args
+justdeploy: .check-args .check-env
 	terraform -chdir=$(TERRAFORM_DEPLOYMENTS_ENV_DIR) apply $(TF_DEFAULT_FLAGS)
 
 # Equivalent of `terraform plan` in the desired environment directory.
 #
 #
-plan: .check-args
+plan: .check-args .check-env
 	terraform -chdir=$(TERRAFORM_DEPLOYMENTS_ENV_DIR) plan $(TF_DEFAULT_FLAGS)
 
 # Equivalent to a `terraform init` in the desired environment directory.
@@ -88,4 +96,4 @@ init-env: .check-args
 #
 #
 #
-.PHONY: .check-args deploy justdeploy plan tf-init destroy tf-check deps deps-check build test init-env
+.PHONY: .check-args .check-env deploy justdeploy plan tf-init destroy tf-check deps deps-check build test init-env
