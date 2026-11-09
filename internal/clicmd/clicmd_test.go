@@ -74,6 +74,10 @@ func TestBuilderRendersExactlyTheContractExamples(t *testing.T) {
 		must(t)(b.GroupAdd(machine, "eng")),
 		must(t)(b.Rule("deny", store.RuleTypeSigningID, "EQHXZ8M8AV:com.google.GeminiMacOS", clicmd.Group("rudolph:ungrouped"))),
 		must(t)(b.Rule("deny", store.RuleTypeSigningID, "platform:com.apple.Terminal", clicmd.Global())),
+		// The events page offers every rule type the event matches (rule_type_commands_test.go).
+		must(t)(b.Rule("allow", store.RuleTypeSigningID, "EQHXZ8M8AV:com.google.GeminiMacOS", clicmd.Machine(machine, "24h"))),
+		must(t)(b.Rule("allow", store.RuleTypeTeamID, "ABCDE12345", clicmd.Machine(machine, "24h"))),
+		must(t)(b.Rule("allow", store.RuleTypeCDHash, "ffeeddccbbaa99887766554433221100ffeeddcc", clicmd.Machine(machine, "24h"))),
 	}
 	want := examples(t)
 	sort.Strings(got)
