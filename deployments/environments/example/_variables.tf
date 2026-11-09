@@ -76,8 +76,8 @@ variable "top_list_stale_after" {
 
 variable "enable_editing" {
   type        = bool
-  description = "Let Rudolph.Admin add and remove rules and set temporary client modes from the web view, each recorded in Rudolph's audit trail. Grants the role writes to Rudolph's rule, machine and audit partitions only."
-  default     = false
+  description = "Let Rudolph.Admin add and remove rules and set temporary client modes from the web view, each recorded in Rudolph's audit trail. On by default; only Rudolph.Admin holders see the forms. Grants the role writes to Rudolph's rule, rules feed, machine, group, event collection and audit partitions only. Set false to keep the view read-only."
+  default     = true
 }
 
 variable "create_ssm_parameters" {

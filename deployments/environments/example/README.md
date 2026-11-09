@@ -68,6 +68,7 @@ committed and ends up in the state.
 | `dynamodb_table_name` | (required) | Rudolph's table, typically `<rudolph prefix>_rudolph_store`. |
 | `dynamodb_kms_key_arn` | `""` | The CMK encrypting that table, if it has one. |
 | `events_dynamodb_table_name` | `""` | Rudolph's execution events table, typically `<rudolph prefix>_rudolph_events`. Empty leaves the events pages unavailable. |
+| `enable_editing` | `true` | Let `Rudolph.Admin` holders add and remove rules and set temporary client modes from the pages; only they see the forms. Grants the role writes to Rudolph's rule, rules feed, machine, group, event collection and audit partitions only. Set `false` to keep the view read-only. See [docs/deploy.md](../../../docs/deploy.md#editing), including the upgrade note for environments that leave it unset. |
 | `lambda_memory_size` | `256` | Function memory in MB. |
 | `lambda_timeout_seconds` | `10` | Function timeout in seconds. |
 | `log_retention_in_days` | `30` | Retention of the function's log group. |

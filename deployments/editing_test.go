@@ -1,6 +1,7 @@
 package deployments
 
-// v2 editing (plan F2): the web role can write only when enable_editing is true (default false), only the write
+// v2 editing (plan F2): the web role can write only when enable_editing is true (default true since the owner's production
+// deployment: forms still show only to Rudolph.Admin), only the write
 // actions Rudolph's writers use, and only to Rudolph's rule, machine and audit partitions (dynamodb:LeadingKeys).
 
 import (
@@ -17,8 +18,8 @@ func TestEditing_WritesOnlyWhenEnabledAndOnlyToRudolphPartitions(t *testing.T) {
 	if len(vs) != 1 {
 		t.Fatalf("variable enable_editing declared %d times", len(vs))
 	}
-	if d, ok := vs[0].Body.Attributes["default"]; !ok || strings.TrimSpace(sourceOf(t, module, d.Expr)) != "false" {
-		t.Error("enable_editing does not default to false")
+	if d, ok := vs[0].Body.Attributes["default"]; !ok || strings.TrimSpace(sourceOf(t, module, d.Expr)) != "true" {
+		t.Error("enable_editing does not default to true")
 	}
 
 	writeActions := []string{"dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:DeleteItem", "dynamodb:TransactWriteItems", "dynamodb:BatchWriteItem"}
@@ -83,7 +84,19 @@ func TestEditing_WritesOnlyWhenEnabledAndOnlyToRudolphPartitions(t *testing.T) {
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(main, "enable_editing") || cfg["enable_editing"] != false {
-		t.Error("the example environment does not pass enable_editing, set to false")
+	if !strings.Contains(main, "enable_editing") || cfg["enable_editing"] != true {
+		t.Error("the example environment does not pass enable_editing, set to true")
+	}
+}
+
+// The example environment's own variable defaults the same way as the module's.
+func TestEditingExampleVariableDefaultsOn(t *testing.T) {
+	example := loadTerraform(t, exampleDir)
+	vs := blocks(example, "variable", "enable_editing")
+	if len(vs) != 1 {
+		t.Fatalf("example: variable enable_editing declared %d times", len(vs))
+	}
+	if d, ok := vs[0].Body.Attributes["default"]; !ok || strings.TrimSpace(sourceOf(t, example, d.Expr)) != "true" {
+		t.Error("the example's enable_editing does not default to true")
 	}
 }
