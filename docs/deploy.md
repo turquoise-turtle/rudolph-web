@@ -244,7 +244,7 @@ already validated us-east-1 certificate in `acm_certificate_arn`, and point your
 ### Check it
 
 Open the `url` output. You should be redirected to Entra, sign in, and land on the machines page —
-or on a 403 if your account has neither role.
+or on a "403 Forbidden" page naming the missing role, with Sign out, if your account has neither role.
 
 ---
 

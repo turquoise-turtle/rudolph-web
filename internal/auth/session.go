@@ -108,11 +108,27 @@ func (a *Authenticator) sessionFromRequest(r *http.Request) (s Session, ok, pres
 	}, true, true
 }
 
+// ForbiddenFunc writes the response for a signed-in user whose session lacks
+// role. The session is in r's context (SessionFromContext), so a page can show
+// who is signed in. The Cache-Control: no-store header is already set.
+type ForbiddenFunc func(w http.ResponseWriter, r *http.Request, role string)
+
 // Require wraps next so it runs only for a valid session holding role.
 // Unauthenticated GET/HEAD requests are redirected to the login page with the
 // original URL as return_to; other methods get 401. Sessions without the
-// role get 403.
+// role get a plain-text 403.
 func (a *Authenticator) Require(role string, next http.Handler) http.Handler {
+	return a.RequireOr(role, next, nil)
+}
+
+// RequireOr is Require with forbidden writing the 403 for a session without
+// role, so the caller can render it in its own page layout without this
+// package depending on the caller's templates. Nil forbidden gives Require's
+// plain-text 403.
+func (a *Authenticator) RequireOr(role string, next http.Handler, forbidden ForbiddenFunc) http.Handler {
+	if forbidden == nil {
+		forbidden = plainForbidden
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s, ok, present := a.sessionFromRequest(r)
 		if !ok {
@@ -127,11 +143,21 @@ func (a *Authenticator) Require(role string, next http.Handler) http.Handler {
 			http.Error(w, "Authentication required.", http.StatusUnauthorized)
 			return
 		}
+		r = r.WithContext(context.WithValue(r.Context(), ctxKey{}, s))
 		if !s.HasRole(role) {
 			w.Header().Set("Cache-Control", "no-store")
-			http.Error(w, "Forbidden: your account has not been assigned the "+role+" role for Rudolph.", http.StatusForbidden)
+			forbidden(w, r, role)
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxKey{}, s)))
+		next.ServeHTTP(w, r)
 	})
+}
+
+// ForbiddenMessage is the explanation shown to a signed-in user without role.
+func ForbiddenMessage(role string) string {
+	return "Your account has not been assigned the " + role + " role for Rudolph."
+}
+
+func plainForbidden(w http.ResponseWriter, _ *http.Request, role string) {
+	http.Error(w, "Forbidden: "+ForbiddenMessage(role), http.StatusForbidden)
 }

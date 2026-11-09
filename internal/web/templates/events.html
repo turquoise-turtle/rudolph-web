@@ -23,7 +23,7 @@
 {{if .Events}}
 <div class="scroll">
 <table>
-<thead><tr><th>Time</th><th>Machine</th><th>Decision</th><th>File</th><th>SHA-256</th><th>User</th><th>Team ID</th><th>Signing ID</th><th>CDHash</th><th>Rudolph CLI</th></tr></thead>
+<thead><tr><th>Time</th><th>Machine</th><th>Decision</th><th>File</th><th>Rudolph CLI</th><th>SHA-256</th><th>User</th><th>Team ID</th><th>Signing ID</th><th>CDHash</th></tr></thead>
 <tbody>
 {{range .Events}}
 <tr data-row>
@@ -31,16 +31,16 @@
   <td><a href="{{machineURL .MachineID}}">{{.MachineID}}</a></td>
   <td class="{{if .Decision.IsBlock}}block{{else}}allow{{end}}">{{.Decision}}</td>
   <td>{{.FileName}}<br><span class="muted">{{.FilePath}}</span>{{if .IdentityUnverified}}<br><span class="warn" title="Santa could not confirm the file it evaluated was the image that ran, so the hash and file details are not verified.">identity not verified</span>{{end}}</td>
-  <td><code>{{.FileSHA256}}</code></td>
-  <td>{{.ExecutingUser}}</td>
-  <td>{{.TeamID}}</td>
-  <td>{{.SigningID}}</td>
-  <td><code>{{.CDHash}}</code></td>
   <td>{{$deny := cliRuleGlobal "deny" binary .FileSHA256}}{{if $deny}}<details class="cmds"><summary>Commands</summary><ul>
     {{template "cmd" (cmd "Allow on this Mac for 24 hours" (cliRuleMachine "allow" binary .FileSHA256 .MachineID))}}
     {{template "cmd" (cmd "Allow everywhere" (cliRuleGlobal "allow" binary .FileSHA256))}}
     {{template "cmd" (cmd "Block everywhere" $deny)}}
   </ul></details>{{end}}</td>
+  <td class="hash"><code>{{.FileSHA256}}</code></td>
+  <td>{{.ExecutingUser}}</td>
+  <td>{{.TeamID}}</td>
+  <td>{{.SigningID}}</td>
+  <td class="hash"><code>{{.CDHash}}</code></td>
 </tr>
 {{end}}
 </tbody>
