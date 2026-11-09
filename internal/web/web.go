@@ -105,8 +105,8 @@ type Options struct {
 	// that the ranker may have stopped; 0 means DefaultTopListStaleAfter.
 	TopListStaleAfter time.Duration
 	// Writer lets Rudolph.Admin add and remove rules and set temporary client
-	// modes, and shows them the audit trail. Nil keeps the view read-only:
-	// no forms are shown and the write routes do not exist.
+	// modes. Nil keeps the view read-only: no forms are shown and the write
+	// routes do not exist. The audit trail is read through Store either way.
 	Writer store.Writer
 }
 
@@ -207,6 +207,9 @@ func New(opts Options) (http.Handler, error) {
 	mux.Handle("GET /events/top-allowed", viewer(s.topAllowed))
 	admin := func(h http.HandlerFunc) http.Handler { return opts.Auth.RequireOr(auth.RoleAdmin, h, s.forbidden) }
 	mux.Handle("GET /admin", admin(s.admin))
+	// The audit trail is read-only and also lists the CLI's changes, so admins
+	// see who changed what even when the web view cannot edit (owner request).
+	mux.Handle("GET /admin/audit", admin(s.audit))
 	if s.writer != nil {
 		// Every POST passes the cross-origin protection below before it gets
 		// here, and only an admin's reaches the handler.
@@ -214,7 +217,6 @@ func New(opts Options) (http.Handler, error) {
 		mux.Handle("POST /admin/rules/remove", admin(s.removeRule))
 		mux.Handle("POST /admin/machines/{id}/temporary-mode", admin(s.setTemporaryMode))
 		mux.Handle("POST /admin/machines/{id}/temporary-mode/end", admin(s.endTemporaryMode))
-		mux.Handle("GET /admin/audit", admin(s.audit))
 	}
 
 	csp := strings.Join([]string{
@@ -260,7 +262,7 @@ func New(opts Options) (http.Handler, error) {
 // same one Require gives a real page, whether or not the path exists, exists only with editing on, or is used with a
 // method it does not take. Signed in without Rudolph.Viewer, or as a viewer anywhere under /admin, it answers the
 // same 403 for every path before the mux is consulted (requiredRole). Otherwise the mux's own 404 for an unmatched
-// path (including the write routes and /admin/audit when editing is off) and its 405 for a known path with the wrong
+// path (including the write routes when editing is off) and its 405 for a known path with the wrong
 // method become the site's error page, like the 403; the 405 keeps its Allow header. A matched route's own 404s (an unknown static file, a missing machine)
 // are its business and pass through.
 func (s *server) notFound(mux *http.ServeMux) http.Handler {
@@ -367,7 +369,6 @@ type layoutData struct {
 	Nav     string
 	User    auth.Session
 	IsAdmin bool
-	Editing bool
 	Page    any
 }
 
@@ -544,7 +545,7 @@ func (s *server) render(w http.ResponseWriter, r *http.Request, status int, page
 	sess, _ := auth.SessionFromContext(r.Context())
 	var buf bytes.Buffer
 	err := s.pages[page].ExecuteTemplate(&buf, "layout.html", layoutData{
-		Title: title, Nav: nav, User: sess, IsAdmin: sess.HasRole(auth.RoleAdmin), Editing: s.writer != nil, Page: data,
+		Title: title, Nav: nav, User: sess, IsAdmin: sess.HasRole(auth.RoleAdmin), Page: data,
 	})
 	if err != nil {
 		s.log.Error("render failed", "page", page, "err", err)
