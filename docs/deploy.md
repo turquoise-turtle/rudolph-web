@@ -30,7 +30,7 @@ You only do this once.
 
 ### Tools
 
-* **Go** 1.27 or newer (`go.mod` names the toolchain, which the `go` command downloads when yours is older).
+* **Go** 1.27 or newer (`go.mod` names the toolchain, which the `go` command downloads when yours is older), for `make plan` as well as `make deploy`: both check the environment with Go before running Terraform.
 * **Terraform** 1.10 or newer (tested with 1.17), with the `hashicorp/aws` provider `~> 6.72`.
 * **AWS CLI**, authenticated as a role that may create Lambda functions, IAM roles, SSM parameters,
   CloudWatch log groups and, if you enable it, CloudFront distributions, ACM certificates and
@@ -117,7 +117,7 @@ Environment directories hold the account ID, the tenant and client IDs and the d
 * has no `module "rudolph_web"` block, or its block does not set an argument the example's `main.tf` sets (`source` and `version`, which choose where the module comes from, are not compared);
 * sets a value in `config.auto.tfvars.json`, another `*.auto.tfvars.json` file or `terraform.tfvars.json` that it does not declare.
 
-Variables and module arguments of your own that the example does not have are allowed. `make tf-init` and `make destroy` are not checked. To fix a refused environment, compare it with the example:
+Variables and module arguments of your own that the example does not have are allowed, and module arguments set in override files (`override.tf`, `*_override.tf`, `override.tf.json`, `*_override.tf.json`) count, as Terraform merges them in. Apart from those override files, the check reads `.tf` files only, not `.tf.json`, and only JSON variable files, not `.tfvars` ones. Like Terraform, it skips hidden files (names starting with `.`), backup files ending in `~` and lock files named `#...#`, and the `"//"` comment key in JSON variable files. `make tf-init` and `make destroy` are not checked. The check runs with Go, so `make plan` now needs Go installed, as `make deploy` already did. To fix a refused environment, compare it with the example:
 
 ```sh
 diff -u deployments/environments/example/main.tf deployments/environments/$ENV/main.tf
