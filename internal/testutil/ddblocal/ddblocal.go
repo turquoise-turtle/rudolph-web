@@ -142,6 +142,13 @@ func start() (func(), error) {
 		"AWS_SECRET_ACCESS_KEY":     "local",
 		"AWS_REGION":                Region,
 		"AWS_EC2_METADATA_DISABLED": "true",
+		// Hermetic regardless of the operator's shell (Rudolph's runbook exports AWS_PROFILE): no profile, no shared
+		// config or credentials file, no session token.
+		"AWS_PROFILE":                 "",
+		"AWS_DEFAULT_PROFILE":         "",
+		"AWS_SESSION_TOKEN":           "",
+		"AWS_CONFIG_FILE":             filepath.Join(os.TempDir(), "rudolph-web-ddblocal-no-aws-config"),
+		"AWS_SHARED_CREDENTIALS_FILE": filepath.Join(os.TempDir(), "rudolph-web-ddblocal-no-aws-credentials"),
 	} {
 		os.Setenv(k, v)
 	}
