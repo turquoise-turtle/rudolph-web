@@ -26,6 +26,7 @@ As found on 2026-11-04. The `Hostname` and `Cert#` findings have since been fixe
 | Machines, hostname prefix | Query GSI `DataType_HostnameKey`: `begins_with(HostnameKey, lower(trim(p)))` (case-insensitive) |
 | Machine list projection | INCLUDE MachineID, SerialNum, Hostname, ModelIdentifier, OSVersion, SantaVersion, ClientMode, PrimaryUser, `LastSeenDay`. About 4 read units per page of 100. |
 | Machine detail | Query `PK = Machine#<id>`, `SK BETWEEN Config AND SyncState`, Limit 8: config, current sensor data, groups (`Groups`), groups as sent (`ReportedGroups`) and sync state in one call, leaving out tracking internals. No sensor data row (90-day TTL) means not found. |
+| Global client mode (machine detail) | GetItem `GlobalConfig` / `Config`, its own read so machine detail stays one Query; no item means MONITOR, as Rudolph sends. A failed read is logged and the page names no global mode. |
 | Machine rules | Query `PK = MachineRules#<id>`; state (in force, removing, expired) computed per the contract |
 | Groups | GetItem `GroupRegistry` / `Current`, sorted by name; no item means no groups. `rudolph:ungrouped` is never registered and is always listed. A group page answers 404 for a name not in the registry. |
 | Group rules | Query `PK = GroupRules#<group>`, Limit = page size; the cursor is bound to the method and the group. |

@@ -431,6 +431,11 @@ type MachineReader interface {
 	GetMachine(ctx context.Context, machineID string) (MachineDetail, error)
 	// ListMachineRules returns rules in PK=MachineRules#<id>, in SK order.
 	ListMachineRules(ctx context.Context, machineID string, p PageRequest) (Page[Rule], error)
+	// GlobalClientMode returns the client mode of the global config (one
+	// GetItem of PK=GlobalConfig, SK=Config), which a Mac follows when its
+	// machine config sets none. MONITOR when there is no global config, as
+	// Rudolph then sends; "" when the row sets no client mode.
+	GlobalClientMode(ctx context.Context) (ClientMode, error)
 }
 
 // RuleReader reads global rules.
@@ -489,6 +494,10 @@ func (Unavailable) GetMachine(context.Context, string) (MachineDetail, error) {
 
 func (Unavailable) ListMachineRules(context.Context, string, PageRequest) (Page[Rule], error) {
 	return Page[Rule]{}, ErrUnavailable
+}
+
+func (Unavailable) GlobalClientMode(context.Context) (ClientMode, error) {
+	return "", ErrUnavailable
 }
 
 func (Unavailable) ListGlobalRules(context.Context, RuleFilter, PageRequest) (Page[Rule], error) {

@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	// provided.al2023 does not guarantee a time zone database, and
+	// RUDOLPH_WEB_DISPLAY_TIME_ZONE needs one.
+	_ "time/tzdata"
 
 	"github.com/aws/aws-lambda-go/lambda"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
@@ -51,7 +54,7 @@ func main() {
 		log.Error("data layer setup", "err", err)
 		os.Exit(1)
 	}
-	opts := web.Options{Auth: a, Store: reader, Logger: log, CLIEnv: cfg.CLIEnv, TopListStaleAfter: cfg.TopListStaleAfter}
+	opts := web.Options{Auth: a, Store: reader, Logger: log, CLIEnv: cfg.CLIEnv, TopListStaleAfter: cfg.TopListStaleAfter, DisplayTimeZone: cfg.DisplayTimeZone}
 	// Without RUDOLPH_WEB_EDITING=true the view stays read-only: no forms, and
 	// the write routes do not exist. The role is only granted writes with
 	// enable_editing, which sets the variable.

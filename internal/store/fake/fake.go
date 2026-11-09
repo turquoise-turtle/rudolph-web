@@ -40,6 +40,7 @@ type Store struct {
 	machines     map[string]store.Machine
 	syncStates   map[string]store.SyncState
 	configModes  map[string]store.ClientMode
+	globalMode   store.ClientMode
 	tempModes    map[string]tempMode
 	cleanSyncs   map[string]bool
 	globalRules  map[string]store.Rule
@@ -69,6 +70,7 @@ func New() *Store {
 	}
 	return &Store{
 		cursors:      codec,
+		globalMode:   store.ClientModeMonitor,
 		machines:     map[string]store.Machine{},
 		syncStates:   map[string]store.SyncState{},
 		configModes:  map[string]store.ClientMode{},
@@ -103,6 +105,27 @@ func (s *Store) SetConfiguredClientMode(machineID string, mode store.ClientMode)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.configModes[machineID] = mode
+}
+
+// SetGlobalClientMode sets the global config's client mode. A new store has
+// MONITOR, which Rudolph sends when there is no global config.
+func (s *Store) SetGlobalClientMode(mode store.ClientMode) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.globalMode = mode
+}
+
+// GlobalClientMode implements store.MachineReader. It is not recorded: the
+// call log is for the query budget of the page's own data, and this is one
+// fixed GetItem that only words the machine page's configured mode. It still
+// fails after SetError.
+func (s *Store) GlobalClientMode(context.Context) (store.ClientMode, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.err != nil {
+		return "", s.err
+	}
+	return s.globalMode, nil
 }
 
 type topList struct {

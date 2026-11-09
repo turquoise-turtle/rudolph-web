@@ -9,7 +9,7 @@
   <dt>macOS</dt><dd>{{orDash .OSVersion}} ({{orDash .OSBuild}})</dd>
   <dt>Santa</dt><dd>{{orDash .SantaVersion}}{{if legacySanta .SantaVersion}} <span class="legacy">legacy client</span> <span class="muted">(below 2026.8: supported only on macOS 13, with limits)</span>{{end}}</dd>
   <dt>Client mode (reported)</dt><dd>{{.ClientMode}}</dd>
-  <dt>Client mode (configured)</dt><dd>{{if $.Health.TemporaryActive}}{{.TemporaryClientMode}} (temporary until {{ts .TemporaryClientModeUntil}}; then {{with .ConfiguredClientMode}}{{.}}{{else}}the global config's mode{{end}}){{else}}{{with .ConfiguredClientMode}}{{.}}{{else}}not set: global config applies{{end}}{{end}}</dd>
+  <dt>Client mode (configured)</dt><dd>{{if $.Health.TemporaryActive}}{{.TemporaryClientMode}} (temporary until {{ts .TemporaryClientModeUntil}}; then {{with .ConfiguredClientMode}}{{.}}{{else}}{{with $.GlobalMode}}{{.}} (global config){{else}}the global config's mode{{end}}{{end}}){{else}}{{with .ConfiguredClientMode}}{{.}}{{else}}{{with $.GlobalMode}}{{.}} (from the global config){{else}}not set: global config applies{{end}}{{end}}{{end}}</dd>
   <dt>Primary user</dt><dd>{{orDash .PrimaryUser}}</dd>
   <dt>SIP status</dt><dd>{{orDash .SIPStatus}}</dd>
   <dt>Last seen</dt><dd>{{ts .LastSeen}}</dd>
@@ -30,6 +30,7 @@
   <dt>Transitive rules</dt><dd>{{.RuleCounts.Transitive}}</dd>
 </dl>
 </section>
+<p class="hint">Client mode (reported) is what the Mac reported at its last preflight, before applying that sync. Client mode (configured) is what Rudolph sends: the machine config's mode, or the global config's when the machine config sets none, with a temporary mode taking their place while it lasts.</p>
 <p><a href="{{eventsForMachineURL .MachineID}}">Events for this machine</a></p>
 {{with cliConfigGet .MachineID}}
 <details class="cmds"><summary>Rudolph CLI commands for this Mac</summary><ul>

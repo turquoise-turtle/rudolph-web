@@ -70,6 +70,17 @@ variable "top_list_stale_after" {
   }
 }
 
+variable "display_time_zone" {
+  type        = string
+  description = "IANA time zone name, e.g. Asia/Tokyo (RUDOLPH_WEB_DISPLAY_TIME_ZONE). Pages show each time in UTC with the time in this zone beside it; UTC shows UTC only. The app checks the name at cold start."
+  default     = "UTC"
+
+  validation {
+    condition     = can(regex("^[A-Za-z][A-Za-z0-9_+-]*(/[A-Za-z0-9_+-]+)*$", var.display_time_zone)) && var.display_time_zone != "Local"
+    error_message = "display_time_zone must be an IANA time zone name such as UTC or Asia/Tokyo."
+  }
+}
+
 variable "session_ttl" {
   type        = string
   description = "Session cookie lifetime as a Go duration between 5m and 12h (RUDOLPH_WEB_SESSION_TTL). Role changes take effect at most one TTL after the next sign-in."

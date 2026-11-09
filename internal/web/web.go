@@ -45,6 +45,9 @@ type Options struct {
 	// modes, and shows them the audit trail. Nil keeps the view read-only:
 	// no forms are shown and the write routes do not exist.
 	Writer store.Writer
+	// DisplayTimeZone shows each time on the pages in this zone beside UTC.
+	// Nil or UTC shows UTC only.
+	DisplayTimeZone *time.Location
 }
 
 type server struct {
@@ -57,6 +60,7 @@ type server struct {
 
 	topListStaleAfter time.Duration
 	writer            store.Writer
+	times             timeFormat
 }
 
 // New returns the complete application handler: auth routes, static assets
@@ -87,7 +91,8 @@ func New(opts Options) (http.Handler, error) {
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()
 	}
-	pages, err := parseTemplates(cliFuncs(clicmd.New(opts.CLIEnv)))
+	times := newTimeFormat(opts.DisplayTimeZone)
+	pages, err := parseTemplates(cliFuncs(clicmd.New(opts.CLIEnv)), timeFuncs(times))
 	if err != nil {
 		return nil, err
 	}
@@ -101,6 +106,7 @@ func New(opts Options) (http.Handler, error) {
 
 		topListStaleAfter: opts.TopListStaleAfter,
 		writer:            opts.Writer,
+		times:             times,
 	}
 
 	mux := http.NewServeMux()
@@ -195,13 +201,20 @@ type layoutData struct {
 	Page    any
 }
 
+// timeFuncs gives the templates ts, which shows a time in the server's
+// display time zone.
+func timeFuncs(f timeFormat) template.FuncMap {
+	return template.FuncMap{
+		"ts": func(t time.Time) string {
+			if t.IsZero() {
+				return "—"
+			}
+			return f.text(t)
+		},
+	}
+}
+
 var funcs = template.FuncMap{
-	"ts": func(t time.Time) string {
-		if t.IsZero() {
-			return "—"
-		}
-		return timeText(t)
-	},
 	// The machine list's last seen is a UTC date (Rudolph's LastSeenDay), not
 	// a time, so showing midnight would be misleading.
 	"day": func(t time.Time) string {
@@ -272,8 +285,12 @@ func cliFuncs(b clicmd.Builder) template.FuncMap {
 	}
 }
 
-func parseTemplates(extra template.FuncMap) (map[string]*template.Template, error) {
-	base, err := template.New("layout.html").Funcs(funcs).Funcs(extra).ParseFS(templateFS, "templates/layout.html")
+func parseTemplates(extra ...template.FuncMap) (map[string]*template.Template, error) {
+	base := template.New("layout.html").Funcs(funcs)
+	for _, fm := range extra {
+		base = base.Funcs(fm)
+	}
+	base, err := base.ParseFS(templateFS, "templates/layout.html")
 	if err != nil {
 		return nil, err
 	}

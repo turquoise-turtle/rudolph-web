@@ -109,22 +109,31 @@ func (s *server) machineDetail(w http.ResponseWriter, r *http.Request) {
 		s.storeError(w, r, err)
 		return
 	}
+	// The global mode only words the configured mode better, so the page is
+	// shown without it rather than failing.
+	globalMode, err := s.store.GlobalClientMode(r.Context())
+	if err != nil {
+		s.log.Warn("reading the global client mode failed", "err", err)
+		globalMode = ""
+	}
 	title := machine.Hostname
 	if title == "" {
 		title = machine.MachineID
 	}
 	s.render(w, r, http.StatusOK, "machine", "Machine "+title, "machines", struct {
-		Machine store.MachineDetail
-		Health  syncHealth
-		Rules   []store.Rule
-		Pager   pager
-		Edit    editForms
+		Machine    store.MachineDetail
+		GlobalMode store.ClientMode
+		Health     syncHealth
+		Rules      []store.Rule
+		Pager      pager
+		Edit       editForms
 	}{
-		Machine: machine,
-		Health:  machineHealth(machine, s.now()),
-		Rules:   rules.Items,
-		Pager:   links("/machines/"+url.PathEscape(id), url.Values{}, pr.Cursor, rules.NextCursor),
-		Edit:    s.editForms(r),
+		Machine:    machine,
+		GlobalMode: globalMode,
+		Health:     machineHealth(machine, s.now(), globalMode, s.times),
+		Rules:      rules.Items,
+		Pager:      links("/machines/"+url.PathEscape(id), url.Values{}, pr.Cursor, rules.NextCursor),
+		Edit:       s.editForms(r),
 	})
 }
 

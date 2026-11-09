@@ -37,11 +37,32 @@ type syncHealth struct {
 	Problems bool
 }
 
-func timeText(t time.Time) string {
-	return t.UTC().Format("2006-01-02 15:04:05") + " UTC"
+// timeFormat shows times on pages: in UTC, with the time in the display time
+// zone beside it unless that is UTC. Pages run no scripts, so the browser's
+// time zone is not available and the zone is configured instead.
+type timeFormat struct {
+	zone *time.Location // nil: UTC only
 }
 
-func machineHealth(m store.MachineDetail, now time.Time) syncHealth {
+func newTimeFormat(zone *time.Location) timeFormat {
+	if zone == nil || zone.String() == "UTC" {
+		return timeFormat{}
+	}
+	return timeFormat{zone: zone}
+}
+
+func (f timeFormat) text(t time.Time) string {
+	s := t.UTC().Format("2006-01-02 15:04:05") + " UTC"
+	if f.zone != nil {
+		s += " (" + t.In(f.zone).Format("2006-01-02 15:04 MST") + ")"
+	}
+	return s
+}
+
+// machineHealth works out the sync health of m. globalMode is the global
+// config's client mode, or "" when it could not be read.
+func machineHealth(m store.MachineDetail, now time.Time, globalMode store.ClientMode, tf timeFormat) syncHealth {
+	timeText := tf.text
 	var h syncHealth
 	warn := func(format string, a ...any) {
 		h.Problems = true
@@ -80,8 +101,11 @@ func machineHealth(m store.MachineDetail, now time.Time) syncHealth {
 		default:
 			h.TemporaryActive = true
 			returnsTo := "the global config's mode"
-			if m.ConfiguredClientMode != "" {
+			switch {
+			case m.ConfiguredClientMode != "":
 				returnsTo = string(m.ConfiguredClientMode)
+			case globalMode != "":
+				returnsTo = string(globalMode) + " (the global config's mode)"
 			}
 			note("Temporary %s until %s, then the Mac returns to %s at its next sync.", mode, timeText(until), returnsTo)
 		}

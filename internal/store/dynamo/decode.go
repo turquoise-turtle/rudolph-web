@@ -27,6 +27,10 @@ const (
 	skReportedGroups = "ReportedGroups"
 )
 
+// pkGlobalConfig is the partition of the global config, whose one row has
+// SK=Config like a machine config.
+const pkGlobalConfig = "GlobalConfig"
+
 var ruleTypes = map[int64]store.RuleType{
 	1: store.RuleTypeBinary,
 	2: store.RuleTypeCertificate,
@@ -92,6 +96,23 @@ func DecodeMachinePartition(items []map[string]types.AttributeValue) (store.Mach
 		return store.MachineDetail{}, store.ErrNotFound
 	}
 	return d, nil
+}
+
+// DecodeGlobalClientMode decodes ClientMode from the global config row. With
+// no row (a nil or empty item) it is MONITOR, the mode Rudolph sends then
+// (machineconfiguration.GetUniversalDefaultConfig). Rudolph unmarshals the
+// whole row, so a mistyped ClientMode fails its syncs too, and is an error
+// here rather than a guess.
+func DecodeGlobalClientMode(item map[string]types.AttributeValue) (store.ClientMode, error) {
+	if len(item) == 0 {
+		return store.ClientModeMonitor, nil
+	}
+	r := reader{item: item}
+	mode := r.clientMode()
+	if r.err != nil {
+		return "", fmt.Errorf("dynamo: decoding the global config: %w", r.err)
+	}
+	return mode, nil
 }
 
 // DecodeRule decodes one row of GlobalRules or MachineRules#<id>. now decides

@@ -25,6 +25,9 @@ module "rudolph_web" {
   # How old a top list may be before its page warns; fit it to the ranker's schedule.
   top_list_stale_after = var.top_list_stale_after
 
+  # Pages show times in UTC and, unless this is UTC, in this IANA time zone beside it.
+  display_time_zone = var.display_time_zone
+
   create_ssm_parameters = var.create_ssm_parameters
   ssm_kms_key_arn       = var.ssm_kms_key_arn
 

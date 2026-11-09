@@ -141,6 +141,22 @@ func (s *Store) ListMachineRules(ctx context.Context, machineID string, p store.
 	}, p)
 }
 
+// GlobalClientMode implements store.MachineReader with one GetItem of the
+// global config. GetMachine does not read it, so it stays one Query.
+func (s *Store) GlobalClientMode(ctx context.Context) (store.ClientMode, error) {
+	out, err := s.client.GetItem(ctx, &dynamodb.GetItemInput{
+		TableName: aws.String(s.table),
+		Key: map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: pkGlobalConfig},
+			"SK": &types.AttributeValueMemberS{Value: skConfig},
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("dynamo: reading the global config: %w", err)
+	}
+	return DecodeGlobalClientMode(out.Item)
+}
+
 // ListGroups implements store.GroupReader with one GetItem of the registry.
 func (s *Store) ListGroups(ctx context.Context) ([]store.Group, error) {
 	out, err := s.client.GetItem(ctx, &dynamodb.GetItemInput{
