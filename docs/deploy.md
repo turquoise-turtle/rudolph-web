@@ -54,7 +54,7 @@ Pages show each time in UTC and, beside it, in the viewer's own time zone, conve
 
 #### Upgrading from a release with `display_time_zone`
 
-`display_time_zone` is removed. Delete `display_time_zone` from your environment's `main.tf`, `_variables.tf` and `config.auto.tfvars.json` before planning, or Terraform fails with an unsupported-argument error. The Lambda's `RUDOLPH_WEB_DISPLAY_TIME_ZONE` goes away on apply; until then a function that still has it ignores it.
+`display_time_zone` is removed. Before planning, remove `display_time_zone = var.display_time_zone` from your environment's `main.tf`, or Terraform fails with "Unsupported argument"; also delete the variable from `_variables.tf` and `config.auto.tfvars.json`. The old function keeps showing the configured zone until you apply; the apply deploys the new build and removes `RUDOLPH_WEB_DISPLAY_TIME_ZONE` from the function.
 
 ### A domain (optional)
 
