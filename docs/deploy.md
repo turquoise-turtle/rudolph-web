@@ -115,7 +115,7 @@ Environment directories hold the account ID, the tenant and client IDs and the d
 
 ### Upgrading an existing environment
 
-`make init-env` copies the example's `main.tf` and `_variables.tf` once, so an environment created before a release that added a module variable (for example `display_time_zone`) lacks its declaration and module argument. Terraform then only warns "Value for undeclared variable" about the value in `config.auto.tfvars.json`, and plans and applies without the setting. `make plan`, `make deploy` and `make justdeploy` therefore run `go run ./cmd/envcheck deployments/environments/$ENV` first and refuse to go on when the environment:
+`make init-env` copies the example's `main.tf` and `_variables.tf` once, so an environment created before a release that added a module variable (for example `top_list_stale_after`) lacks its declaration and module argument. Terraform then only warns "Value for undeclared variable" about the value in `config.auto.tfvars.json`, and plans and applies without the setting. `make plan`, `make deploy` and `make justdeploy` therefore run `go run ./cmd/envcheck deployments/environments/$ENV` first and refuse to go on when the environment:
 
 * does not declare, in any `.tf` file, a variable the example's `_variables.tf` declares;
 * has no `module "rudolph_web"` block, or its block does not set an argument the example's `main.tf` sets (`source` and `version`, which choose where the module comes from, are not compared);
