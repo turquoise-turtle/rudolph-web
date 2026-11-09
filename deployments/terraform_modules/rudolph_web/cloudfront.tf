@@ -93,11 +93,13 @@ resource "aws_cloudfront_distribution" "web" {
     origin_request_policy_id = aws_cloudfront_origin_request_policy.web[0].id
   }
 
-  # The embedded stylesheet is the only cacheable response. It is served to anonymous requests too,
-  # so nothing user specific has to reach the origin for it. CachingOptimized ignores query strings,
-  # so pages link the stylesheet under a name carrying a hash of its content (style.<hash>.css),
-  # cached for a year: a changed stylesheet gets a new URL, and a deploy needs no invalidation. The
-  # plain /static/style.css is sent with no-cache, so CloudFront revalidates it every time.
+  # The embedded static files (the stylesheet and the icons) are the only cacheable responses. They are
+  # served to anonymous requests too, so nothing user specific has to reach the origin for them.
+  # CachingOptimized ignores query strings, so pages link each file under a name carrying a hash of its
+  # content (style.<hash>.css, favicon.<hash>.svg), cached for a year: a changed file gets a new URL, and
+  # a deploy needs no invalidation. The plain names, such as /static/style.css, are sent with no-cache,
+  # so CloudFront revalidates them every time. /favicon.ico, which browsers request on their own, is not
+  # under /static/ and goes to the default behaviour above, uncached: it is one small file.
   ordered_cache_behavior {
     path_pattern           = "/static/*"
     target_origin_id       = local.origin_id

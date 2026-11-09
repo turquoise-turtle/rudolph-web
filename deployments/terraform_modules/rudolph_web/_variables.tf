@@ -141,8 +141,8 @@ variable "events_dynamodb_table_name" {
 
 variable "enable_editing" {
   type        = bool
-  description = "Let Rudolph.Admin add and remove rules and set temporary client modes from the web view (RUDOLPH_WEB_EDITING). Grants the role PutItem, UpdateItem and DeleteItem on the store table, limited to Rudolph's rule, rules feed, machine, group, event collection and audit partitions. Every change is recorded in Rudolph's audit trail. False keeps the view and its role read-only."
-  default     = false
+  description = "Let Rudolph.Admin add and remove rules and set temporary client modes from the web view (RUDOLPH_WEB_EDITING); on by default, and only Rudolph.Admin holders see the forms. Grants the role PutItem, UpdateItem and DeleteItem on the store table, limited to Rudolph's rule, rules feed, machine, group, event collection and audit partitions (audit: PutItem only). Every change is recorded in Rudolph's audit trail. Set false to keep the view and its role read-only."
+  default     = true
 }
 
 #

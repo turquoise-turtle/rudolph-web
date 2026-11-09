@@ -182,6 +182,17 @@ func New(opts Options) (http.Handler, error) {
 		http.ServeContent(w, r, f.name, time.Time{}, bytes.NewReader(f.data))
 	}))
 
+	// Browsers ask for /favicon.ico on their own, whatever the page links, so it answers with the PNG icon (browsers
+	// read a PNG under that name) rather than a 404 or the sign-in redirect. Its name never changes, so it is
+	// revalidated. Behind CloudFront it falls under the default, uncached behaviour, which is fine for one small file.
+	favicon := staticFiles["favicon.png"]
+	mux.Handle("GET /favicon.ico", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("ETag", favicon.etag)
+		http.ServeContent(w, r, "favicon.ico", time.Time{}, bytes.NewReader(favicon.data))
+	}))
+
 	viewer := func(h http.HandlerFunc) http.Handler { return opts.Auth.RequireOr(auth.RoleViewer, h, s.forbidden) }
 	mux.Handle("GET /{$}", viewer(func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/machines", http.StatusFound)
@@ -245,7 +256,7 @@ func New(opts Options) (http.Handler, error) {
 }
 
 // notFound keeps the site's structure from anyone without a session (owner: "I don't want randoms to be able to see
-// our site structure"). Signed out, every path outside /auth/ and /static/ gets auth's unauthenticated response, the
+// our site structure"). Signed out, every path outside /auth/, /static/ and /favicon.ico gets auth's unauthenticated response, the
 // same one Require gives a real page, whether or not the path exists, exists only with editing on, or is used with a
 // method it does not take. Signed in without Rudolph.Viewer, or as a viewer anywhere under /admin, it answers the
 // same 403 for every path before the mux is consulted (requiredRole). Otherwise the mux's own 404 for an unmatched
@@ -254,8 +265,11 @@ func New(opts Options) (http.Handler, error) {
 // are its business and pass through.
 func (s *server) notFound(mux *http.ServeMux) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Sign-in itself and the stylesheet must work without a session; they reveal nothing about the pages.
-		if strings.HasPrefix(r.URL.Path, "/auth/") || strings.HasPrefix(r.URL.Path, "/static/") {
+		// Sign-in itself and the static files must work without a session; they reveal nothing about the pages.
+		// /favicon.ico is exempt by its exact path only, because browsers request it on their own, even on the
+		// sign-in page, and a redirect there would send a signed-out visitor's icon request to Microsoft.
+		if strings.HasPrefix(r.URL.Path, "/auth/") || strings.HasPrefix(r.URL.Path, "/static/") ||
+			(r.URL.Path == "/favicon.ico" && (r.Method == http.MethodGet || r.Method == http.MethodHead)) {
 			mux.ServeHTTP(w, r)
 			return
 		}

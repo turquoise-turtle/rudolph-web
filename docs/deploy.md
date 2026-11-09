@@ -46,7 +46,7 @@ The function reads the table named by its `RUDOLPH_WEB_DYNAMODB_TABLE` environme
 
 The Terraform module sets `RUDOLPH_WEB_DYNAMODB_TABLE` from `dynamodb_table_name` and `RUDOLPH_WEB_EVENTS_TABLE` from `events_dynamodb_table_name` (Rudolph's `events_dynamodb_table_name` output, typically `<rudolph prefix>_rudolph_events`; leave it empty if your Rudolph has no events table). The reader only calls `dynamodb:Query` and `dynamodb:GetItem` (the latter for the group registry, the global config's client mode on the machine page, and the top list pointers), which the `ReadRudolphStore` and `ReadRudolphEvents` statements below allow. The events table is encrypted with the same key as the store table, so `dynamodb_kms_key_arn` covers both.
 
-The pages offer Rudolph CLI commands to copy (block or allow a file from an event or a top list, grouped by rule type: signing ID first, then team ID, CDHash for events, and binary, with only the types the file's identifiers fit; a Mac's configuration and temporary monitor mode, removing a rule). Set `cli_env` (the module sets `RUDOLPH_WEB_CLI_ENV` from it) to the Rudolph environment name, e.g. `prod`, so each command starts with `ENV=prod rudolph`; left empty, the commands start with `rudolph` and the operator's shell supplies `ENV`. Unless you turn on [editing](#editing-optional), the web view itself never writes anything.
+The pages offer Rudolph CLI commands to copy (block or allow a file from an event or a top list, grouped by rule type: signing ID first, then team ID, CDHash for events, and binary, with only the types the file's identifiers fit; a Mac's configuration and temporary monitor mode, removing a rule). Set `cli_env` (the module sets `RUDOLPH_WEB_CLI_ENV` from it) to the Rudolph environment name, e.g. `prod`, so each command starts with `ENV=prod rudolph`; left empty, the commands start with `rudolph` and the operator's shell supplies `ENV`. Apart from [editing](#editing), which is on unless you set `enable_editing` to `false` and is open to `Rudolph.Admin` only, the web view itself never writes anything.
 
 Each top list page shows when the list was generated and warns when it is older than `top_list_stale_after` (the module sets `RUDOLPH_WEB_TOP_LIST_STALE_AFTER` from it; whole hours from `1h` to `168h`, default `3h`). The default suits a ranker that runs every hour around the clock: the warning means about three runs were missed. If Rudolph's ranker runs on a schedule, fit the threshold to it. For example, with the ranker running hourly on weekdays from 7am to 5pm, a list is normally up to 14 hours old overnight and about 62 hours old over a weekend. `15h` warns about missed weekday runs but also warns every weekend; `63h` never warns on a healthy schedule, at the cost of noticing a stopped ranker only after days.
 
@@ -82,7 +82,7 @@ In **Microsoft Entra admin center → App registrations → New registration**:
    into Parameter Store, never into Terraform.
 5. **App roles → Create app role**, twice, both *Users/Groups*:
    * `Rudolph.Viewer` — the read pages.
-   * `Rudolph.Admin` — the admin-only routes, and with [editing](#editing-optional) the forms that change rules and temporary client modes; includes Viewer.
+   * `Rudolph.Admin` — the admin-only routes, and with [editing](#editing) the forms that change rules and temporary client modes; includes Viewer.
 
    The value must match exactly; the app reads them from the `roles` claim.
 6. **Enterprise applications → your app → Properties → Assignment required: Yes.** Then
@@ -128,7 +128,7 @@ diff -u deployments/environments/example/main.tf deployments/environments/$ENV/m
 diff -u deployments/environments/example/_variables.tf deployments/environments/$ENV/_variables.tf
 ```
 
-If the environment has no customisations, copy the example's `main.tf` and `_variables.tf` over it; otherwise add the missing declarations and module arguments by hand. Then run `make plan` again and check the plan picks up the settings.
+If the environment has no customisations, copy the example's `main.tf` and `_variables.tf` over it; otherwise add the missing declarations and module arguments by hand. Then run `make plan` again and check the plan picks up the settings. Copying the new `_variables.tf` turns editing on in an environment that does not set `enable_editing`; see [Upgrading: editing is now on by default](#upgrading-editing-is-now-on-by-default).
 
 ### The monthly cost budget
 
@@ -275,7 +275,7 @@ Four to seven statements, no AWS managed policies and no wildcard resources:
 | `ReadRudolphStore` | `dynamodb:GetItem`, `dynamodb:Query` | the table and `<table>/index/*` |
 | `ReadRudolphEvents` | `dynamodb:GetItem`, `dynamodb:Query` | the events table and `<events table>/index/*`; only with `events_dynamodb_table_name` set |
 
-With `dynamodb_kms_key_arn` set there is one more, `kms:Decrypt` conditioned on the DynamoDB service. With `enable_editing` there are two more, `WriteRudolphRules` and `AppendRudolphAudit`, described under [Editing](#editing-optional); without it the role has no write action of any kind. There is deliberately no `dynamodb:Scan`: every list in the app is one bounded query.
+With `dynamodb_kms_key_arn` set there is one more, `kms:Decrypt` conditioned on the DynamoDB service. With `enable_editing` there are two more, `WriteRudolphRules` and `AppendRudolphAudit`, described under [Editing](#editing); without it the role has no write action of any kind. There is deliberately no `dynamodb:Scan`: every list in the app is one bounded query.
 
 Terraform creates the log group itself, so Lambda cannot create one without retention, and the
 function does not need `logs:CreateLogGroup`.
@@ -284,7 +284,7 @@ function does not need `logs:CreateLogGroup`.
 
 Worth knowing before you change any of it:
 
-* **Caching is off for everything except `/static/*`.** Pages are rendered for the signed-in user and carry `Cache-Control: no-store`; only the embedded stylesheet is cacheable. Pages link it as `/static/style.<hash>.css`, where the hash is taken from its content, and that URL is cached for a year (`immutable`). A deploy that changes the stylesheet changes its URL, so it shows at once and needs no CloudFront invalidation; a query string would not work, because the CachingOptimized policy leaves it out of the cache key. The plain `/static/style.css` still works but is sent with `Cache-Control: no-cache`.
+* **Caching is off for everything except `/static/*`.** Pages are rendered for the signed-in user and carry `Cache-Control: no-store`; only the embedded static files (the stylesheet and the favicons) are cacheable. Pages link each as `/static/<name>.<hash>.<ext>`, such as `/static/style.<hash>.css`, where the hash is taken from its content, and that URL is cached for a year (`immutable`). A deploy that changes a file changes its URL, so it shows at once and needs no CloudFront invalidation; a query string would not work, because the CachingOptimized policy leaves it out of the cache key. The plain names, such as `/static/style.css`, still work but are sent with `Cache-Control: no-cache`. `/favicon.ico`, which browsers request on their own, is answered by the app with the PNG icon, without a session; it is outside `/static/*`, so it goes through the default behaviour uncached, which costs one small Lambda request per browser revalidation.
 * **Cookies and query strings are forwarded in full.** The session lives in a cookie, and the OIDC
   callback and the pagination cursors are query parameters.
 * **Only `Content-Type`, `Origin` and `Sec-Fetch-Site` are forwarded.** Go's
@@ -310,9 +310,9 @@ Worth knowing before you change any of it:
 
 ---
 
-## Editing (optional)
+## Editing
 
-By default the view is read-only. With `enable_editing = true` (in `config.auto.tfvars.json`), people with the `Rudolph.Admin` app role can, from the pages:
+Editing is on unless you set `enable_editing` to `false` (in `config.auto.tfvars.json`). Only people with the `Rudolph.Admin` app role see the forms; viewers get the same read-only pages as before. Admins can, from the pages:
 
 * add a global rule (type, identifier, policy, custom message, description) on **Rules**, and remove any global rule with its **Remove rule** button;
 * add a rule for one Mac (with an expiry: a duration such as `2h` or `7d`, default `24h`, or `never`) and remove its rules, on the Mac's page;
@@ -340,11 +340,15 @@ IAM cannot restrict a write by sort key: `dynamodb:LeadingKeys` matches the part
 - **Groups.** `GroupRegistry` and the Macs' `Groups` rows (under `Machine#*`) let the role create and delete groups and change which groups a Mac belongs to, which changes the rules that Mac receives. This is the broadest effect the role can have; the web view uses it only for group rules and the reserved ungrouped group.
 - **Page links.** Cursors are signed with a key derived from the cookie key; they do not expire and are not tied to a session. Rolling the cookie key invalidates them all, as it signs everyone out.
 
-To turn it on: assign `Rudolph.Admin` to the people who may change rules (see [the app registration](#the-entra-id-app-registration)), set `enable_editing` to `true`, and `make deploy`.
+Since editing is on by default, who can change rules comes down to who holds `Rudolph.Admin`: assign it only to the people who may change rules (see [the app registration](#the-entra-id-app-registration)).
 
 Role changes take effect at the next sign-in. A session keeps the roles it was signed in with until it expires, `session_ttl` later (default one hour), and the app does not ask Entra again before then. So removing someone's `Rudolph.Admin` assignment stops their edits only when their session ends: wait up to `session_ttl`, or, to cut every session off now, [roll the cookie key](#the-cookie-key-1), which signs everyone out.
 
-To turn editing off again, set `enable_editing` back to `false` and deploy: the two statements and the forms go away together.
+To keep the view read-only, set `enable_editing` to `false` and deploy: the two statements and the forms go away together, and the role has no write action of any kind.
+
+### Upgrading: editing is now on by default
+
+`enable_editing` used to default to `false`; the module and the example environment now default it to `true`. An environment whose `config.auto.tfvars.json` sets `"enable_editing": false`, as the example used to, stays read-only. One that leaves `enable_editing` unset gets editing on at the next apply if its `_variables.tf` defaults it to `true` (for example after copying the new example's `_variables.tf`) or its `module "rudolph_web"` block does not pass it. Either way, check `make plan` before applying: turning editing on shows as `RUDOLPH_WEB_EDITING` changing to `true` on the function and the two statements above being added to the role, giving it `dynamodb:PutItem`, `dynamodb:UpdateItem` and `dynamodb:DeleteItem` on the store table only, limited by `dynamodb:LeadingKeys` to Rudolph's rule, rules feed, machine, group, event collection and audit partitions (the audit trail with `PutItem` only). Anyone holding `Rudolph.Admin` can then use the forms. To keep the environment read-only, set `"enable_editing": false` in its `config.auto.tfvars.json` before you apply.
 
 ### The audit trail
 
