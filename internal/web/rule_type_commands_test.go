@@ -6,6 +6,7 @@ package web_test
 // goes for the top lists, which have no CDHash. Also: wide tables use the whole window.
 
 import (
+	"html"
 	"net/http"
 	"os"
 	"regexp"
@@ -26,14 +27,15 @@ const (
 
 var typesSHA = strings.Repeat("0", 63) + "e"
 
-// commandsCell returns the Commands disclosure of the first table row.
+// commandsCell returns the Commands disclosure of the first table row, unescaped.
 func commandsCell(t *testing.T, body string) string {
 	t.Helper()
 	m := regexp.MustCompile(`(?s)<details class="cmds">.*?</details>\s*</td>`).FindString(body)
 	if m == "" {
 		t.Fatal("no Commands disclosure in the table")
 	}
-	return m
+	// html/template writes the commands' single quotes as &#39;.
+	return html.UnescapeString(m)
 }
 
 // requireInOrder checks that each want appears in s, each after the previous one.
