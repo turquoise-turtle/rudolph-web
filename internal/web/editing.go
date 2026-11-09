@@ -281,7 +281,7 @@ func (s *server) audit(w http.ResponseWriter, r *http.Request) {
 			rows[i].TargetURL = groupURL(strings.TrimPrefix(e.Target, "group:"))
 		}
 	}
-	s.render(w, r, http.StatusOK, "audit", "Audit trail", "admin", struct {
+	s.render(w, r, http.StatusOK, "audit", "Audit trail", "audit", struct {
 		Entries []auditRow
 		Days    int
 		Pager   pager

@@ -353,6 +353,7 @@ type layoutData struct {
 	Nav     string
 	User    auth.Session
 	IsAdmin bool
+	Editing bool
 	Page    any
 }
 
@@ -529,7 +530,7 @@ func (s *server) render(w http.ResponseWriter, r *http.Request, status int, page
 	sess, _ := auth.SessionFromContext(r.Context())
 	var buf bytes.Buffer
 	err := s.pages[page].ExecuteTemplate(&buf, "layout.html", layoutData{
-		Title: title, Nav: nav, User: sess, IsAdmin: sess.HasRole(auth.RoleAdmin), Page: data,
+		Title: title, Nav: nav, User: sess, IsAdmin: sess.HasRole(auth.RoleAdmin), Editing: s.writer != nil, Page: data,
 	})
 	if err != nil {
 		s.log.Error("render failed", "page", page, "err", err)
