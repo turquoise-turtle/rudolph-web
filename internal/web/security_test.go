@@ -54,10 +54,14 @@ func assertSecurityHeaders(t *testing.T, label string, h http.Header, idpOrigin 
 		t.Errorf("%s: missing Content-Security-Policy", label)
 	} else {
 		d := parseCSP(t, csp)
-		for _, name := range []string{"default-src", "script-src", "frame-ancestors", "base-uri"} {
+		for _, name := range []string{"default-src", "frame-ancestors", "base-uri"} {
 			if got := d[name]; !slices.Equal(got, []string{"'none'"}) {
 				t.Errorf("%s: CSP %s = %q, want 'none' (CSP %q)", label, name, got, csp)
 			}
+		}
+		// Only the inline script that shows times in the browser's zone, by its hash (browser_time_test.go).
+		if got := d["script-src"]; len(got) != 1 || !strings.HasPrefix(got[0], "'sha256-") {
+			t.Errorf("%s: CSP script-src = %q, want a single 'sha256-…' hash (CSP %q)", label, got, csp)
 		}
 		fa, ok := d["form-action"]
 		if !ok {
