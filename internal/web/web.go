@@ -246,6 +246,21 @@ type cliCommand struct {
 	Command string
 }
 
+// cliCommandGroup is the commands for one rule type a table row can be
+// matched by, shown as its own disclosure inside "Commands".
+type cliCommandGroup struct {
+	Label      string
+	Identifier string
+	Commands   []cliCommand
+}
+
+// ruleTypeChoice is a rule type a row offers and the row's identifier for it.
+type ruleTypeChoice struct {
+	label string
+	t     store.RuleType
+	id    string
+}
+
 // cliFuncs gives the templates the copy-and-paste CLI commands. Each returns
 // "" when no command can be built (an identifier of the wrong shape), and the
 // templates then show nothing.
@@ -259,12 +274,57 @@ func cliFuncs(b clicmd.Builder) template.FuncMap {
 	// Machine rules made from the web view are for a quick unblock, so they
 	// expire after a day.
 	const machineRuleExpiry = "24h"
+	// groups builds one group per rule type, in the order given, leaving out
+	// a type whose identifier the CLI would refuse (the builder checks each
+	// type's shape) so the page never shows a command that fails.
+	groups := func(choices []ruleTypeChoice, build func(t store.RuleType, id string) []cliCommand) []cliCommandGroup {
+		var out []cliCommandGroup
+		for _, c := range choices {
+			var cmds []cliCommand
+			for _, cc := range build(c.t, c.id) {
+				if cc.Command != "" {
+					cmds = append(cmds, cc)
+				}
+			}
+			if len(cmds) > 0 {
+				out = append(out, cliCommandGroup{Label: c.label, Identifier: c.id, Commands: cmds})
+			}
+		}
+		return out
+	}
+	global := func(verb string, t store.RuleType, id string) string {
+		return str(b.Rule(verb, t, id, clicmd.Global()))
+	}
 	return template.FuncMap{
-		"cliRuleGlobal": func(verb string, t store.RuleType, id string) string {
-			return str(b.Rule(verb, t, id, clicmd.Global()))
+		// Most useful first: a signing ID rule survives updates and is
+		// narrower than a team ID; a CDHash or binary rule breaks on the next
+		// update, so it is the last resort.
+		"eventCmdGroups": func(signingID, teamID, cdhash, sha256, machine string) []cliCommandGroup {
+			return groups([]ruleTypeChoice{
+				{"Signing ID", store.RuleTypeSigningID, signingID},
+				{"Team ID", store.RuleTypeTeamID, teamID},
+				{"CDHash", store.RuleTypeCDHash, cdhash},
+				{"Binary", store.RuleTypeBinary, sha256},
+			}, func(t store.RuleType, id string) []cliCommand {
+				return []cliCommand{
+					{"Allow on this Mac for 24 hours", str(b.Rule("allow", t, id, clicmd.Machine(machine, machineRuleExpiry)))},
+					{"Allow everywhere", global("allow", t, id)},
+					{"Block everywhere", global("deny", t, id)},
+				}
+			})
 		},
-		"cliRuleMachine": func(verb string, t store.RuleType, id, machine string) string {
-			return str(b.Rule(verb, t, id, clicmd.Machine(machine, machineRuleExpiry)))
+		// Top lists span machines, so they offer global rules only.
+		"topCmdGroups": func(signingID, teamID, sha256 string) []cliCommandGroup {
+			return groups([]ruleTypeChoice{
+				{"Signing ID", store.RuleTypeSigningID, signingID},
+				{"Team ID", store.RuleTypeTeamID, teamID},
+				{"Binary", store.RuleTypeBinary, sha256},
+			}, func(t store.RuleType, id string) []cliCommand {
+				return []cliCommand{
+					{"Block everywhere", global("deny", t, id)},
+					{"Allow everywhere", global("allow", t, id)},
+				}
+			})
 		},
 		"cliRuleGroup": func(verb string, t store.RuleType, id, group string) string {
 			return str(b.Rule(verb, t, id, clicmd.Group(group)))
@@ -276,7 +336,6 @@ func cliFuncs(b clicmd.Builder) template.FuncMap {
 			return str(b.Remove(t, id, clicmd.Machine(machine, "")))
 		},
 		"cmd":             func(label, command string) cliCommand { return cliCommand{label, command} },
-		"binary":          func() store.RuleType { return store.RuleTypeBinary },
 		"cliMachineRules": func(machine string) string { return str(b.MachineRules(machine)) },
 		"cliConfigGet":    func(machine string) string { return str(b.ConfigGet(machine)) },
 		"cliEndTemporary": func(machine string) string { return str(b.EndTemporaryMode(machine)) },

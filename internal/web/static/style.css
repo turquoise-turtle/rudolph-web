@@ -12,7 +12,8 @@ a { color: var(--accent); }
 .top nav a[aria-current="page"] { font-weight: 600; text-decoration: underline; }
 .user { margin-left: auto; display: flex; gap: 10px; align-items: center; }
 .user form { margin: 0; }
-main { padding: 16px; max-width: 1400px; }
+/* No max-width: wide tables (events, top lists) use the whole window rather than scrolling sideways beside empty space. Prose is capped below instead. */
+main { padding: 16px; }
 h1 { font-size: 20px; margin: 4px 0 12px; }
 h2 { font-size: 16px; margin: 20px 0 8px; }
 .filters { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: end; margin-bottom: 8px; }
@@ -20,6 +21,7 @@ h2 { font-size: 16px; margin: 20px 0 8px; }
 .filters label { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); }
 input, select, button { font: inherit; padding: 4px 6px; }
 .hint, .muted { color: var(--muted); font-size: 12px; }
+p { max-width: 100ch; }
 .scroll { overflow-x: auto; }
 table { border-collapse: collapse; width: 100%; }
 th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
@@ -41,6 +43,12 @@ dd { margin: 0; }
 .legacy, .warn { color: var(--block); font-size: 12px; font-weight: 600; }
 .cmds summary { cursor: pointer; color: var(--accent); white-space: nowrap; }
 .cmds ul { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 6px; min-width: 32em; }
+/* One group per rule type: only the first is open, so the cell stays short until another type is wanted. */
+.cmd-type { margin: 6px 0 0; padding-left: 8px; border-left: 2px solid var(--line); }
+.cmd-type > summary { cursor: pointer; font-weight: 600; font-size: 12px; white-space: nowrap; }
+.cmd-type > summary code { font-weight: 400; color: var(--muted); word-break: normal; }
+.cmd-type[open] { border-left-color: var(--accent); }
+.cmd-type ul { margin-top: 4px; }
 .cmd-label { display: block; color: var(--muted); font-size: 12px; }
 /* One click selects the whole command, ready to copy; the CSP allows no script for a copy button (only the time script, by hash). */
 code.cmd { display: block; padding: 4px 6px; border: 1px solid var(--line); background: var(--head); user-select: all; -webkit-user-select: all; }

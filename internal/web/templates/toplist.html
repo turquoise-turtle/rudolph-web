@@ -22,10 +22,11 @@
   <td>{{orDash .SigningID}}</td>
   <td class="num">{{.Count}}</td>
   <td class="num">{{if .MachinesKnown}}{{.Machines}}{{else}}—{{end}}</td>
-  <td>{{$deny := cliRuleGlobal "deny" binary .FileSHA256}}{{if $deny}}<details class="cmds"><summary>Commands</summary><ul>
-    {{template "cmd" (cmd "Block everywhere" $deny)}}
-    {{template "cmd" (cmd "Allow everywhere" (cliRuleGlobal "allow" binary .FileSHA256))}}
-  </ul></details>{{end}}</td>
+  <td>{{with topCmdGroups .SigningID .TeamID .FileSHA256}}<details class="cmds"><summary>Commands</summary>{{range $i, $g := .}}
+    <details class="cmd-type"{{if eq $i 0}} open{{end}}><summary>{{$g.Label}} <code>{{$g.Identifier}}</code></summary><ul>
+      {{range $g.Commands}}{{template "cmd" .}}{{end}}
+    </ul></details>{{end}}
+  </details>{{end}}</td>
 </tr>
 {{end}}
 </tbody>
