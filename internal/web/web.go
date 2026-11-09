@@ -230,19 +230,26 @@ func New(opts Options) (http.Handler, error) {
 	return securityHeaders(csp, protection.Handler(s.notFound(mux))), nil
 }
 
-// notFound gives a signed-in user the site's 404 page, like the 403, for a path the mux has no route for (including
-// the write routes and /admin/audit when editing is off). Without a session the mux's plain 404 stays, so nothing of
-// the site shows before sign-in. Only unmatched requests are considered: a matched route's own 404s (an unknown static
-// file, a missing machine) are its business, and the mux's 405 for a known path with the wrong method passes through
-// with its Allow header.
+// notFound keeps the site's structure from anyone without a session (owner: "I don't want randoms to be able to see
+// our site structure"). Signed out, every path outside /auth/ and /static/ gets auth's unauthenticated response, the
+// same one Require gives a real page, whether or not the path exists, exists only with editing on, or is used with a
+// method it does not take. Signed in, an unmatched path gets the site's 404 page, like the 403 (including the write
+// routes and /admin/audit when editing is off). Only unmatched requests are replaced: a matched route's own 404s (an
+// unknown static file, a missing machine) are its business, and the mux's 405 for a known path with the wrong method
+// passes through with its Allow header.
 func (s *server) notFound(mux *http.ServeMux) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if _, pattern := mux.Handler(r); pattern != "" || strings.HasPrefix(r.URL.Path, "/static/") {
+		// Sign-in itself and the stylesheet must work without a session; they reveal nothing about the pages.
+		if strings.HasPrefix(r.URL.Path, "/auth/") || strings.HasPrefix(r.URL.Path, "/static/") {
 			mux.ServeHTTP(w, r)
 			return
 		}
 		sr, ok := s.auth.WithSession(r)
 		if !ok {
+			s.auth.Unauthenticated(w, r)
+			return
+		}
+		if _, pattern := mux.Handler(r); pattern != "" {
 			mux.ServeHTTP(w, r)
 			return
 		}

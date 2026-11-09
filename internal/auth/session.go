@@ -141,17 +141,9 @@ func (a *Authenticator) RequireOr(role string, next http.Handler, forbidden Forb
 		forbidden = plainForbidden
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		s, ok, present := a.sessionFromRequest(r)
+		s, ok, _ := a.sessionFromRequest(r)
 		if !ok {
-			if present {
-				clearCookie(w, SessionCookieName)
-			}
-			w.Header().Set("Cache-Control", "no-store")
-			if r.Method == http.MethodGet || r.Method == http.MethodHead {
-				http.Redirect(w, r, LoginPath+"?return_to="+url.QueryEscape(r.URL.RequestURI()), http.StatusFound)
-				return
-			}
-			http.Error(w, "Authentication required.", http.StatusUnauthorized)
+			a.Unauthenticated(w, r)
 			return
 		}
 		r = r.WithContext(context.WithValue(r.Context(), ctxKey{}, s))
@@ -162,6 +154,23 @@ func (a *Authenticator) RequireOr(role string, next http.Handler, forbidden Forb
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// Unauthenticated writes the response for a request without a valid session: GET and HEAD are redirected to the
+// login page with the request URI as return_to, other methods get 401. A session cookie that is present, and so
+// invalid or expired, is cleared. Require uses it, and a caller answering for paths outside Require (such as unknown
+// ones) should too, so a signed-out visitor gets the same response everywhere and cannot tell which paths exist. The
+// login handler filters return_to, so whatever the request URI it cannot lead off the site.
+func (a *Authenticator) Unauthenticated(w http.ResponseWriter, r *http.Request) {
+	if _, err := r.Cookie(SessionCookieName); err == nil {
+		clearCookie(w, SessionCookieName)
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	if r.Method == http.MethodGet || r.Method == http.MethodHead {
+		http.Redirect(w, r, LoginPath+"?return_to="+url.QueryEscape(r.URL.RequestURI()), http.StatusFound)
+		return
+	}
+	http.Error(w, "Authentication required.", http.StatusUnauthorized)
 }
 
 // ForbiddenMessage is the explanation shown to a signed-in user without role.
