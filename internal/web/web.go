@@ -247,9 +247,10 @@ func New(opts Options) (http.Handler, error) {
 // notFound keeps the site's structure from anyone without a session (owner: "I don't want randoms to be able to see
 // our site structure"). Signed out, every path outside /auth/ and /static/ gets auth's unauthenticated response, the
 // same one Require gives a real page, whether or not the path exists, exists only with editing on, or is used with a
-// method it does not take. Signed in, the mux's own 404 for an unmatched path (including the write routes and
-// /admin/audit when editing is off) and its 405 for a known path with the wrong method become the site's error page,
-// like the 403; the 405 keeps its Allow header. A matched route's own 404s (an unknown static file, a missing machine)
+// method it does not take. Signed in without Rudolph.Viewer, or as a viewer anywhere under /admin, it answers the
+// same 403 for every path before the mux is consulted (requiredRole). Otherwise the mux's own 404 for an unmatched
+// path (including the write routes and /admin/audit when editing is off) and its 405 for a known path with the wrong
+// method become the site's error page, like the 403; the 405 keeps its Allow header. A matched route's own 404s (an unknown static file, a missing machine)
 // are its business and pass through.
 func (s *server) notFound(mux *http.ServeMux) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -261,6 +262,13 @@ func (s *server) notFound(mux *http.ServeMux) http.Handler {
 		sr, ok := s.auth.WithSession(r)
 		if !ok {
 			s.auth.Unauthenticated(w, r)
+			return
+		}
+		// Anyone in the tenant can sign in, so the role checks come before the mux: otherwise a 404 or 405 beside a
+		// route's 403 would tell a user without the role which paths exist and whether editing is on.
+		if role := requiredRole(sr); role != "" {
+			w.Header().Set("Cache-Control", "no-store")
+			s.forbidden(w, sr, role)
 			return
 		}
 		if _, pattern := mux.Handler(r); pattern != "" {
@@ -276,6 +284,22 @@ func (s *server) notFound(mux *http.ServeMux) http.Handler {
 			s.renderError(w, sr, code, msg)
 		}}, r)
 	})
+}
+
+// requiredRole returns the role the signed-in request lacks for its path, or "" when the mux should answer. Without
+// Rudolph.Viewer nothing on the site is theirs, so every path needs it; a viewer may see every page outside /admin
+// anyway, so only /admin and below need Rudolph.Admin. An admin sees the real routes, including editing-off 404s.
+func requiredRole(r *http.Request) string {
+	sess, _ := auth.SessionFromContext(r.Context())
+	switch {
+	case !sess.HasRole(auth.RoleViewer):
+		return auth.RoleViewer
+	case sess.HasRole(auth.RoleAdmin):
+		return ""
+	case r.URL.Path == "/admin" || strings.HasPrefix(r.URL.Path, "/admin/"):
+		return auth.RoleAdmin
+	}
+	return ""
 }
 
 // muxErrorWriter replaces a 404 or 405 written through it with render's response and discards the mux's own plain
