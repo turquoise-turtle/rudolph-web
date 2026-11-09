@@ -41,7 +41,7 @@ func TestNotFound_SignedInUsersGetTheSitePage(t *testing.T) {
 // real page does (sign-in redirect for GET/HEAD, 401 otherwise), so a signed-out visitor cannot tell which addresses
 // exist; only after sign-in does an unknown address get the 404. /auth/ and /static/ are the exceptions.
 func TestNotFound_SignedOutCannotTellRoutesApart(t *testing.T) {
-	a := newApp(t, fake.New(), 10) // editing off: /admin/audit and the write routes do not exist
+	a := newApp(t, fake.New(), 10) // editing off: the write routes do not exist
 	signedOut := func(method, target string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, origin+target, nil)
 		req.Header.Set("Sec-Fetch-Site", "same-origin")
