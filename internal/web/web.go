@@ -139,7 +139,7 @@ func New(opts Options) (http.Handler, error) {
 		http.ServeContent(w, r, name, time.Time{}, bytes.NewReader(data))
 	}))
 
-	viewer := func(h http.HandlerFunc) http.Handler { return opts.Auth.Require(auth.RoleViewer, h) }
+	viewer := func(h http.HandlerFunc) http.Handler { return opts.Auth.RequireOr(auth.RoleViewer, h, s.forbidden) }
 	mux.Handle("GET /{$}", viewer(func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/machines", http.StatusFound)
 	}))
@@ -151,7 +151,7 @@ func New(opts Options) (http.Handler, error) {
 	mux.Handle("GET /events", viewer(s.events))
 	mux.Handle("GET /events/top-blocked", viewer(s.topBlocked))
 	mux.Handle("GET /events/top-allowed", viewer(s.topAllowed))
-	admin := func(h http.HandlerFunc) http.Handler { return opts.Auth.Require(auth.RoleAdmin, h) }
+	admin := func(h http.HandlerFunc) http.Handler { return opts.Auth.RequireOr(auth.RoleAdmin, h, s.forbidden) }
 	mux.Handle("GET /admin", admin(s.admin))
 	if s.writer != nil {
 		// Every POST passes the cross-origin protection below before it gets
@@ -329,10 +329,18 @@ func (s *server) render(w http.ResponseWriter, r *http.Request, status int, page
 }
 
 func (s *server) renderError(w http.ResponseWriter, r *http.Request, status int, msg string) {
-	s.render(w, r, status, "error", http.StatusText(status), "", struct {
+	title := fmt.Sprintf("%d %s", status, http.StatusText(status))
+	s.render(w, r, status, "error", title, "", struct {
 		Status  int
 		Message string
 	}{status, msg})
+}
+
+// forbidden renders the 403 for a signed-in user without the route's role in
+// the site's layout, so they still see who they are signed in as and can sign
+// out and try another account.
+func (s *server) forbidden(w http.ResponseWriter, r *http.Request, role string) {
+	s.renderError(w, r, http.StatusForbidden, auth.ForbiddenMessage(role))
 }
 
 // storeError maps data-layer errors to responses without leaking details.

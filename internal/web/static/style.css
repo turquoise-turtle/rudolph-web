@@ -28,6 +28,8 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 td.block { color: var(--block); }
 td.allow { color: var(--allow); }
 code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }
+/* Full hashes on one line pushed the events table off a laptop screen. They wrap inside a narrower column instead: never truncated, so the whole hash is still there to select and copy. A max-width on the cell alone is not honoured by the automatic table layout, so it goes on the code. */
+td.hash code { display: inline-block; max-width: 22ch; overflow-wrap: anywhere; }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
 dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; }
 dt { color: var(--muted); }

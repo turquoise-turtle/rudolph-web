@@ -115,7 +115,8 @@ The read models follow Rudolph's single-table DynamoDB layout (`PK`/`SK`):
 - Authorization comes from Entra **App Roles** in the `roles` claim:
   - `Rudolph.Viewer` grants the read pages.
   - `Rudolph.Admin` grants the admin-only routes and includes Viewer.
-  - Signing in without a role works, but every page returns 403.
+  - Signing in without a role works, but every page returns 403. The 403 (also a viewer's on an admin-only route) is the site's usual page, with the navigation and Sign out, naming the role the account is missing; a request that is not signed in still gets the login redirect (GET and HEAD) or a plain 401.
+  - Error pages show the status code with its name in the heading and title, e.g. "404 Not Found".
 - Logout is `POST /auth/logout`. It clears the cookie and redirects to Entra's
   `end_session_endpoint`.
 - Unsafe requests are checked by `http.CrossOriginProtection`. Behind CloudFront or
