@@ -227,16 +227,30 @@ func New(opts Options) (http.Handler, error) {
 			return nil, fmt.Errorf("web: trusted origin: %w", err)
 		}
 	}
+	protection.SetDenyHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Only the deny handler is replaced, so ask the protection again for its reason to keep the signed-out 403
+		// exactly as before: plain, and the same for every path.
+		reason := "Forbidden."
+		if err := protection.Check(r); err != nil {
+			reason = err.Error()
+		}
+		sr, ok := s.auth.WithSession(r)
+		if !ok {
+			http.Error(w, reason, http.StatusForbidden)
+			return
+		}
+		s.renderError(w, sr, http.StatusForbidden, "This request came from another site, so it was refused. Go back to the page and try again from there.")
+	}))
 	return securityHeaders(csp, protection.Handler(s.notFound(mux))), nil
 }
 
 // notFound keeps the site's structure from anyone without a session (owner: "I don't want randoms to be able to see
 // our site structure"). Signed out, every path outside /auth/ and /static/ gets auth's unauthenticated response, the
 // same one Require gives a real page, whether or not the path exists, exists only with editing on, or is used with a
-// method it does not take. Signed in, an unmatched path gets the site's 404 page, like the 403 (including the write
-// routes and /admin/audit when editing is off). Only unmatched requests are replaced: a matched route's own 404s (an
-// unknown static file, a missing machine) are its business, and the mux's 405 for a known path with the wrong method
-// passes through with its Allow header.
+// method it does not take. Signed in, the mux's own 404 for an unmatched path (including the write routes and
+// /admin/audit when editing is off) and its 405 for a known path with the wrong method become the site's error page,
+// like the 403; the 405 keeps its Allow header. A matched route's own 404s (an unknown static file, a missing machine)
+// are its business and pass through.
 func (s *server) notFound(mux *http.ServeMux) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Sign-in itself and the stylesheet must work without a session; they reveal nothing about the pages.
@@ -254,36 +268,40 @@ func (s *server) notFound(mux *http.ServeMux) http.Handler {
 			return
 		}
 		// The mux does not say whether an unmatched request is a 404 or a 405, only by the status it writes.
-		mux.ServeHTTP(&notFoundWriter{ResponseWriter: w, render: func(w http.ResponseWriter) {
-			s.renderError(w, sr, http.StatusNotFound, "There is no page at this address.")
+		mux.ServeHTTP(&muxErrorWriter{ResponseWriter: w, render: func(w http.ResponseWriter, code int) {
+			msg := "There is no page at this address."
+			if code == http.StatusMethodNotAllowed {
+				msg = "This address does not accept that kind of request."
+			}
+			s.renderError(w, sr, code, msg)
 		}}, r)
 	})
 }
 
-// notFoundWriter replaces a 404 written through it with render's response and discards the 404's own body. Any other
-// status passes through unchanged.
-type notFoundWriter struct {
+// muxErrorWriter replaces a 404 or 405 written through it with render's response and discards the mux's own plain
+// body. Headers the mux set first, such as a 405's Allow, stay. Any other status passes through unchanged.
+type muxErrorWriter struct {
 	http.ResponseWriter
-	render   func(http.ResponseWriter)
+	render   func(w http.ResponseWriter, code int)
 	replaced bool
 }
 
-func (w *notFoundWriter) WriteHeader(code int) {
-	if code == http.StatusNotFound && !w.replaced {
-		w.replaced = true
-		w.render(w.ResponseWriter)
+func (w *muxErrorWriter) WriteHeader(code int) {
+	if w.replaced {
 		return
 	}
-	if w.replaced {
+	if code == http.StatusNotFound || code == http.StatusMethodNotAllowed {
+		w.replaced = true
+		w.render(w.ResponseWriter, code)
 		return
 	}
 	w.ResponseWriter.WriteHeader(code)
 }
 
 // Unwrap lets http.ResponseController reach the underlying writer.
-func (w *notFoundWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+func (w *muxErrorWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
-func (w *notFoundWriter) Write(b []byte) (int, error) {
+func (w *muxErrorWriter) Write(b []byte) (int, error) {
 	if w.replaced {
 		return len(b), nil
 	}
