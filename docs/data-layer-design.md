@@ -78,7 +78,7 @@ D+ costs, assuming about 1 KB per stored event (one write unit; the item keeps o
 | Default, lockdown mode | about 5 | about 6 | under $1 | about $60 |
 | `EnableAllEventUpload` on | about 500 | about 6 | about $60 plus $20 | about $5,600 plus $2,000 |
 
-The per-Mac rate is a guess to be replaced by the real figure from the smoke test (count `events` per upload in the Lambda logs). The config CLI's help for `--enable-all-event-upload` should warn that it multiplies event storage cost about tenfold.
+The per-Mac rate is a guess to be replaced by the real figure from the smoke test (Rudolph's eventupload logs `eventupload: machine=<id> received=<n> stored=<m>` per upload; Rudolph's `docs/smoke-test.md` step 12.1 sums them per Mac per day). The config CLI's help for `--enable-all-event-upload` should warn that it multiplies event storage cost about tenfold.
 
 D+ in detail: the event item is keyed `PK = Exec#<m>`, `SK = <20-digit unix µs>#<sha256>#<pid>`, written with `attribute_not_exists(PK)` so Santa's retries are harmless. Only a new event bumps the per-day counter (`BinaryDay#<UTC day>` / `<sha>`, with separate `Blocked` and `Allowed` counts) and the per-binary machine marker (`BinarySeen#<sha>` / `<m>`), both with a 100-day TTL; events of one upload for the same binary are combined into one counter update. Event items expire after 90 days. A failed write answers 5xx like the other sinks.
 

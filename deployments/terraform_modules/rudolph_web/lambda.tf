@@ -11,7 +11,7 @@ resource "aws_cloudwatch_log_group" "web" {
 
 resource "aws_lambda_function" "web" {
   function_name = local.function_name
-  description   = "Read-only admin web view for Rudolph"
+  description   = var.enable_editing ? "Admin web view for Rudolph, with editing" : "Read-only admin web view for Rudolph"
   role          = aws_iam_role.web.arn
 
   # scripts/build.sh produces a zip holding a single arm64 binary named bootstrap.
