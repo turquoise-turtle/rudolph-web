@@ -50,7 +50,7 @@ type sessionPayload struct {
 
 type ctxKey struct{}
 
-// SessionFromContext returns the session attached by Require.
+// SessionFromContext returns the session attached by Require or WithSession.
 func SessionFromContext(ctx context.Context) (Session, bool) {
 	s, ok := ctx.Value(ctxKey{}).(Session)
 	return s, ok
@@ -106,6 +106,17 @@ func (a *Authenticator) sessionFromRequest(r *http.Request) (s Session, ok, pres
 		IssuedAt:  iat,
 		ExpiresAt: exp,
 	}, true, true
+}
+
+// WithSession returns r with the request's valid session in its context (SessionFromContext), and ok=false with r
+// unchanged when there is none. Unlike Require it never redirects, writes or clears a cookie, so a caller can choose a
+// response by whether someone is signed in, whatever their roles.
+func (a *Authenticator) WithSession(r *http.Request) (_ *http.Request, ok bool) {
+	s, ok, _ := a.sessionFromRequest(r)
+	if !ok {
+		return r, false
+	}
+	return r.WithContext(context.WithValue(r.Context(), ctxKey{}, s)), true
 }
 
 // ForbiddenFunc writes the response for a signed-in user whose session lacks

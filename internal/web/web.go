@@ -227,7 +227,60 @@ func New(opts Options) (http.Handler, error) {
 			return nil, fmt.Errorf("web: trusted origin: %w", err)
 		}
 	}
-	return securityHeaders(csp, protection.Handler(mux)), nil
+	return securityHeaders(csp, protection.Handler(s.notFound(mux))), nil
+}
+
+// notFound gives a signed-in user the site's 404 page, like the 403, for a path the mux has no route for (including
+// the write routes and /admin/audit when editing is off). Without a session the mux's plain 404 stays, so nothing of
+// the site shows before sign-in. Only unmatched requests are considered: a matched route's own 404s (an unknown static
+// file, a missing machine) are its business, and the mux's 405 for a known path with the wrong method passes through
+// with its Allow header.
+func (s *server) notFound(mux *http.ServeMux) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, pattern := mux.Handler(r); pattern != "" || strings.HasPrefix(r.URL.Path, "/static/") {
+			mux.ServeHTTP(w, r)
+			return
+		}
+		sr, ok := s.auth.WithSession(r)
+		if !ok {
+			mux.ServeHTTP(w, r)
+			return
+		}
+		// The mux does not say whether an unmatched request is a 404 or a 405, only by the status it writes.
+		mux.ServeHTTP(&notFoundWriter{ResponseWriter: w, render: func(w http.ResponseWriter) {
+			s.renderError(w, sr, http.StatusNotFound, "There is no page at this address.")
+		}}, r)
+	})
+}
+
+// notFoundWriter replaces a 404 written through it with render's response and discards the 404's own body. Any other
+// status passes through unchanged.
+type notFoundWriter struct {
+	http.ResponseWriter
+	render   func(http.ResponseWriter)
+	replaced bool
+}
+
+func (w *notFoundWriter) WriteHeader(code int) {
+	if code == http.StatusNotFound && !w.replaced {
+		w.replaced = true
+		w.render(w.ResponseWriter)
+		return
+	}
+	if w.replaced {
+		return
+	}
+	w.ResponseWriter.WriteHeader(code)
+}
+
+// Unwrap lets http.ResponseController reach the underlying writer.
+func (w *notFoundWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+func (w *notFoundWriter) Write(b []byte) (int, error) {
+	if w.replaced {
+		return len(b), nil
+	}
+	return w.ResponseWriter.Write(b)
 }
 
 func securityHeaders(csp string, next http.Handler) http.Handler {

@@ -110,6 +110,7 @@ The read models follow Rudolph's single-table DynamoDB layout (`PK`/`SK`):
   - `Rudolph.Admin` grants the admin-only routes and includes Viewer.
   - Signing in without a role works, but every page returns 403. The 403 (also a viewer's on an admin-only route) is the site's usual page, with the navigation and Sign out, naming the role the account is missing; a request that is not signed in still gets the login redirect (GET and HEAD) or a plain 401.
   - Error pages show the status code with its name in the heading and title, e.g. "404 Not Found".
+  - A signed-in user (any role) opening a path the site has no page for, such as `/admin/audit` with editing off, gets the same site page with "404 Not Found". Without a session the 404 stays plain text, unknown `/static/` files are always a plain 404, and a known path with the wrong method still answers 405 with its `Allow` header.
 - Logout is `POST /auth/logout`. It clears the cookie and redirects to Entra's
   `end_session_endpoint`.
 - Unsafe requests are checked by `http.CrossOriginProtection`. Behind CloudFront or
