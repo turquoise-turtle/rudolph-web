@@ -31,7 +31,7 @@ type Call struct {
 // Paginated reports whether the call was a paginated list query (as opposed to
 // a bounded point read such as GetMachine or ListGroups, one registry item).
 func (c Call) Paginated() bool {
-	return c.Method != "GetMachine" && c.Method != "ListGroups"
+	return c.Method != "GetMachine" && c.Method != "ListGroups" && c.Method != "GlobalClientMode"
 }
 
 // Store is an in-memory store.Reader. The zero value is not usable; use New.
@@ -115,15 +115,12 @@ func (s *Store) SetGlobalClientMode(mode store.ClientMode) {
 	s.globalMode = mode
 }
 
-// GlobalClientMode implements store.MachineReader. It is not recorded: the
-// call log is for the query budget of the page's own data, and this is one
-// fixed GetItem that only words the machine page's configured mode. It still
-// fails after SetError.
+// GlobalClientMode implements store.MachineReader.
 func (s *Store) GlobalClientMode(context.Context) (store.ClientMode, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.err != nil {
-		return "", s.err
+	if err := s.record(Call{Method: "GlobalClientMode"}); err != nil {
+		return "", err
 	}
 	return s.globalMode, nil
 }
