@@ -61,7 +61,10 @@ deps:
 GOVULNCHECK_VERSION = v1.9.0
 deps-check:
 	go run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
-	go list -m -u -f '{{if or .Update .Deprecated}}{{.Path}} {{.Version}}{{with .Update}} (newer: {{.Version}}){{end}}{{with .Deprecated}} (deprecated: {{.}}){{end}}{{end}}' all
+	go list -m -u -f '{{if or .Update .Deprecated}}{{.Path}} {{.Version}}{{with .Update}} (newer: {{.Version}}){{end}}{{with .Deprecated}} (deprecated: {{.}}){{end}}{{end}}' \
+		$$(go list -deps -test -tags integration -f '{{with .Module}}{{if not .Main}}{{.Path}}{{end}}{{end}}' ./... | sort -u)
+# The listing covers only modules that provide a package the build or the tests compile. The rest of the module graph
+# (modules that other modules' go.mod files merely mention) is never built, and go mod tidy drops any pin of it.
 
 # Compiles the Lambda binary and packages it for provided.al2023 on arm64.
 #
