@@ -37,6 +37,8 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.51.9 // indirect
 	github.com/aws/smithy-go v1.28.8 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.9 // indirect
+	github.com/go-test/deep v1.1.2 // indirect
+	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mitchellh/go-wordwrap v1.0.1 // indirect
 	github.com/zclconf/go-cty v1.20.0 // indirect
