@@ -30,7 +30,7 @@ You only do this once.
 
 ### Tools
 
-* **Go** 1.27 or newer (`go.mod` names the toolchain, which the `go` command downloads when yours is older).
+* **Go** 1.27 or newer (`go.mod` names the toolchain, which the `go` command downloads when yours is older), for `make plan` as well as `make deploy`: both check the environment with Go before running Terraform.
 * **Terraform** 1.10 or newer (tested with 1.17), with the `hashicorp/aws` provider `~> 6.72`.
 * **AWS CLI**, authenticated as a role that may create Lambda functions, IAM roles, SSM parameters,
   CloudWatch log groups and, if you enable it, CloudFront distributions, ACM certificates and
@@ -108,6 +108,23 @@ At a minimum set `aws_account_id`, `region`, `prefix`, `tenant_id`, `client_id` 
 `dynamodb_table_name`, and `events_dynamodb_table_name` to show execution events and the top lists. Set `cli_env` too if the copy-and-paste commands should name the Rudolph environment.
 
 Environment directories hold the account ID, the tenant and client IDs and the domain, so Git never sees them: the repository's `.gitignore` ignores everything under `deployments/environments/` except `example/`, and `make init-env` also writes a `.gitignore` of `*` into the new directory. Keep your own copy of an environment's `_backend.tf` and `config.auto.tfvars.json` somewhere safe; they are not in the repository.
+
+### Upgrading an existing environment
+
+`make init-env` copies the example's `main.tf` and `_variables.tf` once, so an environment created before a release that added a module variable (for example `display_time_zone`) lacks its declaration and module argument. Terraform then only warns "Value for undeclared variable" about the value in `config.auto.tfvars.json`, and plans and applies without the setting. `make plan`, `make deploy` and `make justdeploy` therefore run `go run ./cmd/envcheck deployments/environments/$ENV` first and refuse to go on when the environment:
+
+* does not declare, in any `.tf` file, a variable the example's `_variables.tf` declares;
+* has no `module "rudolph_web"` block, or its block does not set an argument the example's `main.tf` sets (`source` and `version`, which choose where the module comes from, are not compared);
+* sets a value in `config.auto.tfvars.json`, another `*.auto.tfvars.json` file or `terraform.tfvars.json` that it does not declare.
+
+Variables and module arguments of your own that the example does not have are allowed, and module arguments set in override files (`override.tf`, `*_override.tf`, `override.tf.json`, `*_override.tf.json`) count, as Terraform merges them in. Apart from those override files, the check reads `.tf` files only, not `.tf.json`, and only JSON variable files, not `.tfvars` ones. Like Terraform, it skips hidden files (names starting with `.`), backup files ending in `~` and lock files named `#...#`, and the `"//"` comment key in JSON variable files. `make tf-init` and `make destroy` are not checked. The check runs with Go, so `make plan` now needs Go installed, as `make deploy` already did. To fix a refused environment, compare it with the example:
+
+```sh
+diff -u deployments/environments/example/main.tf deployments/environments/$ENV/main.tf
+diff -u deployments/environments/example/_variables.tf deployments/environments/$ENV/_variables.tf
+```
+
+If the environment has no customisations, copy the example's `main.tf` and `_variables.tf` over it; otherwise add the missing declarations and module arguments by hand. Then run `make plan` again and check the plan picks up the settings.
 
 ### The monthly cost budget
 
@@ -442,6 +459,7 @@ The function logs JSON to stderr and never logs secrets, cookies or tokens.
 
 | Symptom | Cause |
 |---|---|
+| `make plan` or `make deploy` stops with "does not match the example environment" | The environment was created from an older release; see [Upgrading an existing environment](#upgrading-an-existing-environment). |
 | Every request 500s, logs say `config: RUDOLPH_WEB_REDIRECT_URL is required` | `base_url` is still empty; see [First deploy](#first-deploy). |
 | Logs say `config: ... parameter ... is empty` or `must decode to 32 bytes` | The parameter still holds the placeholder, or the cookie key is not base64 of 32 bytes. |
 | Logs say `AccessDeniedException` on `ssm:GetParameter` | The parameter name does not match `client_secret_ssm_parameter` / `cookie_key_ssm_parameter`, or it is encrypted with a key the role cannot use — set `ssm_kms_key_arn`. |
