@@ -121,7 +121,7 @@ The read models follow Rudolph's single-table DynamoDB layout (`PK`/`SK`):
   carries the same headers: CSP (`default-src`, `frame-ancestors`
   and `base-uri` all `'none'`; `script-src` only the hash of the inline time script; `form-action` limited to self and the Entra origin),
   HSTS, `Referrer-Policy`, `X-Content-Type-Options: nosniff` and
-  `Cache-Control: no-store`. Only the embedded stylesheet is cacheable.
+  `Cache-Control: no-store`. Only the embedded stylesheet is cacheable, under a URL carrying a hash of its content, so a new stylesheet shows as soon as it is deployed.
 
 Role changes take effect at the next sign-in, which is at most one session TTL later.
 

@@ -23,7 +23,7 @@ func requireSitePage(t *testing.T, rec *httptest.ResponseRecorder, wantStatus in
 		t.Errorf("Content-Type %q, want the site's HTML page", ct)
 	}
 	body := rec.Body.String()
-	mustContain(t, body, `<header class="top">`, `href="/static/style.css"`, `<a href="/machines"`, "Sign out", "<h1>"+heading+"</h1>")
+	mustContain(t, body, `<header class="top">`, `rel="stylesheet" href="/static/style.`, `<a href="/machines"`, "Sign out", "<h1>"+heading+"</h1>")
 	mustContain(t, body, subs...)
 }
 

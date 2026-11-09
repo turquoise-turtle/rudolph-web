@@ -284,8 +284,7 @@ function does not need `logs:CreateLogGroup`.
 
 Worth knowing before you change any of it:
 
-* **Caching is off for everything except `/static/*`.** Pages are rendered for the signed-in user
-  and carry `Cache-Control: no-store`; only the embedded stylesheet is cacheable.
+* **Caching is off for everything except `/static/*`.** Pages are rendered for the signed-in user and carry `Cache-Control: no-store`; only the embedded stylesheet is cacheable. Pages link it as `/static/style.<hash>.css`, where the hash is taken from its content, and that URL is cached for a year (`immutable`). A deploy that changes the stylesheet changes its URL, so it shows at once and needs no CloudFront invalidation; a query string would not work, because the CachingOptimized policy leaves it out of the cache key. The plain `/static/style.css` still works but is sent with `Cache-Control: no-cache`.
 * **Cookies and query strings are forwarded in full.** The session lives in a cookie, and the OIDC
   callback and the pagination cursors are query parameters.
 * **Only `Content-Type`, `Origin` and `Sec-Fetch-Site` are forwarded.** Go's
