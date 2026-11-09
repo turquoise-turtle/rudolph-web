@@ -94,7 +94,10 @@ resource "aws_cloudfront_distribution" "web" {
   }
 
   # The embedded stylesheet is the only cacheable response. It is served to anonymous requests too,
-  # so nothing user specific has to reach the origin for it.
+  # so nothing user specific has to reach the origin for it. CachingOptimized ignores query strings,
+  # so pages link the stylesheet under a name carrying a hash of its content (style.<hash>.css),
+  # cached for a year: a changed stylesheet gets a new URL, and a deploy needs no invalidation. The
+  # plain /static/style.css is sent with no-cache, so CloudFront revalidates it every time.
   ordered_cache_behavior {
     path_pattern           = "/static/*"
     target_origin_id       = local.origin_id

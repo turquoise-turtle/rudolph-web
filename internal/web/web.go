@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"embed"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"html/template"
@@ -13,6 +14,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"path"
 	"strings"
 	"time"
 
@@ -43,6 +45,51 @@ var localTimeScriptHash = func() string {
 	sum := sha256.Sum256([]byte(localTimeScript))
 	return "'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "'"
 }()
+
+// staticFile is one embedded asset as served under a single URL.
+type staticFile struct {
+	name         string // the file's real name, which ServeContent uses for the content type
+	data         []byte
+	etag         string
+	cacheControl string
+}
+
+// staticFiles maps each servable name to its file, and staticURLs maps each file's real name to the URL pages link.
+//
+// CloudFront's CachingOptimized policy ignores query strings, so a ?v= suffix would not reach the cache key; the
+// content hash goes in the file name instead. That URL changes whenever the file does, so it can be cached for good
+// and a deploy needs no invalidation. Any other hash is not served: caching it for good would pin whatever it
+// returned. The plain name still works (old bookmarks, the cached HTML of an open tab) but is revalidated every time.
+var staticFiles, staticURLs = loadStatic()
+
+func loadStatic() (map[string]staticFile, map[string]string) {
+	entries, err := fs.ReadDir(staticFS, "static")
+	if err != nil {
+		panic(err)
+	}
+	files := map[string]staticFile{}
+	urls := map[string]string{}
+	for _, e := range entries {
+		// Only one path segment is ever served, so a subdirectory's files would be unreachable anyway.
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		data, err := fs.ReadFile(staticFS, "static/"+name)
+		if err != nil {
+			panic(err)
+		}
+		sum := sha256.Sum256(data)
+		digest := hex.EncodeToString(sum[:])[:16]
+		etag := `"` + digest + `"`
+		ext := path.Ext(name)
+		hashed := strings.TrimSuffix(name, ext) + "." + digest + ext
+		files[name] = staticFile{name: name, data: data, etag: etag, cacheControl: "no-cache"}
+		files[hashed] = staticFile{name: name, data: data, etag: etag, cacheControl: "public, max-age=31536000, immutable"}
+		urls[name] = "/static/" + hashed
+	}
+	return files, urls
+}
 
 // Options configures the web handler.
 type Options struct {
@@ -122,21 +169,17 @@ func New(opts Options) (http.Handler, error) {
 	mux := http.NewServeMux()
 	opts.Auth.Mount(mux)
 
-	static, err := fs.Sub(staticFS, "static")
-	if err != nil {
-		return nil, err
-	}
 	// Only known files are served, one path segment deep: no directory
 	// listings, no redirects into the tree.
 	mux.Handle("GET /static/{file}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		name := r.PathValue("file")
-		data, err := fs.ReadFile(static, name)
-		if err != nil {
+		f, ok := staticFiles[r.PathValue("file")]
+		if !ok {
 			http.NotFound(w, r)
 			return
 		}
-		w.Header().Set("Cache-Control", "public, max-age=3600")
-		http.ServeContent(w, r, name, time.Time{}, bytes.NewReader(data))
+		w.Header().Set("Cache-Control", f.cacheControl)
+		w.Header().Set("ETag", f.etag)
+		http.ServeContent(w, r, f.name, time.Time{}, bytes.NewReader(f.data))
 	}))
 
 	viewer := func(h http.HandlerFunc) http.Handler { return opts.Auth.RequireOr(auth.RoleViewer, h, s.forbidden) }
@@ -222,7 +265,16 @@ var funcs = template.FuncMap{
 	},
 	// The layout's one script, written unchanged (see localTimeScriptHash).
 	"localTimeScript": func() template.JS { return template.JS(localTimeScript) },
-	"machineURL":      func(id string) string { return "/machines/" + url.PathEscape(id) },
+	// The content-hashed URL of an embedded static file (see staticFiles). An unknown name fails the render rather
+	// than linking a 404.
+	"static": func(name string) (string, error) {
+		u, ok := staticURLs[name]
+		if !ok {
+			return "", fmt.Errorf("web: no static file %q", name)
+		}
+		return u, nil
+	},
+	"machineURL": func(id string) string { return "/machines/" + url.PathEscape(id) },
 	"eventsForMachineURL": func(id string) string {
 		return "/events?" + url.Values{"machine": {id}}.Encode()
 	},
