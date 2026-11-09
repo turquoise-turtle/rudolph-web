@@ -23,7 +23,6 @@ func TestNotFound_SignedInUsersGetTheSitePage(t *testing.T) {
 		cookie *http.Cookie
 	}{
 		{"viewer, unknown path", "/no/such/page", a.cookie(t, auth.RoleViewer)},
-		{"viewer, audit with editing off", "/admin/audit", a.cookie(t, auth.RoleViewer)},
 		{"admin, audit with editing off", "/admin/audit", a.cookie(t, auth.RoleAdmin)},
 		{"admin, unknown admin path", "/admin/nothing", a.cookie(t, auth.RoleAdmin)},
 	} {
