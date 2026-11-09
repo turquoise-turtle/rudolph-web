@@ -495,10 +495,29 @@ func TestOriginRequestPolicyForwardsWhatTheAppNeeds(t *testing.T) {
 		t.Fatal("the origin request policy has no headers_config")
 	}
 	headerSrc := bodySource(t, files, headers[0])
-	for _, want := range []string{"Origin", "Sec-Fetch-Site", "Sec-Fetch-Mode", "Sec-Fetch-Dest", "Sec-Fetch-User", "Authorization"} {
+	// What the app reads: Go's cross-origin protection checks Sec-Fetch-Site and Origin, and ParseForm needs
+	// Content-Type for the editing forms.
+	for _, want := range []string{"Origin", "Sec-Fetch-Site", "Content-Type"} {
 		if !strings.Contains(headerSrc, `"`+want+`"`) {
 			t.Errorf("the origin request policy does not forward %s", want)
 		}
+	}
+	// Found in the first production deployment: CloudFront refuses an origin request policy with more than 10
+	// headers (TooManyHeadersInOriginRequestPolicy), and refuses Authorization in one at all (it can only be
+	// forwarded through a cache policy). Only AWS enforces either, so terraform validate passes regardless. The
+	// app authenticates with its session cookie and never reads Authorization.
+	items := regexp.MustCompile(`"[A-Za-z0-9-]+"`).FindAllString(headerSrc, -1)
+	var names []string
+	for _, item := range items {
+		if item != `"whitelist"` {
+			names = append(names, item)
+		}
+	}
+	if len(names) > 8 {
+		t.Errorf("the origin request policy whitelists %d headers %v; CloudFront allows at most 10, keep headroom (at most 8)", len(names), names)
+	}
+	if strings.Contains(strings.ToLower(headerSrc), `"authorization"`) {
+		t.Error(`the origin request policy forwards "Authorization"; CloudFront refuses it in an origin request policy`)
 	}
 	// A Lambda Function URL rejects a request whose Host is not its own domain, so the viewer Host
 	// must not be forwarded; the app is configured with the public URL instead.
