@@ -1,7 +1,8 @@
 package web_test
 
-// Owner: "can you add audit to the navbar for admins?". The audit page exists only with editing on, so the link shows
-// only then, and only to admins: viewers get a 403 for everything under /admin.
+// Owner: "can you add audit to the navbar for admins?", and later "audit should still appear with editing off, so people
+// can know which machine/user ran the rudolph commands". The link shows to admins whether or not editing is on, and
+// never to viewers, who get a 403 for everything under /admin.
 
 import (
 	"net/http"
@@ -14,8 +15,15 @@ import (
 
 var navAudit = regexp.MustCompile(`<nav>(?s:.*?)<a href="/admin/audit"[^>]*>Audit</a>(?s:.*?)</nav>`)
 
-func TestAuditNav_AdminsWithEditingSeeIt(t *testing.T) {
-	a := newEditApp(t, fake.New(), true)
+func TestAuditNav_AdminsSeeIt(t *testing.T) {
+	for _, editing := range []bool{true, false} {
+		auditNavFor(t, editing)
+	}
+}
+
+func auditNavFor(t *testing.T, editing bool) {
+	t.Helper()
+	a := newEditApp(t, fake.New(), editing)
 	rec := a.get(t, "/machines", a.cookie(t, auth.RoleAdmin))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status %d", rec.Code)
@@ -39,7 +47,6 @@ func TestAuditNav_HiddenOtherwise(t *testing.T) {
 		editing bool
 		role    string
 	}{
-		{"admin, editing off", false, auth.RoleAdmin},
 		{"viewer, editing on", true, auth.RoleViewer},
 		{"viewer, editing off", false, auth.RoleViewer},
 	} {
