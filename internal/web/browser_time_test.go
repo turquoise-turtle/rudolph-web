@@ -209,11 +209,12 @@ func TestBrowserTime_ScriptShowsTheBrowsersZone(t *testing.T) {
 	_, body := a.viewerGet(t, "/machines")
 	script := pageScript(t, body)
 
-	// The zone's short name depends on the browser's locale (JST or GMT+9), so only its shape is fixed.
+	// Local time first, then UTC in brackets (owner request after the first production deployment). The zone's short
+	// name depends on the browser's locale (JST or GMT+9), so only its shape is fixed.
 	tokyo := runScript(t, script, "Asia/Tokyo", "2026-09-17T11:55:00Z", "2026-12-31T23:30:00Z")
 	for i, want := range []*regexp.Regexp{
-		regexp.MustCompile(`^2026-09-17 11:55:00 UTC \(2026-09-17 20:55 (JST|GMT\+9|UTC\+9)\)$`),
-		regexp.MustCompile(`^2026-12-31 23:30:00 UTC \(2027-01-01 08:30 (JST|GMT\+9|UTC\+9)\)$`),
+		regexp.MustCompile(`^2026-09-17 20:55 (JST|GMT\+9|UTC\+9) \(2026-09-17 11:55:00 UTC\)$`),
+		regexp.MustCompile(`^2027-01-01 08:30 (JST|GMT\+9|UTC\+9) \(2026-12-31 23:30:00 UTC\)$`),
 	} {
 		if !want.MatchString(tokyo[i]) {
 			t.Errorf("Asia/Tokyo: got %q, want %s", tokyo[i], want)
@@ -226,10 +227,10 @@ func TestBrowserTime_ScriptShowsTheBrowsersZone(t *testing.T) {
 
 	// Daylight saving: New York is UTC-4 in September and UTC-5 in December.
 	ny := runScript(t, script, "America/New_York", "2026-09-17T11:55:00Z", "2026-12-17T11:55:00Z")
-	if !strings.HasPrefix(ny[0], "2026-09-17 11:55:00 UTC (2026-09-17 07:55 ") {
+	if !strings.HasPrefix(ny[0], "2026-09-17 07:55 ") || !strings.HasSuffix(ny[0], " (2026-09-17 11:55:00 UTC)") {
 		t.Errorf("America/New_York in September: got %q", ny[0])
 	}
-	if !strings.HasPrefix(ny[1], "2026-12-17 11:55:00 UTC (2026-12-17 06:55 ") {
+	if !strings.HasPrefix(ny[1], "2026-12-17 06:55 ") || !strings.HasSuffix(ny[1], " (2026-12-17 11:55:00 UTC)") {
 		t.Errorf("America/New_York in December: got %q", ny[1])
 	}
 
