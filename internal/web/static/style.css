@@ -37,7 +37,11 @@ td.hash code { display: inline-block; max-width: 22ch; overflow-wrap: anywhere; 
 dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; }
 dt { color: var(--muted); }
 dd { margin: 0; }
-.pager { display: flex; gap: 16px; margin: 12px 0; }
+.pager { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: baseline; margin: 12px 0; }
+.pager [aria-current="page"] { font-weight: 600; }
+.pager .gap { color: var(--muted); }
+.pager a[rel="prev"] { margin-right: 4px; }
+.pager a[rel="next"] { margin-left: 4px; }
 .error { color: var(--block); }
 .choices { display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline; }
 .choices a[aria-current="page"] { font-weight: 600; color: var(--fg); text-decoration: none; }

@@ -261,7 +261,10 @@ type auditRow struct {
 }
 
 func (s *server) audit(w http.ResponseWriter, r *http.Request) {
-	pr := s.pageRequest(r.URL.Query())
+	pr, nav, ok := s.pageRequest(w, r, r.URL.Query())
+	if !ok {
+		return
+	}
 	page, err := s.store.ListAuditPage(r.Context(), s.now().Add(-auditWindow), pr)
 	if err != nil {
 		s.storeError(w, r, err)
@@ -285,7 +288,7 @@ func (s *server) audit(w http.ResponseWriter, r *http.Request) {
 		Entries []auditRow
 		Days    int
 		Pager   pager
-	}{rows, int(auditWindow / (24 * time.Hour)), links("/admin/audit", url.Values{}, pr.Cursor, page.NextCursor)})
+	}{rows, int(auditWindow / (24 * time.Hour)), links("/admin/audit", url.Values{}, nav, page.NextCursor)})
 }
 
 // writeError maps a write's error to a response. Invalid input is the

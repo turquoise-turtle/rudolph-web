@@ -175,7 +175,7 @@ func TestGroupsEditing_MachinePage(t *testing.T) {
 		t.Errorf("want exactly one Make this a group button (Science Dept), got %d", strings.Count(body, "Make this a group"))
 	}
 	// Assign a registered group not already assigned; remove an assigned one.
-	mustContain(t, body, `action="`+machinePath+`/groups"`, `<option value="lab">`, `action="`+machinePath+`/groups/remove"`)
+	mustContain(t, body, `action="/admin`+machinePath+`/groups"`, `<option value="lab">`, `action="/admin`+machinePath+`/groups/remove"`)
 	if strings.Contains(body, `<option value="eng">`) {
 		t.Error("the assign list offers eng, which is already assigned")
 	}
@@ -185,7 +185,7 @@ func TestGroupsEditing_MachinePage(t *testing.T) {
 		t.Errorf("Make this a group created %+v; want science dept counting reported membership", g)
 	}
 
-	see303(t, a.post(t, machinePath+"/groups", url.Values{"group": {"lab"}}, admin, true), machinePath)
+	see303(t, a.post(t, "/admin"+machinePath+"/groups", url.Values{"group": {"lab"}}, admin, true), machinePath)
 	m, err := s.GetMachine(t.Context(), editMachine)
 	if err != nil {
 		t.Fatal(err)
@@ -193,12 +193,12 @@ func TestGroupsEditing_MachinePage(t *testing.T) {
 	if strings.Join(m.AssignedGroups, ",") != "eng,lab" {
 		t.Errorf("assigned %v, want eng,lab", m.AssignedGroups)
 	}
-	see303(t, a.post(t, machinePath+"/groups/remove", url.Values{"group": {"eng"}}, admin, true), machinePath)
+	see303(t, a.post(t, "/admin"+machinePath+"/groups/remove", url.Values{"group": {"eng"}}, admin, true), machinePath)
 	m, _ = s.GetMachine(t.Context(), editMachine)
 	if strings.Join(m.AssignedGroups, ",") != "lab" {
 		t.Errorf("after removing eng, assigned %v, want lab", m.AssignedGroups)
 	}
-	if rec := a.post(t, machinePath+"/groups", url.Values{"group": {"no-such-group"}}, admin, true); rec.Code != http.StatusBadRequest {
+	if rec := a.post(t, "/admin"+machinePath+"/groups", url.Values{"group": {"no-such-group"}}, admin, true); rec.Code != http.StatusBadRequest {
 		t.Errorf("assigning an unregistered group: status %d, want 400", rec.Code)
 	}
 
@@ -246,5 +246,16 @@ func TestGroupsEditing_OnlyAdminsWithEditing(t *testing.T) {
 	}
 	if len(auditOf(t, s)) != 0 {
 		t.Error("refused POSTs were audited")
+	}
+}
+
+// Writes live under /admin only, like every other edit: the Mac's own path takes no POSTs.
+func TestGroupsEditing_NoWritesOutsideAdmin(t *testing.T) {
+	a := newEditApp(t, groupsEditStore(), true)
+	admin := a.cookie(t, auth.RoleAdmin)
+	for _, target := range []string{"/machines/" + editMachine + "/groups", "/machines/" + editMachine + "/groups/remove"} {
+		if rec := a.post(t, target, url.Values{"group": {"eng"}}, admin, true); rec.Code != http.StatusNotFound && rec.Code != http.StatusMethodNotAllowed {
+			t.Errorf("POST %s: status %d, want 404 or 405", target, rec.Code)
+		}
 	}
 }

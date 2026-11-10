@@ -16,34 +16,6 @@ import (
 // maxFilterLen bounds free-text filter values.
 const maxFilterLen = 256
 
-// pager holds the navigation links for a list.
-type pager struct {
-	Next  string // "" on the last page
-	First string // "" when already on the first page
-}
-
-// pageRequest builds a bounded request; each handler issues exactly one.
-func (s *server) pageRequest(q url.Values) store.PageRequest {
-	return store.PageRequest{Limit: s.pageSize, Cursor: q.Get("cursor")}
-}
-
-// links builds next/first URLs that preserve the filter params.
-func links(path string, filters url.Values, cursor, next string) pager {
-	var p pager
-	if next != "" {
-		v := cloneValues(filters)
-		v.Set("cursor", next)
-		p.Next = path + "?" + v.Encode()
-	}
-	if cursor != "" {
-		p.First = path
-		if enc := cloneValues(filters).Encode(); enc != "" {
-			p.First += "?" + enc
-		}
-	}
-	return p
-}
-
 func cloneValues(v url.Values) url.Values {
 	out := url.Values{}
 	for k, vs := range v {
@@ -76,7 +48,10 @@ func (s *server) machines(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	filter := store.MachineFilter{SerialPrefix: serial, HostnamePrefix: hostname}
-	pr := s.pageRequest(q)
+	pr, nav, ok := s.pageRequest(w, r, q)
+	if !ok {
+		return
+	}
 	page, err := s.store.ListMachines(r.Context(), filter, pr)
 	if err != nil {
 		s.storeError(w, r, err)
@@ -89,7 +64,7 @@ func (s *server) machines(w http.ResponseWriter, r *http.Request) {
 	}{
 		Filter:   filter,
 		Machines: page.Items,
-		Pager:    links("/machines", url.Values{"serial": {serial}, "hostname": {hostname}}, pr.Cursor, page.NextCursor),
+		Pager:    links("/machines", url.Values{"serial": {serial}, "hostname": {hostname}}, nav, page.NextCursor),
 	})
 }
 
@@ -104,7 +79,10 @@ func (s *server) machineDetail(w http.ResponseWriter, r *http.Request) {
 		s.storeError(w, r, err)
 		return
 	}
-	pr := s.pageRequest(r.URL.Query())
+	pr, nav, ok := s.pageRequest(w, r, r.URL.Query())
+	if !ok {
+		return
+	}
 	rules, err := s.store.ListMachineRules(r.Context(), id, pr)
 	if err != nil {
 		s.storeError(w, r, err)
@@ -139,7 +117,7 @@ func (s *server) machineDetail(w http.ResponseWriter, r *http.Request) {
 		GlobalMode: globalMode,
 		Health:     machineHealth(machine, s.now(), globalMode),
 		Rules:      rules.Items,
-		Pager:      links("/machines/"+url.PathEscape(id), url.Values{}, pr.Cursor, rules.NextCursor),
+		Pager:      links("/machines/"+url.PathEscape(id), url.Values{}, nav, rules.NextCursor),
 		Edit:       edit,
 		Groups:     groupForms,
 	})
@@ -159,7 +137,10 @@ func (s *server) rules(w http.ResponseWriter, r *http.Request) {
 		s.renderError(w, r, http.StatusBadRequest, "Unknown policy.")
 		return
 	}
-	pr := s.pageRequest(q)
+	pr, nav, ok := s.pageRequest(w, r, q)
+	if !ok {
+		return
+	}
 	page, err := s.store.ListGlobalRules(r.Context(), filter, pr)
 	if err != nil {
 		s.storeError(w, r, err)
@@ -179,7 +160,7 @@ func (s *server) rules(w http.ResponseWriter, r *http.Request) {
 		Rules:     page.Items,
 		Edit:      s.editForms(r),
 		Pager: links("/rules", url.Values{"type": {string(filter.RuleType)}, "policy": {string(filter.Policy)}},
-			pr.Cursor, page.NextCursor),
+			nav, page.NextCursor),
 	})
 }
 
@@ -236,7 +217,10 @@ func (s *server) groupDetail(w http.ResponseWriter, r *http.Request) {
 		}
 		group = groups[i]
 	}
-	pr := s.pageRequest(r.URL.Query())
+	pr, nav, ok := s.pageRequest(w, r, r.URL.Query())
+	if !ok {
+		return
+	}
 	page, err := s.store.ListGroupRules(r.Context(), name, pr)
 	if err != nil {
 		s.storeError(w, r, err)
@@ -250,7 +234,7 @@ func (s *server) groupDetail(w http.ResponseWriter, r *http.Request) {
 	}{
 		Group: group,
 		Rules: page.Items,
-		Pager: links(groupURL(name), url.Values{}, pr.Cursor, page.NextCursor),
+		Pager: links(groupURL(name), url.Values{}, nav, page.NextCursor),
 		Edit:  s.editForms(r),
 	})
 }
@@ -292,7 +276,10 @@ func (s *server) events(w http.ResponseWriter, r *http.Request) {
 		s.renderError(w, r, http.StatusBadRequest, "Unknown decision.")
 		return
 	}
-	pr := s.pageRequest(q)
+	pr, nav, ok := s.pageRequest(w, r, q)
+	if !ok {
+		return
+	}
 	page, err := s.store.ListExecutionEvents(r.Context(), filter, pr)
 	if err != nil {
 		s.storeError(w, r, err)
@@ -308,7 +295,7 @@ func (s *server) events(w http.ResponseWriter, r *http.Request) {
 		Decisions: store.Decisions,
 		Events:    page.Items,
 		Pager: links("/events", url.Values{"machine": {machine}, "decision": {string(filter.Decision)}, "team_id": {teamID}},
-			pr.Cursor, page.NextCursor),
+			nav, page.NextCursor),
 	})
 }
 
@@ -376,7 +363,10 @@ func (s *server) topList(w http.ResponseWriter, r *http.Request, page topListPag
 		s.renderError(w, r, http.StatusBadRequest, "Unknown time window.")
 		return
 	}
-	pr := s.pageRequest(q)
+	pr, nav, ok := s.pageRequest(w, r, q)
+	if !ok {
+		return
+	}
 	list, err := s.store.TopBinaries(r.Context(), store.TopFilter{Kind: page.Kind, WindowDays: days}, pr)
 	if err != nil {
 		s.storeError(w, r, err)
@@ -414,7 +404,7 @@ func (s *server) topList(w http.ResponseWriter, r *http.Request, page topListPag
 		Stale:       computed && s.now().Sub(list.GeneratedAt) > s.topListStaleAfter,
 		StaleHours:  strconv.FormatFloat(s.topListStaleAfter.Hours(), 'f', -1, 64),
 		Binaries:    list.Items,
-		Pager:       links(page.Path, url.Values{"days": {strconv.Itoa(days)}}, pr.Cursor, list.NextCursor),
+		Pager:       links(page.Path, url.Values{"days": {strconv.Itoa(days)}}, nav, list.NextCursor),
 	})
 }
 

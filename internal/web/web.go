@@ -222,10 +222,6 @@ func New(opts Options) (http.Handler, error) {
 		mux.Handle("POST /admin/groups/delete", admin(s.deleteGroup))
 		mux.Handle("POST /admin/machines/{id}/groups", admin(s.assignGroup))
 		mux.Handle("POST /admin/machines/{id}/groups/remove", admin(s.unassignGroup))
-		// The machine page's group forms post to these, as the owner's tests
-		// specify; they are the same admin-only handlers as above.
-		mux.Handle("POST /machines/{id}/groups", admin(s.assignGroup))
-		mux.Handle("POST /machines/{id}/groups/remove", admin(s.unassignGroup))
 	}
 
 	csp := strings.Join([]string{
