@@ -775,7 +775,7 @@ func TestQueryBudget_OneBoundedPaginatedQueryPerList(t *testing.T) {
 		{"/rules", "ListGlobalRules", 0},
 		{"/rules?type=BINARY&policy=ALLOWLIST", "ListGlobalRules", 0},
 		{"/events", "ListExecutionEvents", 0},
-		{"/events?machine=machine-001", "ListExecutionEvents", 0},
+		{"/events?machine=machine-001", "ListExecutionEvents", 3}, // GetMachine for the stored spelling: as typed, upper, lower case (first page only)
 		{"/events/top-blocked", "TopBinaries", 0},
 		{"/events/top-allowed", "TopBinaries", 0},
 	}
