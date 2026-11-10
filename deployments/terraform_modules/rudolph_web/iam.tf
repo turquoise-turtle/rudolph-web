@@ -97,15 +97,17 @@ data "aws_iam_policy_document" "web" {
   }
 
   # Admin writes (enable_editing), made with Rudolph's own packages, so exactly the writes of the CLI's rule add and
-  # remove and its temporary client mode: PutItem, UpdateItem and DeleteItem, also inside TransactWriteItems, which
-  # has no IAM action of its own. Only on the store table itself (never an index or the events table), and only to the
-  # partitions those writes touch:
+  # remove, its temporary client mode and its group create, update, delete, add and remove: PutItem, UpdateItem and
+  # DeleteItem, also inside TransactWriteItems, which has no IAM action of its own, and BatchWriteItem, which has one
+  # and which groups.DeleteGroup uses to delete a group's rules (group delete --force). Only on the store table itself
+  # (never an index or the events table), and only to the partitions those writes touch:
   #   GlobalRules, RulesFeed       global rules and the feed rows that tell Macs about each change (globalrules)
   #   MachineRules#*               machine rules (machinerules)
-  #   Machine#*                    the machine config row holding a temporary client mode (machineconfiguration);
-  #                                LeadingKeys cannot limit the sort key, so this also covers a Mac's other rows
-  #   GroupRules#*, GroupRegistry  group rules and the rules version bumped with each (groups); the registry and the
-  #                                Macs' Groups rows also allow creating groups and changing membership
+  #   Machine#*                    the machine config row holding a temporary client mode (machineconfiguration) and
+  #                                a Mac's Groups row of assigned groups (groups); LeadingKeys cannot limit the sort
+  #                                key, so this also covers a Mac's other rows
+  #   GroupRules#*, GroupRegistry  group rules and the rules version bumped with each, the registry of groups, and the
+  #                                deletion of a deleted group's rules (groups)
   #   EventCollection              the index of rules whose allowed executions are collected (eventcollection)
   # The audit trail (one partition per UTC day) is a statement of its own with PutItem only: the role cannot update or
   # delete an entry; overwriting one is prevented by Rudolph's conditional put (attribute_not_exists), not by IAM. The actions are in for_each so that they exist only when editing is on; each
@@ -114,7 +116,7 @@ data "aws_iam_policy_document" "web" {
     for_each = var.enable_editing ? [
       {
         sid          = "WriteRudolphRules"
-        actions      = ["dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:DeleteItem"]
+        actions      = ["dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:DeleteItem", "dynamodb:BatchWriteItem"]
         leading_keys = ["GlobalRules", "RulesFeed", "MachineRules#*", "Machine#*", "GroupRules#*", "GroupRegistry", "EventCollection"]
       },
       {

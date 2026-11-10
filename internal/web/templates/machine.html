@@ -65,6 +65,38 @@
   <dt>Reported by Santa (as sent)</dt><dd>{{range $i, $g := .ReportedAsSent}}{{if $i}}, {{end}}{{$g}}{{else}}none{{end}}</dd>
   {{if and (not .AssignedGroups) (not .ReportedGroups)}}<dt>Effective</dt><dd><a href="{{groupURL ungrouped}}">Ungrouped</a> <span class="muted">(gets the rules for Macs in no group)</span></dd>{{end}}
 </dl>
+{{if $.Edit.On}}
+{{if .AssignedGroups}}
+<div class="inline-forms">
+{{range .AssignedGroups}}<form class="inline" method="post" action="/admin{{machineURL $.Machine.MachineID}}/groups/remove">
+  <input type="hidden" name="group" value="{{.}}">
+  <button type="submit" class="danger">Remove assigned group {{.}}</button>
+</form>
+{{end}}
+</div>
+<p class="hint">Removing an assigned group takes its rules off this Mac at its next sync, unless the Mac also reports the group and the group counts reported membership.</p>
+{{end}}
+{{with $.Groups.Assignable}}
+<form class="edit-form" method="post" action="/admin{{machineURL $.Machine.MachineID}}/groups">
+  <label>Assign a group
+    <select name="group" required>{{range .}}<option value="{{.}}">{{.}}</option>{{end}}</select>
+  </label>
+  <button type="submit">Assign group</button>
+</form>
+{{end}}
+{{with $.Groups.NewGroups}}
+<p>Reported by Santa but not a group in Rudolph:</p>
+<div class="inline-forms">
+{{range .}}<form class="inline" method="post" action="/admin/groups">
+  <input type="hidden" name="name" value="{{.}}">
+  <input type="hidden" name="accept_reported" value="on">
+  <code>{{.}}</code> <button type="submit">Make this a group</button>
+</form>
+{{end}}
+</div>
+<p class="hint">Creates the group, in lower case, counting the Macs that report it as members. Its rules reach those Macs from their next sync.</p>
+{{end}}
+{{end}}
 {{end}}
 <h2>Sync health</h2>
 {{with .Health}}

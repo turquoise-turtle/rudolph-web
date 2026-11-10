@@ -8,6 +8,27 @@
   <dt>Reported membership counts</dt><dd>{{if .Group.AcceptReported}}yes{{else}}no{{end}}</dd>
   {{end}}
 </dl>
+{{if and .Edit.On (ne .Group.Name ungrouped)}}
+<details class="edit"><summary>Change this group</summary>
+<form class="edit-form" method="post" action="/admin/groups/update">
+  <input type="hidden" name="name" value="{{.Group.Name}}">
+  <label>Description <span class="hint">(for people)</span>
+    <input name="description" value="{{.Group.Description}}" maxlength="1024" size="30">
+  </label>
+  <label class="check"><input type="checkbox" name="accept_reported" value="on"{{if .Group.AcceptReported}} checked{{end}}> Macs that report it are members</label>
+  <button type="submit">Save changes</button>
+</form>
+<p class="hint">Unticked, only Macs assigned the group in Rudolph are members. Member Macs get the change at their next sync.</p>
+</details>
+<details class="edit"><summary>Delete this group</summary>
+<form class="edit-form" method="post" action="/admin/groups/delete">
+  <input type="hidden" name="name" value="{{.Group.Name}}">
+  <label class="check"><input type="checkbox" name="force" value="on"> also delete its rules</label>
+  <button type="submit" class="danger">Delete group {{.Group.Name}}</button>
+</form>
+<p class="hint">Its member Macs lose this group's rules at their next sync (where a group rule replaced a global rule, the global rule applies again). A group with rules is only deleted with "also delete its rules" ticked, which deletes them for good. Macs assigned the group keep the assignment, which does nothing unless a group of the same name is created again.</p>
+</details>
+{{end}}
 <h2>Rules</h2>
 {{if .Edit.On}}{{template "addrule" (addRuleForm "Add a rule for this group" "group" .Group.Name .Edit)}}{{end}}
 {{if .Rules}}

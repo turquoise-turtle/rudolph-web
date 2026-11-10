@@ -23,6 +23,11 @@ const (
 	ActionRuleRemove          = "rule.remove"
 	ActionTemporaryMode       = "config.temporary-mode"
 	ActionEndTemporaryMode    = "config.end-temporary-mode"
+	ActionGroupCreate         = "group.create"
+	ActionGroupUpdate         = "group.update"
+	ActionGroupDelete         = "group.delete"
+	ActionGroupAdd            = "group.add"
+	ActionGroupRemove         = "group.remove"
 	auditActorPrefix          = "web:"
 	maxActorUsernameBytes     = 256
 	maxActorSubjectBytes      = 128
@@ -31,6 +36,12 @@ const (
 	auditTargetGroupPrefix    = "group:"
 	auditTargetUngroupedGroup = "ungrouped"
 )
+
+// ErrNothingToChange is UpdateGroup's refusal when the group already has the
+// description and reported membership asked for. It wraps
+// ErrInvalidArgument, so a caller that does not tell it apart refuses it like
+// any other invalid change.
+var ErrNothingToChange = Invalid("nothing to change: the group already has this description and reported membership setting")
 
 // Actor is the signed-in person a write is made for, from the Entra session.
 type Actor struct {
@@ -123,7 +134,7 @@ var AddablePolicies = []Policy{
 // ClientModes lists every valid ClientMode.
 var ClientModes = []ClientMode{ClientModeMonitor, ClientModeLockdown, ClientModeStandalone}
 
-// Writer changes rules and temporary client modes the way Rudolph's CLI does,
+// Writer changes rules, temporary client modes and device groups the way Rudolph's CLI does,
 // and records every change in Rudolph's audit trail with the actor. Invalid
 // input is refused with ErrInvalidArgument before anything is written, and
 // nothing is audited unless something was written.
@@ -140,4 +151,25 @@ type Writer interface {
 	// EndTemporaryMode ends a Mac's temporary mode now. Nothing is written or
 	// recorded when it has none.
 	EndTemporaryMode(ctx context.Context, actor Actor, machineID string) error
+	// CreateGroup registers a group, as rudolph group create does, and
+	// returns its name normalised (lower case, trimmed). An empty or reserved
+	// name, one over 128 bytes, an existing group and more than 64 groups are
+	// refused with ErrInvalidArgument.
+	CreateGroup(ctx context.Context, actor Actor, name, description string, acceptReported bool) (string, error)
+	// UpdateGroup changes a group's description and whether Macs that report
+	// it are members, as rudolph group update does. A nil field is left as it
+	// is, and only the fields that differ from the group's are written and
+	// recorded; when none do it is ErrNothingToChange. ErrNotFound when the
+	// group is not registered.
+	UpdateGroup(ctx context.Context, actor Actor, name string, description *string, acceptReported *bool) error
+	// DeleteGroup deletes a group, as rudolph group delete does. A group with
+	// rules is refused unless force, which deletes its rules too. ErrNotFound
+	// when the group is not registered.
+	DeleteGroup(ctx context.Context, actor Actor, name string, force bool) error
+	// AssignGroup assigns a registered group to a Mac, as rudolph group add
+	// does.
+	AssignGroup(ctx context.Context, actor Actor, machineID, group string) error
+	// UnassignGroup removes a group assigned to a Mac, as rudolph group
+	// remove does. Groups the Mac reports are not affected.
+	UnassignGroup(ctx context.Context, actor Actor, machineID, group string) error
 }
