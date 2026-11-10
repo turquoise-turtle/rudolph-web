@@ -694,7 +694,8 @@ func TestHostileDataIsEscaped(t *testing.T) {
 			if n := strings.Count(body, "<script"); n != 1 {
 				t.Errorf("want only the page's own script, got %d <script elements", n)
 			}
-			mustNotContain(t, body, "<script>alert", "<img", "<svg", "<iframe", "<b>SERIAL", `"onmouseover="`, "</table><script")
+			// The layout has its own logo image; injected ones (src=x onerror=…) must never appear.
+			mustNotContain(t, body, "<script>alert", "<img src=x", "<svg", "<iframe", "<b>SERIAL", `"onmouseover="`, "</table><script")
 		})
 	}
 	_, body := a.viewerGet(t, "/machines")
