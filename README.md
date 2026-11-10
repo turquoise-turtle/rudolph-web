@@ -44,6 +44,7 @@ With `enable_editing` set to `false` the view is read-only: no forms, and the wr
   `Limit = page size` and passes an opaque cursor through the URL. There are no scans,
   and handlers never fetch everything and slice it in memory. The tests enforce
   this through the call-recording fake.
+- **Numbered pager without a count.** Lists show "Prev 1 2 [3] 4 Next". With cursors there is no total, so the pager numbers the pages reached so far and the next one. Each link carries its page's cursor (`cursor`), its number (`page`) and the cursors of up to four earlier pages (`back`, joined with "."); older pages collapse to "…" after page 1, which keeps URLs short. A malformed `page` or `back` is a 400, and a cursor in `back` is verified like any other when its link is followed.
 - **Authenticated cursors.** A cursor carries the position to resume from with a
   fingerprint of the query that produced it, authenticated with HMAC-SHA256
   (`store.CursorCodec`). A cursor cannot be minted by hand, edited to skip ahead or

@@ -40,10 +40,11 @@
 the script adds the viewer's own zone in the browser. Zero shows a dash. */}}
 {{define "time"}}{{if .IsZero}}—{{else}}<time datetime="{{.UTC.Format "2006-01-02T15:04:05Z"}}">{{.UTC.Format "2006-01-02 15:04:05"}} UTC</time>{{end}}{{end}}
 {{define "pager"}}
-<nav class="pager">
-  {{with .First}}<a href="{{.}}">First page</a>{{end}}
-  {{with .Next}}<a rel="next" href="{{.}}">Next page</a>{{end}}
-</nav>
+{{if .Items}}<nav class="pager" aria-label="Pages">
+  {{with .Prev}}<a rel="prev" href="{{.}}">Prev</a>{{end}}
+  {{range .Items}}{{if .Gap}}<span class="gap">…</span>{{else if .Current}}<span aria-current="page">{{.Number}}</span>{{else}}<a href="{{.URL}}">{{.Number}}</a>{{end}}
+  {{end}}{{with .Next}}<a rel="next" href="{{.}}">Next</a>{{end}}
+</nav>{{end}}
 {{end}}
 {{/* One command to copy. There is no copy button: the CSP allows only the
 time script, so a click (or Tab to it) selects the whole command for the usual
