@@ -36,10 +36,11 @@
       if (isNaN(d.getTime())) continue;
       var text = d.getUTCFullYear() + "-" + two(d.getUTCMonth() + 1) + "-" + two(d.getUTCDate()) + " " +
         two(d.getUTCHours()) + ":" + two(d.getUTCMinutes()) + ":" + two(d.getUTCSeconds()) + " UTC";
+      // Viewers read their own time first; UTC stays in brackets to match logs, the CLI and other viewers.
       if (!inUTC) {
         var p = {};
         local.formatToParts(d).forEach(function (part) { p[part.type] = part.value; });
-        text += " (" + p.year + "-" + p.month + "-" + p.day + " " + p.hour + ":" + p.minute + " " + p.timeZoneName + ")";
+        text = p.year + "-" + p.month + "-" + p.day + " " + p.hour + ":" + p.minute + " " + p.timeZoneName + " (" + text + ")";
       }
       times[i].textContent = text;
     }
