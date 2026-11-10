@@ -22,3 +22,6 @@ crash.log
 # .gitignore into each, but a directory made by hand has none.
 /deployments/environments/*
 !/deployments/environments/example/
+
+# macOS Finder metadata
+.DS_Store

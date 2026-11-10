@@ -40,6 +40,10 @@ module "rudolph_web" {
   lambda_timeout_seconds = var.lambda_timeout_seconds
   log_retention_in_days  = var.log_retention_in_days
 
+  # CloudWatch alarms on the function's errors, throttles and duration notify this SNS topic; it can be the one
+  # Rudolph's own alarms notify. Empty creates the alarms without notifications.
+  alarm_sns_topic_arn = var.alarm_sns_topic_arn
+
   # Optional CloudFront front end and custom domain.
   enable_cloudfront         = var.enable_cloudfront
   domain_name               = var.domain_name

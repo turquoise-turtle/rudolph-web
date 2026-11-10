@@ -176,6 +176,12 @@ variable "log_retention_in_days" {
   default     = 30
 }
 
+variable "alarm_sns_topic_arn" {
+  type        = string
+  description = "OPTIONAL: ARN of an SNS topic notified when one of the function's CloudWatch alarms (errors, throttles, duration) changes state, for example the topic Rudolph's own alarms notify. When empty the alarms are still created, and visible in CloudWatch, but notify no one."
+  default     = ""
+}
+
 #
 # Optional CloudFront front end
 #

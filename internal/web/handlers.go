@@ -260,6 +260,9 @@ func (s *server) events(w http.ResponseWriter, r *http.Request) {
 		s.renderError(w, r, http.StatusBadRequest, "Filter value is too long.")
 		return
 	}
+	// Santa reports machine IDs as upper-case UUIDs and team IDs are upper case, and the events table's keys are
+	// exact, so a hand-typed lower-case value would find nothing.
+	machine, teamID = strings.ToUpper(machine), strings.ToUpper(teamID)
 	filter := store.EventFilter{MachineID: machine, TeamID: teamID, Decision: store.Decision(q.Get("decision"))}
 	// The events table has one key per filter, so filters cannot be combined.
 	set := 0

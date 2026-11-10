@@ -127,6 +127,12 @@ variable "lambda_timeout_seconds" {
   default     = 10
 }
 
+variable "alarm_sns_topic_arn" {
+  type        = string
+  description = "SNS topic the function's CloudWatch alarms notify, for example the topic Rudolph's alarms use. Empty creates the alarms without notifications"
+  default     = ""
+}
+
 variable "enable_cloudfront" {
   type        = bool
   description = "Put CloudFront in front of the Function URL; required for a custom domain"

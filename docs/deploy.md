@@ -144,6 +144,24 @@ A budget **only alerts**: it never stops, throttles or caps anything, and rudolp
 
 The account may hold other resources, so the budget counts only costs tagged `Name = rudolph-web`, which every rudolph-web resource carries (the module's own tags and the provider default tag in `_backend.tf`; do not override `Name` in `tags`). AWS ignores a tag in budgets until it is a cost allocation tag: once, in the management (payer) account, open Billing and Cost Management, Cost allocation tags, and activate the user-defined tag `Name`. It only appears there after a tagged resource has existed for a while (up to a day), it only counts costs from activation onwards, and until it is active the budget reports nothing.
 
+### Alarms
+
+The module creates three CloudWatch alarms on the function's `AWS/Lambda` metrics, so that a broken deploy (a bad SSM parameter, a Rudolph pin update, editing writes refused by IAM) is noticed without someone opening the site:
+
+| Alarm | Fires when |
+|---|---|
+| `<prefix>_rudolph_web_errors` | `Errors` is at least 1 in 5 minutes: the function crashed or timed out. Pages answered with 4xx or 5xx are not Lambda errors. |
+| `<prefix>_rudolph_web_throttles` | `Throttles` is at least 1 in 5 minutes: Lambda refused invocations at the concurrency limit. |
+| `<prefix>_rudolph_web_duration` | The slowest invocation in 5 minutes (`Duration`, Maximum) took at least 80% of `lambda_timeout_seconds` (8 seconds at the default 10). |
+
+Periods with no invocations do not fire them. Set `alarm_sns_topic_arn` to an SNS topic to be notified when an alarm fires and again when it recovers; it can be the topic Rudolph's own alarms notify (Rudolph's `alarm_sns_topic_arn`). Empty, the default, creates the alarms with no actions: they are visible in CloudWatch but notify no one, as Rudolph's are without a topic. The deploying role needs `cloudwatch:PutMetricAlarm`, `cloudwatch:DescribeAlarms`, `cloudwatch:DeleteAlarms`, `cloudwatch:ListTagsForResource` and `cloudwatch:TagResource`.
+
+Cost: CloudWatch standard alarms cost about 0.10 US dollars each a month, so about 0.30 US dollars a month for the three; the `AWS/Lambda` metrics themselves are free.
+
+#### Upgrading: alarms
+
+This release adds the three alarms and the `alarm_sns_topic_arn` variable. `make plan`, `make deploy` and `make justdeploy` refuse an existing environment until it has the new setting (see [Upgrading an existing environment](#upgrading-an-existing-environment)): add the `alarm_sns_topic_arn` variable to its `_variables.tf`, the `alarm_sns_topic_arn = var.alarm_sns_topic_arn` argument to its `module "rudolph_web"` block, and `"alarm_sns_topic_arn": ""` to its `config.auto.tfvars.json`, or set that value to Rudolph's alarm SNS topic ARN to be notified. The plan then adds the three alarms and changes nothing else.
+
 ---
 
 ## Create the secrets
@@ -266,10 +284,11 @@ or on a "403 Forbidden" page naming the missing role, with Sign out, if your acc
 | `aws_acm_certificate` (+ validation) | us-east-1, only when a custom domain needs one |
 | `aws_route53_record` | validation record and the A/AAAA aliases |
 | `aws_budgets_budget` | `<prefix>_rudolph_web_monthly`, only with `monthly_budget_usd` above 0 |
+| `aws_cloudwatch_metric_alarm` ×3 | `<prefix>_rudolph_web_errors`, `_throttles` and `_duration` on the function; see [Alarms](#alarms) |
 
 ### The role
 
-Four to seven statements, no AWS managed policies and no wildcard resources:
+Four to eight statements, no AWS managed policies and no wildcard resources. With the defaults there are six: the four below that are always present, plus `WriteRudolphRules` and `AppendRudolphAudit`, because editing is on by default.
 
 | Statement | Actions | Resources |
 |---|---|---|
@@ -355,7 +374,7 @@ To keep the view read-only, set `enable_editing` to `false` and deploy: the two 
 
 ### Upgrading: group management adds `BatchWriteItem`
 
-This release lets admins create, change and delete device groups and assign them to Macs (see [Editing](#editing)). Deleting a group together with its rules needs `dynamodb:BatchWriteItem`, which the `WriteRudolphRules` statement now grants, still limited to the same partitions. Run `make plan` and `make apply` with the new module: the plan shows `dynamodb:BatchWriteItem` being added to that statement and nothing else in the role. Until you apply, everything else works, but deleting a group that has rules with **also delete its rules** ticked fails with a 500 and the function logs an `AccessDenied` from DynamoDB. Nothing is deleted, though for a group with more than 25 rules Rudolph cannot tell that, so the audit trail gets a "failed part-way" entry, as the CLI's would. An environment with `enable_editing` set to `false` has no write statement and nothing changes.
+This release lets admins create, change and delete device groups and assign them to Macs (see [Editing](#editing)). Deleting a group together with its rules needs `dynamodb:BatchWriteItem`, which the `WriteRudolphRules` statement now grants, still limited to the same partitions. Run `make plan` and then `make justdeploy` with the new module: the plan shows `dynamodb:BatchWriteItem` being added to that statement and nothing else in the role. Until you apply, everything else works, but deleting a group that has rules with **also delete its rules** ticked fails with a 500 and the function logs an `AccessDenied` from DynamoDB. Nothing is deleted, though for a group with more than 25 rules Rudolph cannot tell that, so the audit trail gets a "failed part-way" entry, as the CLI's would. An environment with `enable_editing` set to `false` has no write statement and nothing changes.
 
 ### Upgrading: editing is now on by default
 

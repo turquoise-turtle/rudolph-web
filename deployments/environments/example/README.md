@@ -72,6 +72,7 @@ committed and ends up in the state.
 | `lambda_memory_size` | `256` | Function memory in MB. |
 | `lambda_timeout_seconds` | `10` | Function timeout in seconds. |
 | `log_retention_in_days` | `30` | Retention of the function's log group. |
+| `alarm_sns_topic_arn` | `""` | SNS topic notified when one of the function's CloudWatch alarms (errors, throttles, duration) fires or recovers. It can be the topic Rudolph's own alarms notify (Rudolph's `alarm_sns_topic_arn`). Empty creates the alarms without notifications. See [docs/deploy.md](../../../docs/deploy.md#alarms). |
 | `enable_cloudfront` | `false` | Put CloudFront in front of the Function URL. Needed for a custom domain. |
 | `domain_name` | `""` | The custom domain, for example `rudolph-web.example.com`. |
 | `acm_certificate_arn` | `""` | An existing us-east-1 certificate for it. Empty requests one. |
