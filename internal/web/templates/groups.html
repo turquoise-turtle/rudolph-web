@@ -1,5 +1,20 @@
 {{define "content"}}
 <p class="hint">A Mac's groups are those assigned to it in Rudolph and, for groups that accept it, those its primary user's directory groups report.</p>
+{{if .Edit.On}}
+<details class="edit"><summary>Create a group</summary>
+<form class="edit-form" method="post" action="/admin/groups">
+  <label>Name <span class="hint">(stored in lower case, at most 128 bytes)</span>
+    <input name="name" required maxlength="128" size="24" autocomplete="off" spellcheck="false">
+  </label>
+  <label>Description <span class="hint">(optional, for people)</span>
+    <input name="description" maxlength="1024" size="30">
+  </label>
+  <label class="check"><input type="checkbox" name="accept_reported" value="on" checked> Macs that report it are members</label>
+  <button type="submit">Create group</button>
+</form>
+<p class="hint">Untick "Macs that report it are members" for a group whose rules grant privilege: a Mac's local administrator can change what it reports, so only Macs assigned the group in Rudolph will be members. At most {{.MaxGroups}} groups can be registered.</p>
+</details>
+{{end}}
 <div class="scroll">
 <table>
 <thead><tr><th>Group</th><th>Description</th><th>Reported membership counts</th></tr></thead>

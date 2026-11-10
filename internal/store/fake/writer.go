@@ -237,3 +237,145 @@ func (s *Store) AddAuditEntry(e store.AuditEntry) {
 func (s *Store) recordAudit(actor, action, target, summary string) {
 	s.audit = append(s.audit, store.AuditEntry{Time: time.Now().UTC(), Actor: actor, Action: action, Target: target, Summary: summary})
 }
+
+// CreateGroup implements store.Writer.
+func (s *Store) CreateGroup(_ context.Context, actor store.Actor, name, description string, acceptReported bool) (string, error) {
+	who, err := actor.AuditName()
+	if err != nil {
+		return "", err
+	}
+	if name, err = rudolphrules.GroupName(name); err != nil {
+		return "", err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.err != nil {
+		return "", s.err
+	}
+	if _, ok := s.groups[name]; ok {
+		return "", rudolphrules.GroupExists(name)
+	}
+	registered := len(s.groups)
+	if _, ok := s.groups[store.UngroupedGroup]; ok {
+		registered--
+	}
+	if registered >= rudolphrules.MaxGroups {
+		return "", rudolphrules.TooManyGroups()
+	}
+	s.groups[name] = store.Group{Name: name, Description: description, AcceptReported: acceptReported}
+	s.recordAudit(who, store.ActionGroupCreate, groupAuditTarget(name), rudolphrules.CreateGroupSummary(name, description, acceptReported))
+	return name, nil
+}
+
+// UpdateGroup implements store.Writer.
+func (s *Store) UpdateGroup(_ context.Context, actor store.Actor, name string, description *string, acceptReported *bool) error {
+	who, err := actor.AuditName()
+	if err != nil {
+		return err
+	}
+	if name, err = rudolphrules.ExistingGroupName(name, "changed"); err != nil {
+		return err
+	}
+	if description == nil && acceptReported == nil {
+		return store.ErrNothingToChange
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.err != nil {
+		return s.err
+	}
+	g, ok := s.groups[name]
+	if !ok {
+		return store.ErrNotFound
+	}
+	description, acceptReported = rudolphrules.GroupChanges(g, description, acceptReported)
+	if description == nil && acceptReported == nil {
+		return store.ErrNothingToChange
+	}
+	if description != nil {
+		g.Description = *description
+	}
+	if acceptReported != nil {
+		g.AcceptReported = *acceptReported
+	}
+	s.groups[name] = g
+	s.recordAudit(who, store.ActionGroupUpdate, groupAuditTarget(name), rudolphrules.UpdateGroupSummary(name, description, acceptReported))
+	return nil
+}
+
+// DeleteGroup implements store.Writer. Like Rudolph, it leaves assigned
+// membership on the Macs.
+func (s *Store) DeleteGroup(_ context.Context, actor store.Actor, name string, force bool) error {
+	who, err := actor.AuditName()
+	if err != nil {
+		return err
+	}
+	if name, err = rudolphrules.ExistingGroupName(name, "deleted"); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.err != nil {
+		return s.err
+	}
+	if _, ok := s.groups[name]; !ok {
+		return store.ErrNotFound
+	}
+	if n := len(s.groupRules[name]); n > 0 && !force {
+		return rudolphrules.GroupHasRules(name, n)
+	}
+	delete(s.groupRules, name)
+	delete(s.groups, name)
+	s.recordAudit(who, store.ActionGroupDelete, groupAuditTarget(name), rudolphrules.DeleteGroupSummary(name, force))
+	return nil
+}
+
+// AssignGroup implements store.Writer.
+func (s *Store) AssignGroup(_ context.Context, actor store.Actor, machineID, group string) error {
+	return s.changeAssigned(actor, machineID, group, true)
+}
+
+// UnassignGroup implements store.Writer.
+func (s *Store) UnassignGroup(_ context.Context, actor store.Actor, machineID, group string) error {
+	return s.changeAssigned(actor, machineID, group, false)
+}
+
+func (s *Store) changeAssigned(actor store.Actor, machineID, group string, assign bool) error {
+	who, err := actor.AuditName()
+	if err != nil {
+		return err
+	}
+	if err := rudolphrules.MachineID(machineID); err != nil {
+		return err
+	}
+	name, err := rudolphrules.GroupName(group)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.err != nil {
+		return s.err
+	}
+	if machineID, err = s.storedMachineID(machineID); err != nil {
+		return err
+	}
+	if _, ok := s.groups[name]; assign && !ok {
+		return rudolphrules.NotRegistered(name)
+	}
+	g := s.machineGrps[machineID]
+	g.assigned = slices.DeleteFunc(slices.Clone(g.assigned), func(a string) bool { return a == name })
+	action, summary := store.ActionGroupRemove, rudolphrules.UnassignGroupSummary(name)
+	if assign {
+		g.assigned = append(g.assigned, name)
+		slices.Sort(g.assigned)
+		action, summary = store.ActionGroupAdd, rudolphrules.AssignGroupSummary(name)
+	}
+	s.machineGrps[machineID] = g
+	s.recordAudit(who, action, store.MachineAuditTarget(machineID), summary)
+	return nil
+}
+
+func groupAuditTarget(name string) string {
+	return store.RuleTarget{Kind: store.TargetGroup, Group: name}.AuditTarget()
+}

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/turquoise-turtle/rudolph-web/internal/store"
+	"github.com/turquoise-turtle/rudolph-web/internal/store/rudolphrules"
 )
 
 // maxFilterLen bounds free-text filter values.
@@ -120,6 +121,11 @@ func (s *server) machineDetail(w http.ResponseWriter, r *http.Request) {
 	if title == "" {
 		title = machine.MachineID
 	}
+	edit := s.editForms(r)
+	var groupForms machineGroupForms
+	if edit.On {
+		groupForms = s.machineGroupForms(r, machine)
+	}
 	s.render(w, r, http.StatusOK, "machine", "Machine "+title, "machines", struct {
 		Machine    store.MachineDetail
 		GlobalMode store.ClientMode
@@ -127,13 +133,15 @@ func (s *server) machineDetail(w http.ResponseWriter, r *http.Request) {
 		Rules      []store.Rule
 		Pager      pager
 		Edit       editForms
+		Groups     machineGroupForms
 	}{
 		Machine:    machine,
 		GlobalMode: globalMode,
 		Health:     machineHealth(machine, s.now(), globalMode),
 		Rules:      rules.Items,
 		Pager:      links("/machines/"+url.PathEscape(id), url.Values{}, pr.Cursor, rules.NextCursor),
-		Edit:       s.editForms(r),
+		Edit:       edit,
+		Groups:     groupForms,
 	})
 }
 
@@ -206,8 +214,10 @@ func (s *server) groups(w http.ResponseWriter, r *http.Request) {
 	// it is always listed, last.
 	rows = append(rows, groupRow{Group: store.Group{Name: store.UngroupedGroup}})
 	s.render(w, r, http.StatusOK, "groups", "Groups", "groups", struct {
-		Groups []groupRow
-	}{rows})
+		Groups    []groupRow
+		Edit      editForms
+		MaxGroups int
+	}{rows, s.editForms(r), rudolphrules.MaxGroups})
 }
 
 func (s *server) groupDetail(w http.ResponseWriter, r *http.Request) {
