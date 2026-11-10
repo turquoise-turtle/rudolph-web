@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/url"
@@ -252,6 +253,27 @@ func groupURL(name string) string { return "/groups/" + url.PathEscape(name) }
 // ---------------------------------------------------------------------------
 // Events
 
+// storedMachineID returns the spelling a Mac is stored under, trying id as typed, then upper case, then lower case,
+// each an exact point read. It returns id unchanged when no Mac matches, so events of a Mac with no machine row can
+// still be found.
+func (s *server) storedMachineID(ctx context.Context, id string) (string, error) {
+	tried := map[string]bool{}
+	for _, candidate := range []string{id, strings.ToUpper(id), strings.ToLower(id)} {
+		if tried[candidate] {
+			continue
+		}
+		tried[candidate] = true
+		_, err := s.store.GetMachine(ctx, candidate)
+		if err == nil {
+			return candidate, nil
+		}
+		if !errors.Is(err, store.ErrNotFound) {
+			return "", err
+		}
+	}
+	return id, nil
+}
+
 func (s *server) events(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	machine, ok1 := textFilter(q, "machine")
@@ -260,9 +282,19 @@ func (s *server) events(w http.ResponseWriter, r *http.Request) {
 		s.renderError(w, r, http.StatusBadRequest, "Filter value is too long.")
 		return
 	}
-	// Santa reports machine IDs as upper-case UUIDs and team IDs are upper case, and the events table's keys are
-	// exact, so a hand-typed lower-case value would find nothing.
-	machine, teamID = strings.ToUpper(machine), strings.ToUpper(teamID)
+	// The events table's keys are exact, so a value typed in the wrong case would find nothing. Team IDs are always
+	// upper case. Machine IDs are stored as Santa sends them, by default the upper-case hardware UUID but any case when
+	// a profile sets one, so the machine filter takes the spelling the Mac is stored under rather than upper-casing.
+	teamID = strings.ToUpper(teamID)
+	// Later pages need no lookup: their links carry the spelling page 1 found, and the cursor is bound to it.
+	if machine != "" && q.Get("cursor") == "" {
+		stored, err := s.storedMachineID(r.Context(), machine)
+		if err != nil {
+			s.storeError(w, r, err)
+			return
+		}
+		machine = stored
+	}
 	filter := store.EventFilter{MachineID: machine, TeamID: teamID, Decision: store.Decision(q.Get("decision"))}
 	// The events table has one key per filter, so filters cannot be combined.
 	set := 0

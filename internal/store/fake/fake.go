@@ -393,11 +393,9 @@ func (s *Store) ListExecutionEvents(_ context.Context, f store.EventFilter, p st
 	}
 	var keyed []keyedItem[store.ExecutionEvent]
 	for i, e := range s.execEvents {
-		// Machine and team IDs match whatever their case: the web view upper-cases these filters, as Santa reports
-		// them, while test fixtures may hold short lower-case IDs.
-		if (f.MachineID != "" && !strings.EqualFold(e.MachineID, f.MachineID)) ||
+		if (f.MachineID != "" && e.MachineID != f.MachineID) ||
 			(f.Decision != "" && e.Decision != f.Decision) ||
-			(f.TeamID != "" && !strings.EqualFold(e.TeamID, f.TeamID)) {
+			(f.TeamID != "" && e.TeamID != f.TeamID) {
 			continue
 		}
 		k := fmt.Sprintf("%020d|%08d", uint64(math.MaxInt64-e.ExecutionTime.UnixNano()), i)
@@ -456,7 +454,7 @@ func (s *Store) ListFileAccessEvents(_ context.Context, f store.FileAccessEventF
 	}
 	var keyed []keyedItem[store.FileAccessEvent]
 	for i, e := range s.faaEvents {
-		if (f.MachineID != "" && !strings.EqualFold(e.MachineID, f.MachineID)) || (f.Decision != "" && e.Decision != f.Decision) {
+		if (f.MachineID != "" && e.MachineID != f.MachineID) || (f.Decision != "" && e.Decision != f.Decision) {
 			continue
 		}
 		k := fmt.Sprintf("%020d|%08d", uint64(math.MaxInt64-e.AccessTime.UnixNano()), i)
