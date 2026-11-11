@@ -129,6 +129,29 @@ func CheckAdd(actor store.Actor, target store.RuleTarget, r store.NewRule) (Add,
 	}, nil
 }
 
+// ValidIdentifier reports whether Rudolph would take the identifier for a
+// rule of this type, as CheckAdd does, so a page can offer only the rules
+// that would save.
+func ValidIdentifier(t store.RuleType, identifier string) bool {
+	rt, err := RuleType(t)
+	return err == nil && rules.ValidIdentifier(rt, identifier)
+}
+
+// RuleFromSortKey returns the rule type and identifier of a rule sort key,
+// such as the GlobalRule the ranker writes on a top list row; ok is false
+// for anything else.
+func RuleFromSortKey(sortKey string) (t store.RuleType, identifier string, ok bool) {
+	rt, id, ok := rules.RuleTypeIdentifierFromSortKey(sortKey)
+	if !ok {
+		return "", "", false
+	}
+	text, err := rt.MarshalText()
+	if err != nil {
+		return "", "", false
+	}
+	return store.RuleType(text), id, true
+}
+
 func identifierShape(t types.RuleType) string {
 	switch t {
 	case types.RuleTypeBinary, types.RuleTypeCertificate:

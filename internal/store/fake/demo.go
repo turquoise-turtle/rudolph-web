@@ -54,10 +54,16 @@ func NewDemo(now time.Time) *Store {
 			if j%3 == 0 {
 				d = store.DecisionAllowBinary
 			}
+			// The demo's global Team ID rule covers EQHXZ8M8AV, so the other
+			// team's tools stay uncovered in the top unknown lists.
+			devTeam := "EQHXZ8M8AV"
+			if (i+j)%9 >= 6 {
+				devTeam = "Q4W7E9R2T5"
+			}
 			s.AddExecutionEvent(store.ExecutionEvent{
 				MachineID: id, ExecutionTime: now.Add(-time.Duration(i*j) * 7 * time.Minute), Decision: d,
 				FileSHA256: fmt.Sprintf("%064x", 1000+(i+j)%9), FileName: name, FilePath: "/Users/Shared/" + name,
-				ExecutingUser: fmt.Sprintf("user%03d", i), TeamID: "EQHXZ8M8AV", SigningID: "EQHXZ8M8AV:com.example." + name,
+				ExecutingUser: fmt.Sprintf("user%03d", i), TeamID: devTeam, SigningID: devTeam + ":com.example." + name,
 			})
 		}
 	}
@@ -73,19 +79,35 @@ func NewDemo(now time.Time) *Store {
 	return s
 }
 
+// demoTopKindMatches says which decisions count towards each list, as the
+// ranker's day counters do.
+var demoTopKindMatches = map[store.TopKind]func(store.Decision) bool{
+	store.TopKindBlocked:        store.Decision.IsBlock,
+	store.TopKindAllowed:        func(d store.Decision) bool { return !d.IsBlock() },
+	store.TopKindUnknown:        func(d store.Decision) bool { return d == store.DecisionBlockUnknown || d == store.DecisionAllowUnknown },
+	store.TopKindUnknownBlocked: func(d store.Decision) bool { return d == store.DecisionBlockUnknown },
+	store.TopKindUnknownAllowed: func(d store.Decision) bool { return d == store.DecisionAllowUnknown },
+}
+
+// demoTopMachineRows is how many rows the ranker counts Macs for, and
+// reorders and marks with GlobalRule in the unknown lists.
+const demoTopMachineRows = 100
+
 // seedDemoTopLists ranks the demo events the way Rudolph's ranker does: by
 // count, highest first, then by SHA-256, with windows of whole UTC days
-// ending today.
+// ending today. The first rows of the unknown lists then put binaries
+// without a global rule first, then order by Macs.
 func seedDemoTopLists(s *Store, now time.Time) {
 	today := now.UTC().Truncate(24 * time.Hour)
 	generated := now.UTC().Truncate(time.Hour)
 	for _, kind := range store.TopKinds {
+		matches := demoTopKindMatches[kind]
 		for _, days := range store.TopWindowDays {
 			from := today.AddDate(0, 0, 1-days)
 			byHash := map[string]*store.TopBinary{}
 			macs := map[string]map[string]bool{}
 			for _, e := range s.execEvents {
-				if e.ExecutionTime.Before(from) || e.Decision.IsBlock() != (kind == store.TopKindBlocked) {
+				if e.ExecutionTime.Before(from) || !matches(e.Decision) {
 					continue
 				}
 				b := byHash[e.FileSHA256]
@@ -108,7 +130,42 @@ func seedDemoTopLists(s *Store, now time.Time) {
 				}
 				return list[i].FileSHA256 < list[j].FileSHA256
 			})
+			if kind.IsUnknown() {
+				head := list[:min(len(list), demoTopMachineRows)]
+				for i := range head {
+					head[i].GlobalRule = s.demoGlobalRule(head[i])
+				}
+				sort.SliceStable(head, func(i, j int) bool {
+					if (head[i].GlobalRule == "") != (head[j].GlobalRule == "") {
+						return head[i].GlobalRule == ""
+					}
+					return head[i].Machines > head[j].Machines
+				})
+			}
 			s.SetTopList(kind, days, generated, list)
 		}
 	}
+}
+
+// demoGlobalRule returns the sort key of the first global rule covering the
+// binary, checking binary, signing ID and team ID rules in that order as the
+// ranker does.
+func (s *Store) demoGlobalRule(b store.TopBinary) string {
+	for _, c := range []struct {
+		t      store.RuleType
+		prefix string
+		id     string
+	}{
+		{store.RuleTypeBinary, "Binary#", b.FileSHA256},
+		{store.RuleTypeSigningID, "SigningID#", b.SigningID},
+		{store.RuleTypeTeamID, "TeamID#", b.TeamID},
+	} {
+		if c.id == "" {
+			continue
+		}
+		if _, ok := s.globalRules[ruleKey(store.Rule{RuleType: c.t, Identifier: c.id})]; ok {
+			return c.prefix + c.id
+		}
+	}
+	return ""
 }

@@ -1,0 +1,5 @@
+{{define "content"}}
+<p class="hint">Each form adds a global rule for one identifier of the binary, so it applies on every Mac. A signing ID rule keeps working when the app updates and covers only that app; a Team ID rule covers everything that developer signs; a binary rule covers this exact build only and stops matching at the next update. Pick one, check the policy (allowlist by default), and add it. Macs get the rule at their next sync.</p>
+{{range .Forms}}{{template "addrule" .}}{{end}}
+<p><a href="/events/top-unknown">Back to the top unknown binaries</a></p>
+{{end}}

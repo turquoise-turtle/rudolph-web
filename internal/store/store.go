@@ -395,16 +395,28 @@ type FileAccessEventFilter struct {
 }
 
 // TopKind selects one of the ranker's lists: binaries blocked or allowed most
-// often.
+// often, or the unknown ones among them, which no rule decided (Santa's
+// BLOCK_UNKNOWN and ALLOW_UNKNOWN). Unknown is UnknownBlocked and
+// UnknownAllowed together.
 type TopKind string
 
 const (
-	TopKindBlocked TopKind = "BLOCKED"
-	TopKindAllowed TopKind = "ALLOWED"
+	TopKindBlocked        TopKind = "BLOCKED"
+	TopKindAllowed        TopKind = "ALLOWED"
+	TopKindUnknown        TopKind = "UNKNOWN"
+	TopKindUnknownBlocked TopKind = "UNKNOWN_BLOCKED"
+	TopKindUnknownAllowed TopKind = "UNKNOWN_ALLOWED"
 )
 
 // TopKinds lists every valid TopKind.
-var TopKinds = []TopKind{TopKindBlocked, TopKindAllowed}
+var TopKinds = []TopKind{TopKindBlocked, TopKindAllowed, TopKindUnknown, TopKindUnknownBlocked, TopKindUnknownAllowed}
+
+// IsUnknown reports whether the kind is one of the unknown lists, whose first
+// 100 rows the ranker orders for deciding what rule to add and marks with
+// GlobalRule.
+func (k TopKind) IsUnknown() bool {
+	return k == TopKindUnknown || k == TopKindUnknownBlocked || k == TopKindUnknownAllowed
+}
 
 // TopWindowDays are the windows, in days ending today (UTC), that Rudolph's
 // ranker computes. No other window exists in the table.
@@ -432,7 +444,9 @@ func (f TopFilter) Validate() error {
 // the list's kind in the window, by execution date. Machines is the number of
 // Macs that uploaded any stored execution of the binary in the window, by
 // upload date; the ranker counts it for the first 100 rows only, so
-// MachinesKnown is false further down.
+// MachinesKnown is false further down. GlobalRule, on the first 100 rows of
+// the unknown lists only, is the sort key of a global rule added since the
+// executions (Binary#<SHA-256>, SigningID#<signing ID> or TeamID#<team ID>).
 type TopBinary struct {
 	FileSHA256    string
 	FileName      string
@@ -441,10 +455,12 @@ type TopBinary struct {
 	Count         int
 	Machines      int
 	MachinesKnown bool
+	GlobalRule    string
 }
 
 // TopList is one page of a ranker snapshot, in the snapshot's order (Count,
-// highest first). GeneratedAt is when the ranker built the snapshot; zero
+// highest first; in the unknown lists the first 100 rows put binaries without
+// a global rule first, then order by Machines). GeneratedAt is when the ranker built the snapshot; zero
 // when the list has not been computed yet, in which case Items is empty.
 // Every page of one listing comes from the same snapshot.
 type TopList struct {

@@ -1,18 +1,28 @@
 {{define "content"}}
 <div class="filters">
+  {{if .Unknown}}<form class="inline" method="get" action="{{.List.Path}}">
+    <input type="hidden" name="days" value="{{.Days}}">
+    <label>Decision
+      <select name="decision">{{range .Decisions}}<option value="{{.Value}}"{{if eq .Value $.Decision}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+    </label>
+    <button type="submit">Show</button>
+  </form>{{end}}
   <nav class="choices" aria-label="Time window">
     <span class="muted">Last</span>
     {{range .Windows}}<a href="{{.URL}}"{{if .Current}} aria-current="page"{{end}}>{{.Days}} {{if eq .Days 1}}day{{else}}days{{end}}</a>{{end}}
   </nav>
-  <a href="{{.OtherURL}}">{{.OtherTitle}}</a>
+  {{range .Others}}<a href="{{.URL}}">{{.Title}}</a> {{end}}
 </div>
+{{if .Unknown}}
+<p class="hint">Unknown binaries are the ones no rule decided: Santa blocked them because the Mac was in lockdown mode, or allowed them because it was in monitor mode. They are the binaries to decide on next. Machines counts the Macs that uploaded any stored execution of the binary in the window. The first 100 binaries are ordered for deciding: those without a global rule first, then the most Macs, then the most executions; the rest by executions only. These lists start on the day the upgraded Rudolph that computes them was deployed, so a window reaching back before then shows only part of it.</p>
+{{end}}
 {{if .Computed}}
-<p class="hint">Binaries with the most {{.List.Noun}} in the last {{.Days}} {{if eq .Days 1}}day (today so far, UTC){{else}}days (UTC){{end}}, highest first. Generated {{template "time" .GeneratedAt}} by Rudolph's ranker. Machines counts the Macs that uploaded any stored execution of the binary in the window; it is counted for the first 100 binaries only.</p>
+<p class="hint">Binaries with the most {{.List.Noun}} in the last {{.Days}} {{if eq .Days 1}}day (today so far, UTC){{else}}days (UTC){{end}}{{if not .Unknown}}, highest first{{end}}. Generated {{template "time" .GeneratedAt}} by Rudolph's ranker. Machines counts the Macs that uploaded any stored execution of the binary in the window; it is counted for the first 100 binaries only.</p>
 {{if .Stale}}<p class="error" role="status"><strong>Warning:</strong> this list was generated {{template "time" .GeneratedAt}}, more than {{.StaleHours}} {{if eq .StaleHours "1"}}hour{{else}}hours{{end}} ago. Check that Rudolph's ranker is still running on its schedule.</p>{{end}}
 {{if .Binaries}}
 <div class="scroll">
 <table>
-<thead><tr><th scope="col">File</th><th scope="col">SHA-256</th><th scope="col">Team ID</th><th scope="col">Signing ID</th><th scope="col">Executions</th><th scope="col">Machines</th><th scope="col">Rudolph CLI</th></tr></thead>
+<thead><tr><th scope="col">File</th><th scope="col">SHA-256</th><th scope="col">Team ID</th><th scope="col">Signing ID</th><th scope="col">Executions</th><th scope="col">Machines</th>{{if .Unknown}}<th scope="col">Rule</th>{{end}}<th scope="col">Rudolph CLI</th></tr></thead>
 <tbody>
 {{range .Binaries}}
 <tr data-row>
@@ -22,6 +32,7 @@
   <td>{{orDash .SigningID}}</td>
   <td class="num">{{.Count}}</td>
   <td class="num">{{if .MachinesKnown}}{{.Machines}}{{else}}—{{end}}</td>
+  {{if $.Unknown}}<td>{{if .GlobalRule}}This binary now has a global rule: {{if .RuleType}}{{.RuleType}} <code>{{.RuleIdentifier}}</code>{{else}}<code>{{.GlobalRule}}</code>{{end}}{{else if .AddRuleURL}}<a href="{{.AddRuleURL}}">Add a rule</a>{{else}}—{{end}}</td>{{end}}
   <td>{{with topCmdGroups .SigningID .TeamID .FileSHA256}}<details class="cmds"><summary>Commands</summary>{{range $i, $g := .}}
     <details class="cmd-type"{{if eq $i 0}} open{{end}}><summary>{{$g.Label}} <code>{{$g.Identifier}}</code></summary><ul>
       {{range $g.Commands}}{{template "cmd" .}}{{end}}
@@ -37,6 +48,6 @@
 {{end}}
 {{template "pager" .Pager}}
 {{else}}
-<p>This list has not been computed yet. Rudolph's ranker builds it on its schedule; check again after its next run.</p>
+<p>This list has not been computed yet. Rudolph's ranker builds it on its schedule; check again after its next run.{{if .Unknown}} The unknown lists first appear after the ranker's first run once the upgraded Rudolph is deployed.{{end}}</p>
 {{end}}
 {{end}}
