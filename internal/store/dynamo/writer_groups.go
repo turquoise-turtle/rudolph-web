@@ -179,3 +179,54 @@ func (s *Store) changeAssigned(ctx context.Context, actor store.Actor, machineID
 func groupAuditTarget(name string) string {
 	return store.RuleTarget{Kind: store.TargetGroup, Group: name}.AuditTarget()
 }
+
+// SetGroupClientMode implements store.Writer, as rudolph config update
+// --group (or --ungrouped) does after --confirm-group-lockdown.
+func (s *Store) SetGroupClientMode(ctx context.Context, actor store.Actor, group string, mode store.ClientMode) error {
+	who, err := actor.AuditName()
+	if err != nil {
+		return err
+	}
+	name, err := rudolphrules.GroupConfigName(group)
+	if err != nil {
+		return err
+	}
+	want, err := rudolphrules.GroupClientMode(mode)
+	if err != nil {
+		return err
+	}
+	c, err := s.rudolph(ctx)
+	if err != nil {
+		return err
+	}
+	registry, err := groups.GetRegistry(c, true)
+	if err != nil {
+		return fmt.Errorf("dynamo: %w", err)
+	}
+	entry, registered := registry.Groups[name]
+	if !registered && name != groups.Ungrouped {
+		return store.ErrNotFound
+	}
+	// A stored mode Rudolph cannot decode is still worth removing or replacing.
+	current, has := entry.ClientModeOf()
+	if (want == nil && !entry.ClientMode.Stored()) || (want != nil && has && current == *want) {
+		return store.ErrNothingToChange
+	}
+	if !registered {
+		err := groups.CreateGroup(s.writeClock, c, groups.Ungrouped, "Macs in no group", false)
+		switch {
+		case errors.Is(err, groups.ErrRegistryChanged):
+			return store.Invalid("the groups changed while this one was being changed; try again")
+		case err != nil && !errors.Is(err, groups.ErrGroupExists):
+			return fmt.Errorf("dynamo: registering the group of Macs in no group: %w", err)
+		}
+	}
+	err = groups.SetClientMode(c, name, want)
+	if errors.Is(err, groups.ErrGroupNotFound) {
+		return store.ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("dynamo: changing a group's client mode: %w", err)
+	}
+	return s.record(ctx, c, who, store.ActionConfigUpdate, groupAuditTarget(name), rudolphrules.GroupClientModeSummary(want))
+}

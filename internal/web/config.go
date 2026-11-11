@@ -185,16 +185,28 @@ func globalConfigRows(global store.Config) []configRow {
 	return rows
 }
 
+// groupMode is the client mode a Mac gets from its groups and the group it
+// comes from; Mode is "" when none of its groups has one, or they could not
+// be read.
+type groupMode struct {
+	Mode  store.ClientMode
+	Group string
+}
+
 // machineConfigRows lists what a Mac gets for each setting, as `rudolph config
 // get --machine` works it out: a setting its own config stores with a
-// readable value is the Mac's, and every other one follows the global config.
-// Without globalRead, what Rudolph sends for an unset setting is not known.
-func machineConfigRows(own, global store.Config, globalRead bool) []configRow {
+// readable value is the Mac's, a client mode it does not set comes from its
+// groups when one of them has one, and every other setting follows the global
+// config. Without globalRead, what Rudolph sends for an unset setting is not
+// known.
+func machineConfigRows(own, global store.Config, globalRead bool, fromGroup groupMode) []configRow {
 	rows := make([]configRow, len(configSettings))
 	for i, cs := range configSettings {
 		row := configRow{Setting: cs.attribute, Label: cs.label, Code: cs.code}
 		if v, set := cs.value(own); set {
 			row.Set, row.Value, row.Origin = true, v, originMachine
+		} else if cs.kind == kindMode && fromGroup.Mode != "" {
+			row.Set, row.Value, row.Origin = true, string(fromGroup.Mode), "group "+fromGroup.Group
 		} else if v, set := cs.value(global); set {
 			row.Set, row.Value, row.Origin = true, v, originGlobal
 			if !global.Exists {
@@ -531,15 +543,25 @@ func (s *server) updateMachineConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if slices.Contains(change.Inherit, "ClientMode") {
-		// Inheriting the client mode moves the Mac to the global one, which
-		// blocks unknown binaries as surely as choosing it would.
-		mode, err := s.store.GlobalClientMode(store.Consistent(r.Context()))
+		// Inheriting the client mode moves the Mac to its groups' or the
+		// global one, which blocks unknown binaries as surely as choosing it
+		// would.
+		registered, err := s.store.ListGroups(store.Consistent(r.Context()))
 		if err != nil {
 			s.storeError(w, r, err)
 			return
 		}
+		mode, group := rudolphrules.MachineGroupClientMode(registered, m.AssignedGroups, m.ReportedGroups)
+		source := "the mode of its group " + group
+		if mode == "" {
+			source = "the global mode"
+			if mode, err = s.store.GlobalClientMode(store.Consistent(r.Context())); err != nil {
+				s.storeError(w, r, err)
+				return
+			}
+		}
 		if mode != "" && mode != store.ClientModeMonitor && !modeConfirmed(r.PostForm, string(mode)) {
-			s.renderError(w, r, http.StatusBadRequest, fmt.Sprintf("Not saved: inheriting the client mode moves this Mac to the global mode, %s, which blocks unknown binaries on this Mac. To confirm, type %s in the confirmation box.", mode, mode))
+			s.renderError(w, r, http.StatusBadRequest, fmt.Sprintf("Not saved: inheriting the client mode moves this Mac to %s, %s, which blocks unknown binaries on this Mac. To confirm, type %s in the confirmation box.", source, mode, mode))
 			return
 		}
 	}
@@ -584,13 +606,13 @@ func (s *server) cleanSync(w http.ResponseWriter, r *http.Request) {
 
 // machineConfigForm is the edit form of a Mac's own configuration; empty
 // when the page shows no edit forms.
-func machineConfigForm(edit editForms, m store.MachineDetail, global store.Config, globalRead bool) configForm {
+func machineConfigForm(edit editForms, m store.MachineDetail, global store.Config, globalRead bool, fromGroup groupMode) configForm {
 	if !edit.On {
 		return configForm{}
 	}
 	return configForm{
 		Action:  "/admin/machines/" + url.PathEscape(m.MachineID) + "/config",
 		Machine: true,
-		Rows:    withFields(machineConfigRows(m.Config, global, globalRead), m.Config, true),
+		Rows:    withFields(machineConfigRows(m.Config, global, globalRead, fromGroup), m.Config, true),
 	}
 }

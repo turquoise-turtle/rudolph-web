@@ -41,9 +41,10 @@ type syncHealth struct {
 	Problems bool
 }
 
-// machineHealth works out the sync health of m. globalMode is the global
-// config's client mode, or "" when it could not be read.
-func machineHealth(m store.MachineDetail, now time.Time, globalMode store.ClientMode) syncHealth {
+// machineHealth works out the sync health of m. inherited is the client mode
+// the Mac gets when it sets none: its groups', or the global config's (Group
+// ""); Mode is "" when that could not be read.
+func machineHealth(m store.MachineDetail, now time.Time, inherited groupMode) syncHealth {
 	var h syncHealth
 	warn := func(it healthItem) {
 		h.Problems = true
@@ -86,8 +87,10 @@ func machineHealth(m store.MachineDetail, now time.Time, globalMode store.Client
 			switch {
 			case m.ConfiguredClientMode != "":
 				returnsTo = string(m.ConfiguredClientMode)
-			case globalMode != "":
-				returnsTo = string(globalMode) + " (the global config's mode)"
+			case inherited.Mode != "" && inherited.Group != "":
+				returnsTo = fmt.Sprintf("%s (group %s's mode)", inherited.Mode, inherited.Group)
+			case inherited.Mode != "":
+				returnsTo = string(inherited.Mode) + " (the global config's mode)"
 			}
 			note(healthItem{Text: fmt.Sprintf("Temporary %s until ", mode), At: until, After: fmt.Sprintf(", then the Mac returns to %s at its next sync.", returnsTo)})
 		}

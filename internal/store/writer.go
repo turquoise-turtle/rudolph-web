@@ -19,10 +19,10 @@ func Invalid(format string, args ...any) error {
 
 type consistentKey struct{}
 
-// Consistent asks the readers that can (GetMachine, GlobalClientMode and
-// GlobalConfig on DynamoDB) for a strongly consistent read. A form checks the
-// stored config against what it showed before it saves, and an eventually
-// consistent read could miss a change made a moment ago. It needs no IAM of
+// Consistent asks the readers that can (GetMachine, GlobalClientMode,
+// GlobalConfig and ListGroups on DynamoDB) for a strongly consistent read. A
+// form checks the stored config against what it showed before it saves, and
+// an eventually consistent read could miss a change made a moment ago. It needs no IAM of
 // its own: GetItem and Query take ConsistentRead as a parameter.
 func Consistent(ctx context.Context) context.Context {
 	return context.WithValue(ctx, consistentKey{}, true)
@@ -252,6 +252,14 @@ type Writer interface {
 	// the caller must have had it confirmed, as the store confirms it to
 	// Rudolph. An empty change is ErrNothingToChange.
 	UpdateGlobalConfig(ctx context.Context, actor Actor, change ConfigChange) error
+	// SetGroupClientMode sets a group's client mode, or removes it when mode
+	// is "", as rudolph config update --group (or --ungrouped) does, recording
+	// config.update. UngroupedGroup is registered first when it is not, as
+	// Rudolph does. The caller must have had LOCKDOWN and STANDALONE
+	// confirmed, as the CLI's --confirm-group-lockdown does. ErrNotFound when
+	// the group is not registered; ErrNothingToChange when it already has the
+	// mode (or none, when removing).
+	SetGroupClientMode(ctx context.Context, actor Actor, group string, mode ClientMode) error
 }
 
 // ConfigChange is a change to a global or machine configuration. A nil

@@ -9,7 +9,7 @@
   <dt>macOS</dt><dd>{{orDash .OSVersion}} ({{orDash .OSBuild}})</dd>
   <dt>Santa</dt><dd>{{orDash .SantaVersion}}{{if legacySanta .SantaVersion}} <span class="legacy">legacy client</span> <span class="muted">(below 2026.8: supported only on macOS 13, with limits)</span>{{end}}</dd>
   <dt>Client mode (reported)</dt><dd>{{.ClientMode}}</dd>
-  <dt>Client mode (configured)</dt><dd>{{if $.Health.TemporaryActive}}{{.TemporaryClientMode}} (temporary until {{template "time" .TemporaryClientModeUntil}}; then {{with .ConfiguredClientMode}}{{.}}{{else}}{{with $.GlobalMode}}{{.}} (global config){{else}}the global config's mode{{end}}{{end}}){{else}}{{with .ConfiguredClientMode}}{{.}}{{else}}{{with $.GlobalMode}}{{.}} (from the global config){{else}}not set: global config applies{{end}}{{end}}{{end}}</dd>
+  <dt>Client mode (configured)</dt><dd>{{if $.Health.TemporaryActive}}{{.TemporaryClientMode}} (temporary until {{template "time" .TemporaryClientModeUntil}}; then {{with .ConfiguredClientMode}}{{.}}{{else}}{{with $.Inherited.Mode}}{{.}} ({{with $.Inherited.Group}}group {{.}}{{else}}global config{{end}}){{else}}the global config's mode{{end}}{{end}}){{else}}{{with .ConfiguredClientMode}}{{.}}{{else}}{{with $.Inherited.Mode}}{{.}} (from {{with $.Inherited.Group}}group {{.}}{{else}}the global config{{end}}){{else}}not set: global config applies{{end}}{{end}}{{end}}</dd>
   <dt>Primary user</dt><dd>{{orDash .PrimaryUser}}</dd>
   <dt>SIP status</dt><dd>{{orDash .SIPStatus}}</dd>
   <dt>Last seen</dt><dd>{{template "time" .LastSeen}}</dd>
@@ -30,7 +30,7 @@
   <dt>Transitive rules</dt><dd>{{.RuleCounts.Transitive}}</dd>
 </dl>
 </section>
-<p class="hint">Client mode (reported) is what the Mac reported at its last preflight, before applying that sync. Client mode (configured) is what Rudolph sends: the machine config's mode, or the global config's when the machine config sets none, with a temporary mode taking their place while it lasts.</p>
+<p class="hint">Client mode (reported) is what the Mac reported at its last preflight, before applying that sync. Client mode (configured) is what Rudolph sends: the machine config's mode; when the machine config sets none, the strictest mode of the Mac's groups (LOCKDOWN, then STANDALONE, then MONITOR), or the global config's when none of its groups has one; a temporary mode takes their place while it lasts.</p>
 <p><a href="{{eventsForMachineURL .MachineID}}">Events for this machine</a></p>
 {{with cliConfigGet .MachineID}}
 <details class="cmds"><summary>Rudolph CLI commands for this Mac</summary><ul>
@@ -59,7 +59,7 @@
 {{end}}
 {{end}}
 <h2>Configuration</h2>
-<p class="hint">What Rudolph sends this Mac at its sync: its own setting, marked (this Mac), or the global one, marked (global config). URLs show only their scheme, host and path. A setting that is not set is not sent, and Santa keeps its own value.{{if $.GlobalUnread}} The global configuration could not be read, so only this Mac's own settings are shown.{{end}}</p>
+<p class="hint">What Rudolph sends this Mac at its sync: its own setting, marked (this Mac), a client mode from one of its groups, marked with the group, or the global one, marked (global config). URLs show only their scheme, host and path. A setting that is not set is not sent, and Santa keeps its own value.{{if $.GlobalUnread}} The global configuration could not be read, so only this Mac's own settings are shown.{{end}}{{if $.GroupsUnread}} The groups could not be read, so a client mode from the Mac's groups is not shown.{{end}}</p>
 {{template "configtable" $.Config}}
 {{if $.Edit.On}}{{template "configform" $.ConfigForm}}
 <h3>Clean sync</h3>

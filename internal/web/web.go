@@ -230,6 +230,7 @@ func New(opts Options) (http.Handler, error) {
 		mux.Handle("POST /admin/groups", admin(s.createGroup))
 		mux.Handle("POST /admin/groups/update", admin(s.updateGroup))
 		mux.Handle("POST /admin/groups/delete", admin(s.deleteGroup))
+		mux.Handle("POST /admin/groups/config", admin(s.updateGroupConfig))
 		mux.Handle("POST /admin/machines/{id}/groups", admin(s.assignGroup))
 		mux.Handle("POST /admin/machines/{id}/groups/remove", admin(s.unassignGroup))
 		mux.Handle("POST /admin/config", admin(s.updateGlobalConfig))

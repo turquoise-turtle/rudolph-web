@@ -179,7 +179,8 @@ func (s *Store) GlobalConfig(ctx context.Context) (store.Config, error) {
 // ListGroups implements store.GroupReader with one GetItem of the registry.
 func (s *Store) ListGroups(ctx context.Context) ([]store.Group, error) {
 	out, err := s.client.GetItem(ctx, &dynamodb.GetItemInput{
-		TableName: aws.String(s.table),
+		TableName:      aws.String(s.table),
+		ConsistentRead: consistentRead(ctx),
 		Key: map[string]types.AttributeValue{
 			"PK": &types.AttributeValueMemberS{Value: "GroupRegistry"},
 			"SK": &types.AttributeValueMemberS{Value: "Current"},
