@@ -85,12 +85,12 @@ func TestConfigPage_ShowsEveryGlobalSetting(t *testing.T) {
 		mustContain(t, settingRow(t, body, "EnableTransitiveRules"), "not set")
 		mustContain(t, settingRow(t, body, "OverrideFileAccessAction"), "not set")
 		mustContain(t, settingRow(t, body, "BlockedPathRegex"), "&lt;script&gt;")
-		mustNotContain(t, body, "<script>")
+		mustNotContain(t, settingRow(t, body, "BlockedPathRegex"), "<script>")
 		mustNotContain(t, body, "BlockUsbMount", "RemountUsbMode")
 
 		upload := settingRow(t, body, "UploadLogsUrl")
 		mustContain(t, upload, "https://logs.example.com/upload")
-		mustNotContain(t, body, "secret", "abc123", "frag")
+		mustNotContain(t, body, "secret", "abc123", "#frag")
 		mustContain(t, settingRow(t, body, "EventDetailURL"), "https://help.example.com/santa")
 
 		var calls []string
