@@ -97,15 +97,17 @@ data "aws_iam_policy_document" "web" {
   }
 
   # Admin writes (enable_editing), made with Rudolph's own packages, so exactly the writes of the CLI's rule add and
-  # remove, its temporary client mode and its group create, update, delete, add and remove: PutItem, UpdateItem and
-  # DeleteItem, also inside TransactWriteItems, which has no IAM action of its own, and BatchWriteItem, which has one
-  # and which groups.DeleteGroup uses to delete a group's rules (group delete --force). Only on the store table itself
-  # (never an index or the events table), and only to the partitions those writes touch:
+  # remove, its config update and temporary client mode, and its group create, update, delete, add and remove:
+  # PutItem, UpdateItem and DeleteItem, also inside TransactWriteItems, which has no IAM action of its own, and
+  # BatchWriteItem, which has one and which groups.DeleteGroup uses to delete a group's rules (group delete --force).
+  # Only on the store table itself (never an index or the events table), and only to the partitions those writes touch:
   #   GlobalRules, RulesFeed       global rules and the feed rows that tell Macs about each change (globalrules)
   #   MachineRules#*               machine rules (machinerules)
-  #   Machine#*                    the machine config row holding a temporary client mode (machineconfiguration) and
-  #                                a Mac's Groups row of assigned groups (groups); LeadingKeys cannot limit the sort
-  #                                key, so this also covers a Mac's other rows
+  #   Machine#*                    a Mac's config row, with its settings, clean sync request and temporary client mode
+  #                                (machineconfiguration), and its Groups row of assigned groups (groups); LeadingKeys
+  #                                cannot limit the sort key, so this also covers a Mac's other rows
+  #   GlobalConfig                 the global config row (machineconfiguration), exactly, not as a prefix: the settings
+  #                                every Mac without its own gets, including the fleet's client mode
   #   GroupRules#*, GroupRegistry  group rules and the rules version bumped with each, the registry of groups, and the
   #                                deletion of a deleted group's rules (groups)
   #   EventCollection              the index of rules whose allowed executions are collected (eventcollection)
@@ -117,7 +119,7 @@ data "aws_iam_policy_document" "web" {
       {
         sid          = "WriteRudolphRules"
         actions      = ["dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:DeleteItem", "dynamodb:BatchWriteItem"]
-        leading_keys = ["GlobalRules", "RulesFeed", "MachineRules#*", "Machine#*", "GroupRules#*", "GroupRegistry", "EventCollection"]
+        leading_keys = ["GlobalRules", "RulesFeed", "MachineRules#*", "Machine#*", "GlobalConfig", "GroupRules#*", "GroupRegistry", "EventCollection"]
       },
       {
         sid          = "AppendRudolphAudit"

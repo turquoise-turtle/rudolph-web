@@ -23,6 +23,7 @@ const (
 	ActionRuleRemove          = "rule.remove"
 	ActionTemporaryMode       = "config.temporary-mode"
 	ActionEndTemporaryMode    = "config.end-temporary-mode"
+	ActionConfigUpdate        = "config.update"
 	ActionGroupCreate         = "group.create"
 	ActionGroupUpdate         = "group.update"
 	ActionGroupDelete         = "group.delete"
@@ -37,11 +38,12 @@ const (
 	auditTargetUngroupedGroup = "ungrouped"
 )
 
-// ErrNothingToChange is UpdateGroup's refusal when the group already has the
-// description and reported membership asked for. It wraps
-// ErrInvalidArgument, so a caller that does not tell it apart refuses it like
-// any other invalid change.
-var ErrNothingToChange = Invalid("nothing to change: the group already has this description and reported membership setting")
+// ErrNothingToChange is the refusal of a change that asks for nothing:
+// UpdateGroup's when the group already has the description and reported
+// membership asked for, and UpdateMachineConfig's and UpdateGlobalConfig's for
+// an empty ConfigChange. It wraps ErrInvalidArgument, so a caller that does
+// not tell it apart refuses it like any other invalid change.
+var ErrNothingToChange = Invalid("nothing to change")
 
 // Actor is the signed-in person a write is made for, from the Entra session.
 type Actor struct {
@@ -172,4 +174,61 @@ type Writer interface {
 	// UnassignGroup removes a group assigned to a Mac, as rudolph group
 	// remove does. Groups the Mac reports are not affected.
 	UnassignGroup(ctx context.Context, actor Actor, machineID, group string) error
+	// UpdateMachineConfig changes a Mac's own configuration, as rudolph
+	// config update --machine does: the given settings are written, even when
+	// they equal the stored or global value, and the inherited ones removed,
+	// so the Mac follows the global config for them again. A running
+	// temporary mode is left alone. An empty change is ErrNothingToChange;
+	// ErrNotFound when Rudolph has nothing for the Mac.
+	UpdateMachineConfig(ctx context.Context, actor Actor, machineID string, change ConfigChange) error
+	// UpdateGlobalConfig changes the global configuration, as rudolph config
+	// update --global does. Nothing can be inherited, and clean syncs are per
+	// Mac. A client mode other than MONITOR moves every Mac without its own:
+	// the caller must have had it confirmed, as the store confirms it to
+	// Rudolph. An empty change is ErrNothingToChange.
+	UpdateGlobalConfig(ctx context.Context, actor Actor, change ConfigChange) error
 }
+
+// ConfigChange is a change to a global or machine configuration. A nil
+// setting is left as it is. Settings are named as in Config; Inherit lists
+// settings by Rudolph's attribute names (as InheritableSettings), and only a
+// Mac's configuration inherits. USB settings are left out, as in Config.
+type ConfigChange struct {
+	ClientMode                *ClientMode
+	AllowedPathRegex          *string
+	BlockedPathRegex          *string
+	BatchSize                 *int
+	EnableBundles             *bool
+	EnableTransitiveRules     *bool
+	FullSyncInterval          *int
+	UploadLogsURL             *string
+	EnableAllEventUpload      *bool
+	DisableUnknownEventUpload *bool
+	OverrideFileAccessAction  *string
+	EventDetailURL            *string
+	EventDetailText           *string
+	// CleanSync true requests one clean sync of a Mac; false cancels a
+	// request.
+	CleanSync *bool
+	Inherit   []string
+}
+
+// IsEmpty reports whether the change asks for nothing.
+func (c ConfigChange) IsEmpty() bool {
+	return c.ClientMode == nil && c.AllowedPathRegex == nil && c.BlockedPathRegex == nil && c.BatchSize == nil &&
+		c.EnableBundles == nil && c.EnableTransitiveRules == nil && c.FullSyncInterval == nil && c.UploadLogsURL == nil &&
+		c.EnableAllEventUpload == nil && c.DisableUnknownEventUpload == nil && c.OverrideFileAccessAction == nil &&
+		c.EventDetailURL == nil && c.EventDetailText == nil && c.CleanSync == nil && len(c.Inherit) == 0
+}
+
+// InheritableSettings are the attribute names of the settings a Mac's
+// configuration can inherit from here: Rudolph's, without the USB settings.
+var InheritableSettings = []string{
+	"ClientMode", "AllowedPathRegex", "BlockedPathRegex", "BatchSize", "EnableBundles", "EnableTransitiveRules",
+	"FullSyncInterval", "UploadLogsUrl", "EnableAllEventUpload", "DisableUnknownEventUpload",
+	"OverrideFileAccessAction", "EventDetailURL", "EventDetailText",
+}
+
+// FileAccessActions lists the override file access actions, as Santa names
+// them.
+var FileAccessActions = []string{"NONE", "AUDIT_ONLY", "DISABLE"}
