@@ -60,7 +60,22 @@
 {{end}}
 <h2>Configuration</h2>
 <p class="hint">What Rudolph sends this Mac at its sync: its own setting, marked (this Mac), or the global one, marked (global config). URLs show only their scheme, host and path. A setting that is not set is not sent, and Santa keeps its own value.{{if $.GlobalUnread}} The global configuration could not be read, so only this Mac's own settings are shown.{{end}}</p>
-{{template "configtable" $.Config}}
+{{if $.Edit.On}}{{template "configform" $.ConfigForm}}
+<h3>Clean sync</h3>
+{{if .CleanSyncRequested}}
+<p>A clean sync has been requested; the Mac has not completed it yet.</p>
+<form class="edit-form" method="post" action="/admin{{machineURL .MachineID}}/clean-sync">
+  <input type="hidden" name="action" value="cancel">
+  <button type="submit" class="danger">Cancel the clean sync request</button>
+</form>
+{{else}}
+<form class="edit-form" method="post" action="/admin{{machineURL .MachineID}}/clean-sync">
+  <input type="hidden" name="action" value="request">
+  <button type="submit">Request a clean sync</button>
+</form>
+{{end}}
+<p class="hint">At its next sync the Mac drops all its rules and downloads them again, once; nothing else changes.</p>
+{{else}}{{template "configtable" $.Config}}{{end}}
 <h2>Groups</h2>
 <dl>
   <dt>Assigned in Rudolph</dt><dd>{{range $i, $g := .AssignedGroups}}{{if $i}}, {{end}}<a href="{{groupURL $g}}">{{$g}}</a>{{else}}none{{end}}</dd>

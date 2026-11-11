@@ -227,6 +227,9 @@ func New(opts Options) (http.Handler, error) {
 		mux.Handle("POST /admin/groups/delete", admin(s.deleteGroup))
 		mux.Handle("POST /admin/machines/{id}/groups", admin(s.assignGroup))
 		mux.Handle("POST /admin/machines/{id}/groups/remove", admin(s.unassignGroup))
+		mux.Handle("POST /admin/config", admin(s.updateGlobalConfig))
+		mux.Handle("POST /admin/machines/{id}/config", admin(s.updateMachineConfig))
+		mux.Handle("POST /admin/machines/{id}/clean-sync", admin(s.cleanSync))
 	}
 
 	csp := strings.Join([]string{

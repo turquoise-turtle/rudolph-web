@@ -111,6 +111,7 @@ func (s *server) machineDetail(w http.ResponseWriter, r *http.Request) {
 		Machine      store.MachineDetail
 		GlobalMode   store.ClientMode
 		Config       []configRow
+		ConfigForm   configForm
 		GlobalUnread bool
 		Health       syncHealth
 		Rules        []store.Rule
@@ -120,7 +121,8 @@ func (s *server) machineDetail(w http.ResponseWriter, r *http.Request) {
 	}{
 		Machine:      machine,
 		GlobalMode:   globalMode,
-		Config:       machineConfigRows(machine.Config, global),
+		Config:       machineConfigRows(machine.Config, global, !globalUnread),
+		ConfigForm:   machineConfigForm(edit, machine, global, !globalUnread),
 		GlobalUnread: globalUnread,
 		Health:       machineHealth(machine, s.now(), globalMode),
 		Rules:        rules.Items,

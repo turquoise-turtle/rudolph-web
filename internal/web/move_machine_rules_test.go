@@ -157,7 +157,9 @@ func TestMoveRules_Refusals(t *testing.T) {
 		"conflict": {func(s *fake.Store) {
 			s.AddMachineRule(newMac, store.Rule{RuleType: store.RuleTypeBinary, Policy: store.PolicyBlocklist, Identifier: moveB, State: store.RuleStateInForce})
 		}, "C02NEW", moveB},
-		"nothing to move": {func(s *fake.Store) { s.AddMachine(store.Machine{MachineID: "DDDDDDDD-4444-4444-8444-DDDDDDDDDDDD", SerialNum: "C02EMPTY"}) }, "", ""},
+		"nothing to move": {func(s *fake.Store) {
+			s.AddMachine(store.Machine{MachineID: "DDDDDDDD-4444-4444-8444-DDDDDDDDDDDD", SerialNum: "C02EMPTY"})
+		}, "", ""},
 	} {
 		s := moveStore()
 		if c.setup != nil {
