@@ -25,7 +25,7 @@ func TestAddRule_CELExpression(t *testing.T) {
 	if err := st.AddRule(ctx, writerActor, store.RuleTarget{Kind: store.TargetGroup, Group: "cel"}, rule); err != nil {
 		t.Fatal(err)
 	}
-	global, err := st.ListGlobalRules(ctx, store.RuleFilter{}, store.PageRequest{Limit: 10})
+	global, err := st.ListGlobalRules(ctx, store.RuleFilter{}, store.PageRequest{Limit: 100})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,9 +33,16 @@ func TestAddRule_CELExpression(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The web contract fixture already holds other rules, so look the new one up by its identifier.
 	for name, rules := range map[string][]store.Rule{"global": global.Items, "group": group.Items} {
-		if len(rules) != 1 || rules[0].Policy != store.PolicyCEL || rules[0].CELExpr != expr {
-			t.Errorf("%s rules %+v; want the CEL rule with its expression", name, rules)
+		found := false
+		for _, r := range rules {
+			if r.Identifier == rule.Identifier {
+				found = r.Policy == store.PolicyCEL && r.CELExpr == expr
+			}
+		}
+		if !found {
+			t.Errorf("%s rules %+v; want %s as a CEL rule with its expression", name, rules, rule.Identifier)
 		}
 	}
 
@@ -49,7 +56,7 @@ func TestAddRule_CELExpression(t *testing.T) {
 			t.Errorf("%+v: %v, want ErrInvalidArgument", bad, err)
 		}
 	}
-	if after, _ := st.ListGlobalRules(ctx, store.RuleFilter{}, store.PageRequest{Limit: 10}); len(after.Items) != 1 {
+	if after, _ := st.ListGlobalRules(ctx, store.RuleFilter{}, store.PageRequest{Limit: 100}); len(after.Items) != len(global.Items) {
 		t.Errorf("refused rules were written: %+v", after.Items)
 	}
 }
