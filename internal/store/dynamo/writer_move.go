@@ -22,8 +22,10 @@ import (
 // maxMachineRuleRows bounds how many rule rows of one Mac a move reads.
 // Expired and removed rows stay until DynamoDB's TTL or a sync clears them,
 // so a Mac can hold more rows than rules in force; past this many the move is
-// left to the CLI rather than reading without end.
-const maxMachineRuleRows = 4 * store.MaxMovedRules
+// left to the CLI rather than reading without end. It is not tied to
+// store.MaxMovedRules: reading is a few paged Queries, while the limit on
+// moved rules comes from the writes, one rule at a time.
+const maxMachineRuleRows = 2000
 
 // MoveMachineRules implements store.Writer. The rules are written with
 // Rudolph's machinerules.AddNewMachineRule, as the CLI's rule add writes
@@ -84,8 +86,11 @@ func (s *Store) MoveMachineRules(ctx context.Context, actor store.Actor, from, t
 	var copies []machinerules.MachineRuleRow
 	for _, row := range moving {
 		if h, ok := held[eventcollection.MatchKey(row.SortKey)]; ok {
-			if h.Policy != row.Policy {
-				return 0, rudolphrules.MoveConflict(enumText(row.RuleType), row.Identifier, enumText(h.Policy), enumText(row.Policy))
+			// Skipped only when it is the same rule, so removing the old Mac's
+			// copy loses nothing, and a retry after a failure part-way skips
+			// exactly the rules it copied.
+			if diff := rudolphrules.MoveDifference(movedFields(h), movedFields(row)); diff != "" {
+				return 0, rudolphrules.MoveDiffers(enumText(row.RuleType), row.Identifier, diff)
 			}
 			continue
 		}
@@ -99,29 +104,62 @@ func (s *Store) MoveMachineRules(ctx context.Context, actor store.Actor, from, t
 		return 0, fmt.Errorf("dynamo: %w", err)
 	}
 
-	for i, row := range copies {
-		if err := s.copyMachineRule(ctx, c, who, index, from, to, row); err != nil {
-			return i, err
+	copied, removed := 0, 0
+	partial := func(err error) (int, error) {
+		if copied == 0 && removed == 0 {
+			return 0, err
+		}
+		return copied, &store.PartialMoveError{Copied: copied, Removed: removed, Err: err}
+	}
+	for _, row := range copies {
+		written, err := s.copyMachineRule(ctx, c, who, index, from, to, row)
+		if written {
+			copied++
+		}
+		if err != nil {
+			return partial(err)
 		}
 	}
 	if remove {
 		for _, row := range moving {
-			if err := s.removeMovedRule(ctx, c, who, index, from, to, row); err != nil {
-				return len(copies), err
+			done, err := s.removeMovedRule(ctx, c, who, index, from, to, row)
+			if done {
+				removed++
+			}
+			if err != nil {
+				return partial(err)
 			}
 		}
 	}
-	return len(copies), nil
+	return copied, nil
 }
 
-// copyMachineRule writes one rule of the old Mac on the new one and records it.
-func (s *Store) copyMachineRule(ctx context.Context, c RudolphClient, who string, index eventcollection.Index, from, to string, row machinerules.MachineRuleRow) error {
+// movedFields is what a move compares of a stored machine rule.
+func movedFields(row machinerules.MachineRuleRow) rudolphrules.MovedRuleFields {
+	var expires time.Time
+	if row.ExpiresAfter != 0 {
+		expires = time.Unix(row.ExpiresAfter, 0).UTC()
+	}
+	return rudolphrules.MovedRuleFields{
+		Policy:                 enumText(row.Policy),
+		ExpiresAt:              expires,
+		CustomMessage:          row.CustomMessage,
+		CustomURL:              row.CustomURL,
+		CELExpr:                row.CELExpr,
+		NotificationAppName:    row.NotificationAppName,
+		EventDetailButtonLabel: row.EventDetailButtonLabel,
+	}
+}
+
+// copyMachineRule writes one rule of the old Mac on the new one and records
+// it. written says the rule is on the new Mac, even when a later step failed.
+func (s *Store) copyMachineRule(ctx context.Context, c RudolphClient, who string, index eventcollection.Index, from, to string, row machinerules.MachineRuleRow) (written bool, err error) {
 	rule := row.SantaRule
 	var expires time.Time
 	if row.ExpiresAfter != 0 {
 		expires = time.Unix(row.ExpiresAfter, 0).UTC()
 	}
-	err := machinerules.AddNewMachineRule(c, to, rule.Identifier, rule.RuleType, rule.Policy, row.Description, expires,
+	err = machinerules.AddNewMachineRule(c, to, rule.Identifier, rule.RuleType, rule.Policy, row.Description, expires,
 		rules.WithCustomMessage(rule.CustomMessage),
 		rules.WithCustomURL(rule.CustomURL),
 		rules.WithNotificationAppName(rule.NotificationAppName),
@@ -129,7 +167,7 @@ func (s *Store) copyMachineRule(ctx context.Context, c RudolphClient, who string
 		rules.WithEventDetailButtonLabel(rule.EventDetailButtonLabel),
 	)
 	if err != nil {
-		return fmt.Errorf("dynamo: copying a machine rule: %w", err)
+		return false, fmt.Errorf("dynamo: copying a machine rule: %w", err)
 	}
 	sortKey := rules.RuleSortKeyFromTypeIdentifier(rule.Identifier, rule.RuleType)
 	switch {
@@ -139,31 +177,32 @@ func (s *Store) copyMachineRule(ctx context.Context, c RudolphClient, who string
 			// The rule is on the new Mac, so its add is recorded with the failure, as the CLI records a partial change.
 			summary := rudolphrules.Summary(rule.RuleType, rule.Identifier, rule.Policy, rudolphrules.CopiedExtra(expires, from)+fmt.Sprintf(" (failed part-way: its allowed executions are not collected: %s)", shortError(err)))
 			if rerr := s.record(ctx, c, who, store.ActionRuleAdd, store.MachineAuditTarget(to), summary); rerr != nil {
-				return errors.Join(err, rerr)
+				return true, errors.Join(err, rerr)
 			}
-			return fmt.Errorf("dynamo: collecting the copied rule's allowed executions: %w", err)
+			return true, fmt.Errorf("dynamo: collecting the copied rule's allowed executions: %w", err)
 		}
 	case index.Machines[to][sortKey]:
 		// The new row replaced an expired or removed one that was collected.
 		s.forgetCollected(c, to, sortKey)
 	}
-	return s.record(ctx, c, who, store.ActionRuleAdd, store.MachineAuditTarget(to), rudolphrules.Summary(rule.RuleType, rule.Identifier, rule.Policy, rudolphrules.CopiedExtra(expires, from)))
+	return true, s.record(ctx, c, who, store.ActionRuleAdd, store.MachineAuditTarget(to), rudolphrules.Summary(rule.RuleType, rule.Identifier, rule.Policy, rudolphrules.CopiedExtra(expires, from)))
 }
 
 // removeMovedRule removes one moved rule from the old Mac and records it.
-func (s *Store) removeMovedRule(ctx context.Context, c RudolphClient, who string, index eventcollection.Index, from, to string, row machinerules.MachineRuleRow) error {
-	err := machinerules.RemoveMachineRule(c, c, from, row.SortKey)
+// removed says the rule is off the old Mac, even when recording it failed.
+func (s *Store) removeMovedRule(ctx context.Context, c RudolphClient, who string, index eventcollection.Index, from, to string, row machinerules.MachineRuleRow) (removed bool, err error) {
+	err = machinerules.RemoveMachineRule(c, c, from, row.SortKey)
 	if errors.Is(err, machinerules.ErrRuleNotFound) {
 		// Removed since it was read: nothing left to do for it.
-		return nil
+		return false, nil
 	}
 	if err != nil {
-		return fmt.Errorf("dynamo: removing a moved rule from the old Mac: %w", err)
+		return false, fmt.Errorf("dynamo: removing a moved rule from the old Mac: %w", err)
 	}
 	if index.Machines[from][row.SortKey] {
 		s.forgetIfRemoved(c, from, row.SortKey)
 	}
-	return s.record(ctx, c, who, store.ActionRuleRemove, store.MachineAuditTarget(from), rudolphrules.Summary(row.RuleType, row.Identifier, row.Policy, rudolphrules.MovedExtra(to)))
+	return true, s.record(ctx, c, who, store.ActionRuleRemove, store.MachineAuditTarget(from), rudolphrules.Summary(row.RuleType, row.Identifier, row.Policy, rudolphrules.MovedExtra(to)))
 }
 
 // machineRuleRows reads every rule row of a Mac, strongly consistent so that

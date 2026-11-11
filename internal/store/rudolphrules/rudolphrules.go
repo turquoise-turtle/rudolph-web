@@ -331,10 +331,48 @@ func NothingToMove(machineID string) error {
 	return store.Invalid("machine %s has no rules in force to move", machineID)
 }
 
-// MoveConflict refuses a move that would replace a rule the new Mac has with
-// another policy: which one should win is the person's call.
-func MoveConflict(ruleType, identifier, has, moving string) error {
-	return store.Invalid("the new Mac already has the %s rule %s with the policy %s, not %s; change or remove one of them first", ruleType, identifier, has, moving)
+// MovedRuleFields are the parts of a machine rule a move compares with the
+// copy the new Mac already has. Description and collection are left out: they
+// are for people and for Rudolph, and Santa enforces the same rule either way.
+type MovedRuleFields struct {
+	Policy                 string
+	ExpiresAt              time.Time
+	CustomMessage          string
+	CustomURL              string
+	CELExpr                string
+	NotificationAppName    string
+	EventDetailButtonLabel string
+}
+
+// MoveDifference names what differs between the new Mac's copy of a rule and
+// the old Mac's, or "" when they are the same rule.
+func MoveDifference(has, moving MovedRuleFields) string {
+	var diffs []string
+	if has.Policy != moving.Policy {
+		diffs = append(diffs, fmt.Sprintf("policy (%s here, %s on the new Mac)", moving.Policy, has.Policy))
+	}
+	if !has.ExpiresAt.Equal(moving.ExpiresAt) {
+		diffs = append(diffs, fmt.Sprintf("expiry (%s here, %s on the new Mac)", ExpiryText(moving.ExpiresAt), ExpiryText(has.ExpiresAt)))
+	}
+	for _, f := range []struct{ name, has, moving string }{
+		{"custom message", has.CustomMessage, moving.CustomMessage},
+		{"custom URL", has.CustomURL, moving.CustomURL},
+		{"CEL expression", has.CELExpr, moving.CELExpr},
+		{"notification app name", has.NotificationAppName, moving.NotificationAppName},
+		{"event detail button label", has.EventDetailButtonLabel, moving.EventDetailButtonLabel},
+	} {
+		if f.has != f.moving {
+			diffs = append(diffs, f.name)
+		}
+	}
+	return strings.Join(diffs, ", ")
+}
+
+// MoveDiffers refuses a move that would leave the new Mac with its own,
+// different copy of a rule while the old Mac's copy is removed: which one
+// should win is the person's call.
+func MoveDiffers(ruleType, identifier, difference string) error {
+	return store.Invalid("the new Mac already has the %s rule %s with a different %s; change or remove one of them first", ruleType, identifier, difference)
 }
 
 // CheckCopy checks a stored machine rule as Rudolph checks one it writes, so

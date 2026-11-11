@@ -121,7 +121,8 @@ func (s *Store) GetMachine(ctx context.Context, machineID string) (store.Machine
 			":first": &types.AttributeValueMemberS{Value: skConfig},
 			":last":  &types.AttributeValueMemberS{Value: skSyncState},
 		},
-		Limit: aws.Int32(machineDetailLimit),
+		Limit:          aws.Int32(machineDetailLimit),
+		ConsistentRead: consistentRead(ctx),
 	})
 	if err != nil {
 		return store.MachineDetail{}, fmt.Errorf("dynamo: reading machine: %w", err)
@@ -150,6 +151,7 @@ func (s *Store) GlobalClientMode(ctx context.Context) (store.ClientMode, error) 
 			"PK": &types.AttributeValueMemberS{Value: pkGlobalConfig},
 			"SK": &types.AttributeValueMemberS{Value: skConfig},
 		},
+		ConsistentRead: consistentRead(ctx),
 	})
 	if err != nil {
 		return "", fmt.Errorf("dynamo: reading the global config: %w", err)
@@ -166,6 +168,7 @@ func (s *Store) GlobalConfig(ctx context.Context) (store.Config, error) {
 			"PK": &types.AttributeValueMemberS{Value: pkGlobalConfig},
 			"SK": &types.AttributeValueMemberS{Value: skConfig},
 		},
+		ConsistentRead: consistentRead(ctx),
 	})
 	if err != nil {
 		return store.Config{}, fmt.Errorf("dynamo: reading the global config: %w", err)
@@ -526,4 +529,14 @@ func (s *Store) decodeCursor(q ruleQuery, cursor string) (map[string]types.Attri
 		key[attrGlobalRulePolicy] = &types.AttributeValueMemberN{Value: q.policyNum}
 	}
 	return key, nil
+}
+
+// consistentRead is the ConsistentRead of a read the context asks to be
+// strongly consistent (store.Consistent), and left out otherwise, so every
+// other read stays the cheaper eventually consistent one.
+func consistentRead(ctx context.Context) *bool {
+	if store.IsConsistent(ctx) {
+		return aws.Bool(true)
+	}
+	return nil
 }
