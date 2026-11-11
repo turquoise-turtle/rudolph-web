@@ -449,8 +449,8 @@ func (s *Store) MoveMachineRules(_ context.Context, actor store.Actor, from, to 
 	var copies []store.Rule
 	for _, r := range moving {
 		if h, ok := s.machineRules[to][ruleKey(r)]; ok && h.State == store.RuleStateInForce {
-			if h.Policy != r.Policy {
-				return 0, rudolphrules.MoveConflict(string(r.RuleType), r.Identifier, string(h.Policy), string(r.Policy))
+			if diff := rudolphrules.MoveDifference(movedFields(h), movedFields(r)); diff != "" {
+				return 0, rudolphrules.MoveDiffers(string(r.RuleType), r.Identifier, diff)
 			}
 			continue
 		}
@@ -475,4 +475,16 @@ func (s *Store) MoveMachineRules(_ context.Context, actor store.Actor, from, to 
 		}
 	}
 	return len(copies), nil
+}
+
+// movedFields is what a move compares of a rule. The fake's rules have no
+// notification app name or event detail button label, so those always match.
+func movedFields(r store.Rule) rudolphrules.MovedRuleFields {
+	return rudolphrules.MovedRuleFields{
+		Policy:        string(r.Policy),
+		ExpiresAt:     r.ExpiresAt,
+		CustomMessage: r.CustomMessage,
+		CustomURL:     r.CustomURL,
+		CELExpr:       r.CELExpr,
+	}
 }

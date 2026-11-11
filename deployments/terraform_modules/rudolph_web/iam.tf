@@ -1,6 +1,7 @@
 #
 # IAM: read two parameters, decrypt them, read Rudolph's two tables, write its own logs. With enable_editing, also
-# write Rudolph's rules, temporary client modes and audit trail. Nothing else.
+# write Rudolph's rules, device groups, a Mac's and the global configuration (including clean sync requests and
+# temporary client modes) and the audit trail. Nothing else.
 #
 
 resource "aws_iam_role" "web" {

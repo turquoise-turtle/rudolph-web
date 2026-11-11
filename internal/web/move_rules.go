@@ -60,10 +60,28 @@ func (s *server) moveMachineRules(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := s.writer.MoveMachineRules(r.Context(), actorOf(r), from, newID, ticked(r, "remove")); err != nil {
+		var partial *store.PartialMoveError
+		if errors.As(err, &partial) {
+			s.log.Error("move failed part-way", "path", r.URL.Path, "copied", partial.Copied, "removed", partial.Removed, "err", err)
+			msg := fmt.Sprintf("The move failed part-way: %s copied to the new Mac and %s removed from the old Mac before it stopped. Moving again is safe and finishes the job: rules the new Mac already has exactly as the old Mac has them are not copied again.",
+				countRules(partial.Copied), countRules(partial.Removed))
+			if errors.Is(err, store.ErrNotAudited) {
+				msg += " At least one change could not be recorded in the audit trail; tell whoever looks after Rudolph."
+			}
+			s.renderError(w, r, http.StatusInternalServerError, msg)
+			return
+		}
 		s.writeError(w, r, err, "Machine not found: Rudolph has nothing for one of the two Macs.")
 		return
 	}
 	http.Redirect(w, r, "/machines/"+url.PathEscape(newID), http.StatusSeeOther)
+}
+
+func countRules(n int) string {
+	if n == 1 {
+		return "1 rule was"
+	}
+	return fmt.Sprintf("%d rules were", n)
 }
 
 // findMachine finds the Mac a person typed: by machine ID, as stored in any

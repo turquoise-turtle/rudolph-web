@@ -137,7 +137,7 @@
   <label class="check"><input type="checkbox" name="remove" value="on" checked> also remove them from this Mac</label>
   <button type="submit">Move rules</button>
 </form>
-<p class="hint">For when its user changes computers. Every rule in force here is copied to the new Mac as it is (policy, messages, expiry and collection of allowed executions); expired rules and rules being removed stay behind. A rule the new Mac already has with the same policy is left as it is, and one it has with another policy stops the move before anything changes. Untick the box to copy without removing. Both Macs get the change at their next sync.</p>
+<p class="hint">For when its user changes computers. Every rule in force here is copied to the new Mac as it is (policy, messages, expiry and collection of allowed executions); expired rules and rules being removed stay behind. A rule the new Mac already has exactly as here is left as it is, and one it has with a different policy, expiry, message, URL or CEL expression stops the move before anything changes. Untick the box to copy without removing. Both Macs get the change at their next sync.</p>
 </details>{{end}}
 {{if .Rules}}
 <div class="scroll">

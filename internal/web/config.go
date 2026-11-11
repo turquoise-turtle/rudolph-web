@@ -288,12 +288,32 @@ func pathRegexError(label, v string) string {
 	return ""
 }
 
+// origPrefix starts the hidden input that carries what a setting's input
+// showed when the form was drawn.
+const origPrefix = "orig_"
+
+// formRefusal is why a configuration form is not saved: the status to answer
+// with and what to tell the person.
+type formRefusal struct {
+	status int
+	msg    string
+}
+
+func badForm(msg string) *formRefusal {
+	return &formRefusal{http.StatusBadRequest, msg}
+}
+
 // parseConfigForm reads a configuration form into a change of own, the
-// config the form edits. Only what changed is kept: a setting not posted,
-// posted with its stored value (for a URL, the redacted value the form
-// shows), or posted blank while not stored is left alone. The message is
-// what to tell the person when the form is refused.
-func parseConfigForm(f url.Values, own store.Config, machine bool) (store.ConfigChange, string) {
+// config the form edits. Only what changed is kept. A setting posted with its
+// orig_<attribute> changed only when the posted value differs from it, so a
+// form drawn before someone else changed that setting does not put it back;
+// one changed on the form whose stored value is no longer what the form
+// showed is refused with 409, since saving it would overwrite a change the
+// person has not seen. Without orig_<attribute> a setting changed when it
+// differs from the stored value. Either way a setting posted with its stored
+// value (for a URL, the redacted value the form shows) or posted blank while
+// not stored is left alone.
+func parseConfigForm(f url.Values, own store.Config, machine bool) (store.ConfigChange, *formRefusal) {
 	var change store.ConfigChange
 	known := map[string]configSetting{}
 	for _, cs := range configSettings {
@@ -301,16 +321,18 @@ func parseConfigForm(f url.Values, own store.Config, machine bool) (store.Config
 	}
 	for name, values := range f {
 		_, isSetting := known[name]
+		_, isOrig := known[strings.TrimPrefix(name, origPrefix)]
+		isOrig = isOrig && strings.HasPrefix(name, origPrefix)
 		switch {
-		case isSetting, name == "confirm_mode":
+		case isSetting, isOrig, name == "confirm_mode":
 		case name == "inherit" && machine:
 		case name == "inherit":
-			return change, "the global configuration has nothing to inherit from."
+			return change, badForm("the global configuration has nothing to inherit from.")
 		default:
-			return change, fmt.Sprintf("%q is not a setting the web view changes.", name)
+			return change, badForm(fmt.Sprintf("%q is not a setting the web view changes.", name))
 		}
 		if name != "inherit" && len(values) != 1 {
-			return change, fmt.Sprintf("%s was sent more than once.", name)
+			return change, badForm(fmt.Sprintf("%s was sent more than once.", name))
 		}
 	}
 
@@ -320,49 +342,55 @@ func parseConfigForm(f url.Values, own store.Config, machine bool) (store.Config
 		if !posted {
 			continue
 		}
-		v := values[0]
-		if cs.kind == kindInt || cs.kind == kindURL {
-			v = strings.TrimSpace(v)
+		v := cs.posted(values[0])
+		orig, hasOrig := f[origPrefix+cs.attribute]
+		if hasOrig && v == cs.posted(orig[0]) {
+			continue
 		}
 		current, stored := cs.value(own)
 		if v == current && stored || v == "" && !stored {
 			continue
 		}
+		// The input shows the stored value, or blank when nothing is stored,
+		// so that is what orig_ holds when nobody has changed it since.
+		if hasOrig && cs.posted(orig[0]) != current {
+			return change, &formRefusal{http.StatusConflict, fmt.Sprintf("%s was changed since this page was loaded; reload it to see the configuration as it is now, and make your change again.", cs.label)}
+		}
 		switch cs.kind {
 		case kindText:
 			if cs.code {
 				if msg := pathRegexError(cs.label, v); msg != "" {
-					return change, msg
+					return change, badForm(msg)
 				}
 			}
 		case kindURL:
 		case kindInt:
 			if v == "" {
-				return change, blankMessage(cs.label, machine)
+				return change, badForm(blankMessage(cs.label, machine))
 			}
 			if _, err := strconv.Atoi(v); err != nil {
-				return change, fmt.Sprintf("%s must be a whole number.", cs.label)
+				return change, badForm(fmt.Sprintf("%s must be a whole number.", cs.label))
 			}
 		case kindBool:
 			if v != "yes" && v != "no" {
 				if v == "" {
-					return change, blankMessage(cs.label, machine)
+					return change, badForm(blankMessage(cs.label, machine))
 				}
-				return change, fmt.Sprintf("%s must be yes or no.", cs.label)
+				return change, badForm(fmt.Sprintf("%s must be yes or no.", cs.label))
 			}
 		case kindMode:
 			if !slices.Contains(store.ClientModes, store.ClientMode(v)) {
 				if v == "" {
-					return change, blankMessage(cs.label, machine)
+					return change, badForm(blankMessage(cs.label, machine))
 				}
-				return change, "unknown client mode; choose MONITOR, LOCKDOWN or STANDALONE."
+				return change, badForm("unknown client mode; choose MONITOR, LOCKDOWN or STANDALONE.")
 			}
 		case kindFileAccess:
 			if !slices.Contains(store.FileAccessActions, v) {
 				if v == "" {
-					return change, blankMessage(cs.label, machine)
+					return change, badForm(blankMessage(cs.label, machine))
 				}
-				return change, "unknown file access action; choose NONE, AUDIT_ONLY or DISABLE."
+				return change, badForm("unknown file access action; choose NONE, AUDIT_ONLY or DISABLE.")
 			}
 		}
 		cs.set(&change, v)
@@ -372,10 +400,10 @@ func parseConfigForm(f url.Values, own store.Config, machine bool) (store.Config
 	for _, name := range f["inherit"] {
 		cs, ok := known[name]
 		if !ok {
-			return change, fmt.Sprintf("%q is not a setting this Mac can inherit from here.", name)
+			return change, badForm(fmt.Sprintf("%q is not a setting this Mac can inherit from here.", name))
 		}
 		if changed[name] {
-			return change, fmt.Sprintf("%s is both changed and inherited; do one or the other.", cs.label)
+			return change, badForm(fmt.Sprintf("%s is both changed and inherited; do one or the other.", cs.label))
 		}
 		// Inheriting what the Mac already inherits changes nothing.
 		if _, stored := cs.value(own); stored && !slices.Contains(change.Inherit, name) {
@@ -385,15 +413,29 @@ func parseConfigForm(f url.Values, own store.Config, machine bool) (store.Config
 
 	if change.ClientMode != nil && *change.ClientMode != store.ClientModeMonitor {
 		mode := string(*change.ClientMode)
-		if !strings.EqualFold(strings.TrimSpace(f.Get("confirm_mode")), mode) {
+		if !modeConfirmed(f, mode) {
 			what := "this Mac"
 			if !machine {
 				what = "every Mac without its own client mode"
 			}
-			return change, fmt.Sprintf("%s blocks unknown binaries on %s. To confirm, type %s in the confirmation box.", mode, what, mode)
+			return change, badForm(fmt.Sprintf("%s blocks unknown binaries on %s. To confirm, type %s in the confirmation box.", mode, what, mode))
 		}
 	}
-	return change, ""
+	return change, nil
+}
+
+// modeConfirmed says the confirmation box holds the mode's name.
+func modeConfirmed(f url.Values, mode string) bool {
+	return strings.EqualFold(strings.TrimSpace(f.Get("confirm_mode")), mode)
+}
+
+// posted is a posted value as parseConfigForm compares it: numbers and URLs
+// without the spaces around them.
+func (cs configSetting) posted(v string) string {
+	if cs.kind == kindInt || cs.kind == kindURL {
+		return strings.TrimSpace(v)
+	}
+	return v
 }
 
 func blankMessage(label string, machine bool) string {
@@ -425,14 +467,14 @@ func (s *server) updateGlobalConfig(w http.ResponseWriter, r *http.Request) {
 	if !s.parseForm(w, r) {
 		return
 	}
-	global, err := s.store.GlobalConfig(r.Context())
+	global, err := s.store.GlobalConfig(store.Consistent(r.Context()))
 	if err != nil {
 		s.storeError(w, r, err)
 		return
 	}
-	change, msg := parseConfigForm(r.PostForm, global, false)
-	if msg != "" {
-		s.renderError(w, r, http.StatusBadRequest, "Not saved: "+msg)
+	change, refusal := parseConfigForm(r.PostForm, global, false)
+	if refusal != nil {
+		s.renderError(w, r, refusal.status, "Not saved: "+refusal.msg)
 		return
 	}
 	if !change.IsEmpty() {
@@ -447,7 +489,9 @@ func (s *server) updateGlobalConfig(w http.ResponseWriter, r *http.Request) {
 // editedMachine reads the Mac a configuration form posts for, answering 404
 // for one the web view does not show.
 func (s *server) editedMachine(w http.ResponseWriter, r *http.Request) (store.MachineDetail, bool) {
-	m, err := s.store.GetMachine(r.Context(), r.PathValue("id"))
+	// Consistent, so that the check against what the form showed sees a
+	// change made a moment ago.
+	m, err := s.store.GetMachine(store.Consistent(r.Context()), r.PathValue("id"))
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			s.renderError(w, r, http.StatusNotFound, "Machine not found.")
@@ -467,10 +511,23 @@ func (s *server) updateMachineConfig(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	change, msg := parseConfigForm(r.PostForm, m.Config, true)
-	if msg != "" {
-		s.renderError(w, r, http.StatusBadRequest, "Not saved: "+msg)
+	change, refusal := parseConfigForm(r.PostForm, m.Config, true)
+	if refusal != nil {
+		s.renderError(w, r, refusal.status, "Not saved: "+refusal.msg)
 		return
+	}
+	if slices.Contains(change.Inherit, "ClientMode") {
+		// Inheriting the client mode moves the Mac to the global one, which
+		// blocks unknown binaries as surely as choosing it would.
+		mode, err := s.store.GlobalClientMode(store.Consistent(r.Context()))
+		if err != nil {
+			s.storeError(w, r, err)
+			return
+		}
+		if mode != "" && mode != store.ClientModeMonitor && !modeConfirmed(r.PostForm, string(mode)) {
+			s.renderError(w, r, http.StatusBadRequest, fmt.Sprintf("Not saved: inheriting the client mode moves this Mac to the global mode, %s, which blocks unknown binaries on this Mac. To confirm, type %s in the confirmation box.", mode, mode))
+			return
+		}
 	}
 	id := r.PathValue("id")
 	if !change.IsEmpty() {

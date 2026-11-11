@@ -17,6 +17,39 @@ func Invalid(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ErrInvalidArgument, fmt.Sprintf(format, args...))
 }
 
+type consistentKey struct{}
+
+// Consistent asks the readers that can (GetMachine, GlobalClientMode and
+// GlobalConfig on DynamoDB) for a strongly consistent read. A form checks the
+// stored config against what it showed before it saves, and an eventually
+// consistent read could miss a change made a moment ago. It needs no IAM of
+// its own: GetItem and Query take ConsistentRead as a parameter.
+func Consistent(ctx context.Context) context.Context {
+	return context.WithValue(ctx, consistentKey{}, true)
+}
+
+// IsConsistent says whether ctx asks for a strongly consistent read.
+func IsConsistent(ctx context.Context) bool {
+	v, _ := ctx.Value(consistentKey{}).(bool)
+	return v
+}
+
+// PartialMoveError is MoveMachineRules' error when it failed after writing
+// something: Copied rules were written on the new Mac and Removed taken off
+// the old one before Err stopped it. A retry is safe, since a rule the new
+// Mac already has exactly as stored is not copied again, and a rule already
+// removed from the old Mac is no longer in force there.
+type PartialMoveError struct {
+	Copied, Removed int
+	Err             error
+}
+
+func (e *PartialMoveError) Error() string {
+	return fmt.Sprintf("move failed part-way after copying %d and removing %d rules: %v", e.Copied, e.Removed, e.Err)
+}
+
+func (e *PartialMoveError) Unwrap() error { return e.Err }
+
 // Audit actions, exactly as Rudolph's CLI records them.
 const (
 	ActionRuleAdd             = "rule.add"
@@ -136,8 +169,14 @@ var AddablePolicies = []Policy{
 }
 
 // MaxMovedRules is the most rules MoveMachineRules moves in one request;
-// bulk work is the CLI's.
-const MaxMovedRules = 500
+// bulk work is the CLI's. A move makes its DynamoDB calls one after another,
+// up to about nine for each rule (the copy, collection, the removal's two
+// reads and update, uncollecting, and two audit entries), at roughly 10 ms
+// each from the Lambda. The function's timeout defaults to 10 seconds, so
+// 50 rules take about 4.5 seconds and leave the rest for the reads before the
+// writes and a slow DynamoDB; 500 could take 45 seconds and be cut off
+// part-way.
+const MaxMovedRules = 50
 
 // ClientModes lists every valid ClientMode.
 var ClientModes = []ClientMode{ClientModeMonitor, ClientModeLockdown, ClientModeStandalone}
@@ -164,12 +203,14 @@ type Writer interface {
 	// another, as stored (policy, messages, CEL expression, description,
 	// expiry and collection), recording rule.add on the new Mac for each, and
 	// with remove then removes each from the old Mac as rudolph rule remove
-	// does. A rule the new Mac already has with the same policy is not copied
-	// again. It returns how many rules it copied. Everything is checked before
-	// anything is written: the same Mac, a Mac with no rules in force, more
-	// than MaxMovedRules of them, or a rule the new Mac has with another
-	// policy is ErrInvalidArgument; a new Mac Rudolph has nothing for is
-	// ErrNotFound.
+	// does. A rule the new Mac already has exactly as stored (policy, expiry,
+	// custom message and URL, CEL expression, notification app name and event
+	// detail button label) is not copied again. It returns how many rules it
+	// copied. Everything is checked before anything is written: the same Mac,
+	// a Mac with no rules in force, more than MaxMovedRules of them, or a rule
+	// the new Mac has that differs in any of those is ErrInvalidArgument
+	// naming it; a new Mac Rudolph has nothing for is ErrNotFound. A failure
+	// after something was written is a *PartialMoveError.
 	MoveMachineRules(ctx context.Context, actor Actor, from, to string, remove bool) (int, error)
 	// SetTemporaryMode sends mode to the Mac instead of its usual mode until
 	// until, which must be between a minute and 30 days ahead.
