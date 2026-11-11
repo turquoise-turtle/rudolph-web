@@ -201,6 +201,7 @@ func New(opts Options) (http.Handler, error) {
 	mux.Handle("GET /machines", viewer(s.machines))
 	mux.Handle("GET /machines/{id}", viewer(s.machineDetail))
 	mux.Handle("GET /rules", viewer(s.rules))
+	mux.Handle("GET /rules/cel", viewer(s.celRules))
 	mux.Handle("GET /groups", viewer(s.groups))
 	mux.Handle("GET /groups/{name}", viewer(s.groupDetail))
 	mux.Handle("GET /groups/{name}/members", viewer(s.groupMembers))

@@ -130,12 +130,15 @@ so removing asks nothing more than the clearly labelled button. */}}
   <label>Description <span class="hint">(optional, for people)</span>
     <input name="description" maxlength="1024" size="30">
   </label>
+  <label class="cel-expr">CEL expression <span class="hint">(for the CEL policy only; <a href="/rules/cel">variables, examples and a place to try one</a>)</span>
+    <textarea name="cel_expr" rows="3" cols="60" maxlength="16384" autocomplete="off" spellcheck="false"></textarea>
+  </label>
   {{if eq .Target "machine"}}<label>Expires after <span class="hint">(e.g. 2h or 7d; never for no expiry)</span>
     <input name="expires" placeholder="24h" size="8" autocomplete="off">
   </label>{{end}}
   <button type="submit">Add rule</button>
 </form>
-<p class="hint">Binary and certificate rules take a SHA-256 (64 lower-case hexadecimal digits), CDHash rules 40, Team ID rules a Team ID such as EQHXZ8M8AV, and signing ID rules TEAMID:signing.id or platform:signing.id. Macs get the rule at their next sync.</p>
+<p class="hint">Binary and certificate rules take a SHA-256 (64 lower-case hexadecimal digits), CDHash rules 40, Team ID rules a Team ID such as EQHXZ8M8AV, and signing ID rules TEAMID:signing.id or platform:signing.id. A CEL rule decides with its expression each time the binary runs; it is checked as Santa compiles it before it is saved. Macs get the rule at their next sync.</p>
 </details>
 {{end}}
 {{define "removerule"}}

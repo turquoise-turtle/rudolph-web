@@ -15,6 +15,7 @@ import (
 	"github.com/airbnb/rudolph/pkg/model/rules"
 	"github.com/airbnb/rudolph/pkg/types"
 
+	"github.com/turquoise-turtle/rudolph-web/internal/santacel"
 	"github.com/turquoise-turtle/rudolph-web/internal/store"
 )
 
@@ -77,7 +78,8 @@ type Add struct {
 }
 
 // CheckAdd checks a rule to add: the actor, the target, and the rule as
-// Rudolph validates it when it writes one.
+// Rudolph validates it when it writes one. A CEL expression is trimmed and
+// checked as Santa's CEL v1 compiles it.
 func CheckAdd(actor store.Actor, target store.RuleTarget, r store.NewRule) (Add, error) {
 	name, err := actor.AuditName()
 	if err != nil {
@@ -98,7 +100,20 @@ func CheckAdd(actor store.Actor, target store.RuleTarget, r store.NewRule) (Add,
 	if err := policy.UnmarshalText([]byte(r.Policy)); err != nil {
 		return Add{}, store.Invalid("unknown policy %q", r.Policy)
 	}
-	rule := rules.SantaRule{RuleType: ruleType, Policy: policy, Identifier: r.Identifier, CustomMessage: r.CustomMessage}
+	celExpr := strings.TrimSpace(r.CELExpr)
+	if r.Policy == store.PolicyCEL {
+		if celExpr == "" {
+			return Add{}, store.Invalid("a CEL rule needs an expression")
+		}
+		// Santa refuses an expression it cannot compile and falls back to its
+		// default for the binary, so a bad one must never be written.
+		if err := santacel.Check(celExpr); err != nil {
+			return Add{}, store.Invalid("the CEL expression is not valid: %v", err)
+		}
+	} else if celExpr != "" {
+		return Add{}, store.Invalid("only a rule with the CEL policy takes a CEL expression, not one with %s", r.Policy)
+	}
+	rule := rules.SantaRule{RuleType: ruleType, Policy: policy, Identifier: r.Identifier, CustomMessage: r.CustomMessage, CELExpr: celExpr}
 	if !rules.ValidIdentifier(ruleType, r.Identifier) {
 		return Add{}, store.Invalid("identifier %q is not a valid %s identifier (%s)", r.Identifier, r.RuleType, identifierShape(ruleType))
 	}

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/turquoise-turtle/rudolph-web/internal/auth"
+	"github.com/turquoise-turtle/rudolph-web/internal/santacel"
 	"github.com/turquoise-turtle/rudolph-web/internal/store"
 	"github.com/turquoise-turtle/rudolph-web/internal/store/rudolphrules"
 )
@@ -20,9 +21,9 @@ import (
 // only check what the forms offer.
 
 const (
-	// maxFormBytes bounds a form body; the largest field, a custom message,
-	// is at most 4 KiB in Rudolph.
-	maxFormBytes = 16 << 10
+	// maxFormBytes bounds a form body. The largest field, a CEL expression,
+	// is at most 16 KiB in Rudolph, and URL encoding can triple that.
+	maxFormBytes = 64 << 10
 	// maxDescriptionBytes bounds a rule's description, which Rudolph stores
 	// but never sends to Santa.
 	maxDescriptionBytes = 1024
@@ -169,6 +170,7 @@ func (s *server) addRule(w http.ResponseWriter, r *http.Request) {
 		Identifier:    strings.TrimSpace(f.Get("identifier")),
 		Policy:        store.Policy(f.Get("policy")),
 		CustomMessage: strings.TrimSpace(f.Get("custom_message")),
+		CELExpr:       strings.TrimSpace(f.Get("cel_expr")),
 		Description:   strings.TrimSpace(f.Get("description")),
 	}
 	if !slices.Contains(store.RuleTypes, rule.RuleType) {
@@ -178,6 +180,21 @@ func (s *server) addRule(w http.ResponseWriter, r *http.Request) {
 	if !slices.Contains(store.AddablePolicies, rule.Policy) {
 		s.renderError(w, r, http.StatusBadRequest, "Not saved: a rule cannot be added with this policy. To take a rule away, remove it.")
 		return
+	}
+	// The store checks all of this again; here the messages can point at the
+	// form's fields and show the whole of Santa's complaint.
+	switch {
+	case rule.Policy == store.PolicyCEL && rule.CELExpr == "":
+		s.renderError(w, r, http.StatusBadRequest, "Not saved: a CEL rule needs an expression in the CEL expression box.")
+		return
+	case rule.Policy != store.PolicyCEL && rule.CELExpr != "":
+		s.renderError(w, r, http.StatusBadRequest, "Not saved: a CEL expression goes only with the CEL policy; choose CEL, or empty the CEL expression box for a "+string(rule.Policy)+" rule.")
+		return
+	case rule.Policy == store.PolicyCEL:
+		if err := santacel.Check(rule.CELExpr); err != nil {
+			s.renderError(w, r, http.StatusBadRequest, "Not saved: Santa would not accept this CEL expression: "+err.Error())
+			return
+		}
 	}
 	if len(rule.Description) > maxDescriptionBytes {
 		s.renderError(w, r, http.StatusBadRequest, "Not saved: the description is longer than "+strconv.Itoa(maxDescriptionBytes)+" bytes.")
