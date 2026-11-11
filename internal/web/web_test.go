@@ -754,6 +754,8 @@ func TestQueryBudget_OneBoundedPaginatedQueryPerList(t *testing.T) {
 		s.AddMachineRule("machine-001", store.Rule{RuleType: store.RuleTypeBinary, Policy: store.PolicyBlocklist, Identifier: fmt.Sprintf("mrule-%03d", i)})
 		s.AddExecutionEvent(store.ExecutionEvent{MachineID: "machine-001", FileSHA256: fmt.Sprintf("sha-%03d", i), FileName: "f",
 			Decision: store.DecisionBlockUnknown, ExecutionTime: fixedNow.Add(-time.Duration(i) * time.Second)})
+		s.AddFileAccessEvent(store.FileAccessEvent{MachineID: "machine-001", RuleName: "r", Target: fmt.Sprintf("/t/%03d", i),
+			Decision: store.FileAccessDecisionDenied, AccessTime: fixedNow.Add(-time.Duration(i) * time.Second)})
 	}
 	var top []store.TopBinary
 	for i := 0; i < 300; i++ {
@@ -783,6 +785,8 @@ func TestQueryBudget_OneBoundedPaginatedQueryPerList(t *testing.T) {
 		{"/events/top-blocked", "TopBinaries", 0},
 		{"/events/top-allowed", "TopBinaries", 0},
 		{"/groups/eng/members", "ListGroupMembers", 1}, // ListGroups
+		{"/events/file-access", "ListFileAccessEvents", 0},
+		{"/events/file-access?machine=machine-001", "ListFileAccessEvents", 3}, // GetMachine for the stored spelling, as for executions
 	}
 	for _, tc := range cases {
 		t.Run(tc.target, func(t *testing.T) {
