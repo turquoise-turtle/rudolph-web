@@ -15,8 +15,7 @@
   <button type="submit">Filter</button>
   <a href="/rules">Clear</a>
 </form>
-{{if .Edit.On}}{{template "addrule" (addRuleForm "Add a global rule" "global" "" .Edit)}}
-{{if not .AllEventUpload}}<p class="hint"><strong>Note:</strong> {{if .GlobalUnread}}the global configuration could not be read to check EnableAllEventUpload.{{else}}the global configuration does not turn on EnableAllEventUpload.{{end}} Santa uploads allowed executions only with it, so a rule collecting allowed executions stores nothing from a Mac unless its own configuration turns it on.</p>{{end}}{{end}}
+{{if .Edit.On}}{{if not .AllEventUpload}}<p class="hint"><strong>Note:</strong> {{if .GlobalUnread}}the global configuration could not be read to check EnableAllEventUpload.{{else}}the global configuration does not turn on EnableAllEventUpload.{{end}} Santa uploads allowed executions only with it, so a rule collecting allowed executions stores nothing from a Mac unless its own configuration turns it on.</p>{{end}}{{end}}
 {{if .Rules}}
 <div class="scroll">
 <table>
@@ -34,7 +33,7 @@
     {{template "cmd" (cmd "Remove" .)}}
     {{if canCollect $rule}}{{if $rule.CollectAllowedEvents}}{{template "cmd" (cmd "Stop collecting allowed executions" (cliCollectGlobal $rule.RuleType $rule.Identifier false))}}{{else}}{{template "cmd" (cmd "Collect allowed executions" (cliCollectGlobal $rule.RuleType $rule.Identifier true))}}{{end}}{{end}}
   </ul></details>{{end}}</td>
-  {{if $.Edit.On}}<td>{{template "removerule" (removeRuleForm "global" "" .)}}{{if canCollect .}}{{template "collectrule" (removeRuleForm "global" "" .)}}{{end}}</td>{{end}}
+  {{if $.Edit.On}}<td><details class="edit rule-edit"><summary>Change</summary>{{template "removerule" (removeRuleForm "global" "" .)}}{{if canCollect .}}{{template "collectrule" (removeRuleForm "global" "" .)}}{{end}}</details></td>{{end}}
 </tr>
 {{end}}
 </tbody>
@@ -44,4 +43,5 @@
 <p>No rules match.</p>
 {{end}}
 {{template "pager" .Pager}}
+{{if .Edit.On}}{{template "addrule" (addRuleForm "Add a global rule" "global" "" .Edit)}}{{end}}
 {{end}}
