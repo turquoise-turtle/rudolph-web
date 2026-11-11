@@ -33,16 +33,19 @@ const (
 // eventQuery is one paginated event list: either a machine's partition of
 // the table, or one partition (hashAttr = hashValue) of an index.
 type eventQuery struct {
+	method    string // the list: executions and file access events share the indexes
+	prefix    string // the table partitions the list's items live in
 	index     string // empty: the table, PK = partition
 	hashAttr  string
 	hashValue string
 }
 
-// fingerprint binds a cursor to the index and the normalised filter value.
-// Each index has its own hash attribute, so index and value identify the
-// query.
+// fingerprint binds a cursor to the list, the index and the normalised filter
+// value. Each index has its own hash attribute, so index and value identify
+// the query within a list; the method keeps a fleet cursor of one list from
+// paging the other, since Fleet_TS serves both.
 func (q eventQuery) fingerprint() string {
-	b, _ := json.Marshal([]string{listExecutionEventsMethod, q.index, q.hashAttr, q.hashValue})
+	b, _ := json.Marshal([]string{q.method, q.index, q.hashAttr, q.hashValue})
 	return string(b)
 }
 
@@ -62,19 +65,21 @@ func newEventQuery(f store.EventFilter) (eventQuery, error) {
 	if set > 1 {
 		return eventQuery{}, fmt.Errorf("%w: filter events by machine, decision or team ID, one at a time", store.ErrInvalidArgument)
 	}
+	q := eventQuery{method: listExecutionEventsMethod, prefix: execPartitionPrefix}
 	switch {
 	case machine != "":
-		return eventQuery{hashAttr: "PK", hashValue: execPartitionPrefix + machine}, nil
+		q.hashAttr, q.hashValue = "PK", execPartitionPrefix+machine
 	case decision != "":
 		if !slices.Contains(store.Decisions, decision) {
 			return eventQuery{}, fmt.Errorf("%w: unknown decision %q", store.ErrInvalidArgument, decision)
 		}
-		return eventQuery{index: indexDecisionTS, hashAttr: "Decision", hashValue: string(decision)}, nil
+		q.index, q.hashAttr, q.hashValue = indexDecisionTS, "Decision", string(decision)
 	case teamID != "":
-		return eventQuery{index: indexTeamIDTS, hashAttr: "TeamID", hashValue: teamID}, nil
+		q.index, q.hashAttr, q.hashValue = indexTeamIDTS, "TeamID", teamID
 	default:
-		return eventQuery{index: indexFleetTS, hashAttr: "Fleet", hashValue: fleetExec}, nil
+		q.index, q.hashAttr, q.hashValue = indexFleetTS, "Fleet", fleetExec
 	}
+	return q, nil
 }
 
 // ListExecutionEvents implements store.EventReader with one Query per page,
@@ -92,25 +97,7 @@ func (s *Store) ListExecutionEvents(ctx context.Context, f store.EventFilter, p 
 	if err != nil {
 		return store.Page[store.ExecutionEvent]{}, err
 	}
-	in := &dynamodb.QueryInput{
-		TableName:                aws.String(s.eventsTable),
-		KeyConditionExpression:   aws.String("#h = :h"),
-		ExpressionAttributeNames: map[string]string{"#h": q.hashAttr},
-		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":h": &types.AttributeValueMemberS{Value: q.hashValue},
-		},
-		Limit:            aws.Int32(int32(p.Limit)),
-		ScanIndexForward: aws.Bool(false),
-	}
-	if q.index != "" {
-		in.IndexName = aws.String(q.index)
-	}
-	if p.Cursor != "" {
-		if in.ExclusiveStartKey, err = s.decodeEventCursor(q, p.Cursor); err != nil {
-			return store.Page[store.ExecutionEvent]{}, err
-		}
-	}
-	out, err := s.client.Query(ctx, in)
+	out, err := s.queryEvents(ctx, q, p)
 	if err != nil {
 		return store.Page[store.ExecutionEvent]{}, fmt.Errorf("dynamo: reading execution events: %w", err)
 	}
@@ -126,12 +113,45 @@ func (s *Store) ListExecutionEvents(ctx context.Context, f store.EventFilter, p 
 		}
 		page.Items = append(page.Items, e)
 	}
-	if len(out.LastEvaluatedKey) > 0 {
-		if page.NextCursor, err = s.encodeCursor(q.fingerprint(), out.LastEvaluatedKey); err != nil {
-			return store.Page[store.ExecutionEvent]{}, err
-		}
+	if page.NextCursor, err = s.eventCursor(q, out); err != nil {
+		return store.Page[store.ExecutionEvent]{}, err
 	}
 	return page, nil
+}
+
+// queryEvents reads one page of q, newest first, resuming after p.Cursor.
+// Errors from DynamoDB come back unwrapped for the caller to name its list;
+// a bad cursor is store.ErrInvalidCursor.
+func (s *Store) queryEvents(ctx context.Context, q eventQuery, p store.PageRequest) (*dynamodb.QueryOutput, error) {
+	in := &dynamodb.QueryInput{
+		TableName:                aws.String(s.eventsTable),
+		KeyConditionExpression:   aws.String("#h = :h"),
+		ExpressionAttributeNames: map[string]string{"#h": q.hashAttr},
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":h": &types.AttributeValueMemberS{Value: q.hashValue},
+		},
+		Limit:            aws.Int32(int32(p.Limit)),
+		ScanIndexForward: aws.Bool(false),
+	}
+	if q.index != "" {
+		in.IndexName = aws.String(q.index)
+	}
+	if p.Cursor != "" {
+		key, err := s.decodeEventCursor(q, p.Cursor)
+		if err != nil {
+			return nil, err
+		}
+		in.ExclusiveStartKey = key
+	}
+	return s.client.Query(ctx, in)
+}
+
+// eventCursor is the cursor to the page after out, or "" on the last page.
+func (s *Store) eventCursor(q eventQuery, out *dynamodb.QueryOutput) (string, error) {
+	if len(out.LastEvaluatedKey) == 0 {
+		return "", nil
+	}
+	return s.encodeCursor(q.fingerprint(), out.LastEvaluatedKey)
 }
 
 // decodeEventCursor checks, on top of the codec's HMAC, that the position is
@@ -157,7 +177,7 @@ func (s *Store) decodeEventCursor(q eventQuery, cursor string) (map[string]types
 		}
 		key[name] = &types.AttributeValueMemberS{Value: v}
 	}
-	if plain[q.hashAttr] != q.hashValue || !strings.HasPrefix(plain["PK"], execPartitionPrefix) {
+	if plain[q.hashAttr] != q.hashValue || !strings.HasPrefix(plain["PK"], q.prefix) {
 		return nil, store.ErrInvalidCursor
 	}
 	return key, nil

@@ -35,9 +35,9 @@ type Options struct {
 	Client ReadAPI
 	// Table is Rudolph's single table.
 	Table string
-	// EventsTable is Rudolph's execution events table (docs/events-table.md in
-	// Rudolph). Empty means the deployment has none, and the event readers
-	// answer store.ErrUnavailable.
+	// EventsTable is Rudolph's events table of executions, file access events
+	// and top lists (docs/events-table.md in Rudolph). Empty means the
+	// deployment has none, and the event readers answer store.ErrUnavailable.
 	EventsTable string
 	// Cursors signs pagination cursors. Every instance serving the same users
 	// must share the key, or a cursor issued by one is refused by another.
@@ -377,12 +377,6 @@ func (s *Store) decodeMachineCursor(q machineQuery, cursor string) (map[string]t
 		key[name] = &types.AttributeValueMemberS{Value: v}
 	}
 	return key, nil
-}
-
-// ListFileAccessEvents answers store.ErrUnavailable until Rudolph stores file
-// access events.
-func (s *Store) ListFileAccessEvents(context.Context, store.FileAccessEventFilter, store.PageRequest) (store.Page[store.FileAccessEvent], error) {
-	return store.Page[store.FileAccessEvent]{}, fmt.Errorf("%w: file access events need Rudolph's events table", store.ErrUnavailable)
 }
 
 func checkLimit(p store.PageRequest) error {

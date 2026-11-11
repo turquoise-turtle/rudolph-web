@@ -3,7 +3,7 @@ package web_test
 // File access events (Santa's File Access Authorisation), stored by Rudolph since 85eee68 (owner, 2026-11-11: "file
 // access events sounds alright"; the aim is noticing anyone tampering with Jamf). /events/file-access, for viewers,
 // lists them newest first, one bounded ListFileAccessEvents call a page, with the time, the Mac (linked to its page,
-// shown by hostname when known), the rule name, the path accessed, the decision (DENIED, DENIED_INVALID_SIGNATURE,
+// with its hostname on a Mac's own list, which looks the Mac up anyway), the rule name, the path accessed, the decision (DENIED, DENIED_INVALID_SIGNATURE,
 // AUDIT_ONLY), and the process: its path, signing ID and team ID, and its parents' paths. Filters, one at a time like
 // executions: machine (the stored spelling, looked up on the first page) or decision; an unknown decision or both at
 // once is a 400 without reading events. The events page and a Mac's page link to it.
