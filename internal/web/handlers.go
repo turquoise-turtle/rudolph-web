@@ -97,22 +97,38 @@ func (s *server) machineDetail(w http.ResponseWriter, r *http.Request) {
 		s.log.Warn("reading the global config failed", "err", err)
 		global = store.Config{}
 	}
-	globalMode := global.ClientMode
+	// One read of the groups serves both the client mode the Mac's groups
+	// give it and the admin's group forms. Without it the page still shows
+	// the Mac's own and the global settings.
+	registered, err := s.store.ListGroups(r.Context())
+	groupsUnread := err != nil
+	if groupsUnread {
+		s.log.Warn("reading the groups failed", "err", err)
+	}
+	var fromGroup groupMode
+	if !groupsUnread {
+		fromGroup.Mode, fromGroup.Group = rudolphrules.MachineGroupClientMode(registered, machine.AssignedGroups, machine.ReportedGroups)
+	}
+	inherited := groupMode{Mode: global.ClientMode}
+	if fromGroup.Mode != "" {
+		inherited = fromGroup
+	}
 	title := machine.Hostname
 	if title == "" {
 		title = machine.MachineID
 	}
 	edit := s.editForms(r)
 	var groupForms machineGroupForms
-	if edit.On {
-		groupForms = s.machineGroupForms(r, machine)
+	if edit.On && !groupsUnread {
+		groupForms = machineGroupFormsOf(registered, machine)
 	}
 	s.render(w, r, http.StatusOK, "machine", "Machine "+title, "machines", struct {
 		Machine      store.MachineDetail
-		GlobalMode   store.ClientMode
+		Inherited    groupMode
 		Config       []configRow
 		ConfigForm   configForm
 		GlobalUnread bool
+		GroupsUnread bool
 		Health       syncHealth
 		Rules        []store.Rule
 		Pager        pager
@@ -120,11 +136,12 @@ func (s *server) machineDetail(w http.ResponseWriter, r *http.Request) {
 		Groups       machineGroupForms
 	}{
 		Machine:      machine,
-		GlobalMode:   globalMode,
-		Config:       machineConfigRows(machine.Config, global, !globalUnread),
-		ConfigForm:   machineConfigForm(edit, machine, global, !globalUnread),
+		Inherited:    inherited,
+		Config:       machineConfigRows(machine.Config, global, !globalUnread, fromGroup),
+		ConfigForm:   machineConfigForm(edit, machine, global, !globalUnread, fromGroup),
 		GlobalUnread: globalUnread,
-		Health:       machineHealth(machine, s.now(), globalMode),
+		GroupsUnread: groupsUnread,
+		Health:       machineHealth(machine, s.now(), inherited),
 		Rules:        rules.Items,
 		Pager:        links("/machines/"+url.PathEscape(id), url.Values{}, nav, rules.NextCursor),
 		Edit:         edit,
@@ -216,9 +233,10 @@ func (s *server) groups(w http.ResponseWriter, r *http.Request) {
 		}
 		rows = append(rows, groupRow{Group: g, Reported: reported})
 	}
-	// Rudolph never registers the ungrouped group, but it can have rules, so
-	// it is always listed, last.
-	rows = append(rows, groupRow{Group: store.Group{Name: store.UngroupedGroup}})
+	// Rudolph registers the ungrouped group only once it has a rule or a
+	// client mode, but it can have rules before then, so it is always listed,
+	// last.
+	rows = append(rows, groupRow{Group: ungroupedOf(groups)})
 	s.render(w, r, http.StatusOK, "groups", "Groups", "groups", struct {
 		Groups    []groupRow
 		Edit      editForms
@@ -226,21 +244,39 @@ func (s *server) groups(w http.ResponseWriter, r *http.Request) {
 	}{rows, s.editForms(r), rudolphrules.MaxGroups})
 }
 
+// ungroupedOf is the ungrouped group as registered, or with no settings when
+// it is not.
+func ungroupedOf(groups []store.Group) store.Group {
+	if i := slices.IndexFunc(groups, func(g store.Group) bool { return g.Name == store.UngroupedGroup }); i >= 0 {
+		return groups[i]
+	}
+	return store.Group{Name: store.UngroupedGroup}
+}
+
+// findGroup returns the named group: a registered one, or the ungrouped
+// group, which exists whether or not it is registered.
+func findGroup(groups []store.Group, name string) (store.Group, bool) {
+	if name == store.UngroupedGroup {
+		return ungroupedOf(groups), true
+	}
+	i := slices.IndexFunc(groups, func(g store.Group) bool { return g.Name == name })
+	if i < 0 {
+		return store.Group{}, false
+	}
+	return groups[i], true
+}
+
 func (s *server) groupDetail(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
-	group := store.Group{Name: name}
-	if name != store.UngroupedGroup {
-		groups, err := s.store.ListGroups(r.Context())
-		if err != nil {
-			s.storeError(w, r, err)
-			return
-		}
-		i := slices.IndexFunc(groups, func(g store.Group) bool { return g.Name == name })
-		if i < 0 {
-			s.renderError(w, r, http.StatusNotFound, "Group not found.")
-			return
-		}
-		group = groups[i]
+	groups, err := s.store.ListGroups(r.Context())
+	if err != nil {
+		s.storeError(w, r, err)
+		return
+	}
+	group, ok := findGroup(groups, name)
+	if !ok {
+		s.renderError(w, r, http.StatusNotFound, "Group not found.")
+		return
 	}
 	pr, nav, ok := s.pageRequest(w, r, r.URL.Query())
 	if !ok {
@@ -251,16 +287,23 @@ func (s *server) groupDetail(w http.ResponseWriter, r *http.Request) {
 		s.storeError(w, r, err)
 		return
 	}
+	edit := s.editForms(r)
+	var modeOptions []configOption
+	if edit.On {
+		modeOptions = groupModeOptions(group.ClientMode)
+	}
 	s.render(w, r, http.StatusOK, "group", "Group "+groupLabel(name), "groups", struct {
-		Group store.Group
-		Rules []store.Rule
-		Pager pager
-		Edit  editForms
+		Group       store.Group
+		ModeOptions []configOption
+		Rules       []store.Rule
+		Pager       pager
+		Edit        editForms
 	}{
-		Group: group,
-		Rules: page.Items,
-		Pager: links(groupURL(name), url.Values{}, nav, page.NextCursor),
-		Edit:  s.editForms(r),
+		Group:       group,
+		ModeOptions: modeOptions,
+		Rules:       page.Items,
+		Pager:       links(groupURL(name), url.Values{}, nav, page.NextCursor),
+		Edit:        edit,
 	})
 }
 

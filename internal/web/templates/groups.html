@@ -1,5 +1,5 @@
 {{define "content"}}
-<p class="hint">A Mac's groups are those assigned to it in Rudolph and, for groups that accept it, those its primary user's directory groups report.</p>
+<p class="hint">A Mac's groups are those assigned to it in Rudolph and, for groups that accept it, those its primary user's directory groups report. A Mac with no client mode of its own gets the strictest of its groups' client modes, before the global one.</p>
 {{if .Edit.On}}
 <details class="edit"><summary>Create a group</summary>
 <form class="edit-form" method="post" action="/admin/groups">
@@ -17,13 +17,14 @@
 {{end}}
 <div class="scroll">
 <table>
-<thead><tr><th>Group</th><th>Description</th><th>Reported membership counts</th></tr></thead>
+<thead><tr><th>Group</th><th>Description</th><th>Reported membership counts</th><th>Client mode</th></tr></thead>
 <tbody>
 {{range .Groups}}
 <tr data-row>
   <td><a href="{{groupURL .Name}}">{{groupLabel .Name}}</a></td>
   <td>{{orDash .Description}}</td>
   <td>{{orDash .Reported}}</td>
+  <td>{{with .ClientMode}}{{.}}{{else}}—{{end}}</td>
 </tr>
 {{end}}
 </tbody>

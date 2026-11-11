@@ -377,6 +377,42 @@ func (s *Store) changeAssigned(actor store.Actor, machineID, group string, assig
 	return nil
 }
 
+// SetGroupClientMode implements store.Writer. Like Rudolph, it registers the
+// group of Macs in no group when that is not registered yet.
+func (s *Store) SetGroupClientMode(_ context.Context, actor store.Actor, group string, mode store.ClientMode) error {
+	who, err := actor.AuditName()
+	if err != nil {
+		return err
+	}
+	name, err := rudolphrules.GroupConfigName(group)
+	if err != nil {
+		return err
+	}
+	want, err := rudolphrules.GroupClientMode(mode)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.err != nil {
+		return s.err
+	}
+	g, ok := s.groups[name]
+	if !ok {
+		if name != store.UngroupedGroup {
+			return store.ErrNotFound
+		}
+		g = store.Group{Name: name, Description: "Macs in no group"}
+	}
+	if g.ClientMode == mode {
+		return store.ErrNothingToChange
+	}
+	g.ClientMode = mode
+	s.groups[name] = g
+	s.recordAudit(who, store.ActionConfigUpdate, groupAuditTarget(name), rudolphrules.GroupClientModeSummary(want))
+	return nil
+}
+
 func groupAuditTarget(name string) string {
 	return store.RuleTarget{Kind: store.TargetGroup, Group: name}.AuditTarget()
 }

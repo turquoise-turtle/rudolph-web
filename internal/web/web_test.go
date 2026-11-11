@@ -771,7 +771,7 @@ func TestQueryBudget_OneBoundedPaginatedQueryPerList(t *testing.T) {
 		{"/machines", "ListMachines", 0},
 		{"/machines?hostname=host-", "ListMachines", 0},
 		{"/machines?serial=SER", "ListMachines", 0},
-		{"/machines/machine-001", "ListMachineRules", 2}, // GetMachine and GlobalClientMode
+		{"/machines/machine-001", "ListMachineRules", 3}, // GetMachine, GlobalConfig and ListGroups (a group may set the client mode)
 		{"/rules", "ListGlobalRules", 0},
 		{"/rules?type=BINARY&policy=ALLOWLIST", "ListGlobalRules", 0},
 		{"/events", "ListExecutionEvents", 0},

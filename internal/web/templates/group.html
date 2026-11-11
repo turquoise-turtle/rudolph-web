@@ -7,7 +7,34 @@
   <dt>Description</dt><dd>{{orDash .Group.Description}}</dd>
   <dt>Reported membership counts</dt><dd>{{if .Group.AcceptReported}}yes{{else}}no{{end}}</dd>
   {{end}}
+  <dt>Client mode</dt><dd>{{with .Group.ClientMode}}{{.}}{{else}}<span class="muted">not set</span>: its Macs follow another of their groups' modes, or the global mode{{end}}</dd>
 </dl>
+<p class="hint">A Mac with no temporary mode or client mode of its own gets the strictest client mode of its groups (LOCKDOWN, then STANDALONE, then MONITOR), or the global configuration's when none of its groups has one.</p>
+{{if .Edit.On}}
+<details class="edit config-edit"><summary>Change settings</summary>
+<form class="config-form" method="post" action="/admin/groups/config">
+<input type="hidden" name="name" value="{{.Group.Name}}">
+<div class="scroll">
+<table>
+<thead><tr><th>Setting</th><th>Value</th><th>Change to</th></tr></thead>
+<tbody>
+<tr data-edit-setting="ClientMode">
+  <td><label for="cfg-ClientMode">Client mode</label></td>
+  <td>{{with .Group.ClientMode}}{{.}}{{else}}<span class="muted">not set</span>{{end}}</td>
+  <td><input type="hidden" name="orig_ClientMode" value="{{.Group.ClientMode}}"><select name="ClientMode" id="cfg-ClientMode">{{range .ModeOptions}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select><p class="hint">Every Mac in this group without a temporary or its own client mode gets this one from its next sync, unless another of its groups has a stricter one: LOCKDOWN or STANDALONE here blocks unknown binaries on all of them. Not set, they follow their other groups' modes or the global one. Rudolph caches the groups for up to a minute, so Macs that sync within that minute may still get the old mode.</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="form-actions">
+  <label>To change the client mode to LOCKDOWN or STANDALONE, type the new mode's name
+    <input name="confirm_mode" size="12" autocomplete="off" spellcheck="false">
+  </label>
+  <button type="submit">Save this group's configuration</button>
+</div>
+</form>
+</details>
+{{end}}
 {{if and .Edit.On (ne .Group.Name ungrouped)}}
 <details class="edit"><summary>Change this group</summary>
 <form class="edit-form" method="post" action="/admin/groups/update">

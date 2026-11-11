@@ -284,8 +284,9 @@ type MachineDetail struct {
 	ReportedAsSent []string
 }
 
-// UngroupedGroup is Rudolph's reserved group of the Macs in no group. It has
-// rules but is never in the registry.
+// UngroupedGroup is Rudolph's reserved group of the Macs in no group. It can
+// have rules without being registered; Rudolph registers it when it first gets
+// a rule or a client mode.
 const UngroupedGroup = "rudolph:ungrouped"
 
 // Group is a registered device group.
@@ -296,6 +297,11 @@ type Group struct {
 	// primary user's directory groups) becomes a member; when false only
 	// assignment in Rudolph counts.
 	AcceptReported bool
+	// ClientMode is the mode the group's Macs get when they have no temporary
+	// mode or mode of their own (the strictest of their groups' wins), ahead
+	// of the global config's. "" when the group has none, or stores one
+	// Rudolph cannot decode and so ignores.
+	ClientMode ClientMode
 }
 
 // MachineFilter narrows ListMachines. At most one prefix may be set; each maps
@@ -500,7 +506,7 @@ type RuleReader interface {
 // GroupReader reads device groups and their rules.
 type GroupReader interface {
 	// ListGroups returns the registered groups sorted by name; none when
-	// there is no registry.
+	// there is no registry. It honours Consistent.
 	ListGroups(ctx context.Context) ([]Group, error)
 	// ListGroupRules returns rules in PK=GroupRules#<group>, in SK order.
 	ListGroupRules(ctx context.Context, group string, p PageRequest) (Page[Rule], error)

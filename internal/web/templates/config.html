@@ -1,6 +1,6 @@
 {{define "content"}}
 {{if .Exists}}
-<p class="hint">The settings Rudolph sends every Mac at its sync, unless the Mac's own configuration overrides them (see each Mac's page). A setting that is not set is not sent, and Santa keeps its own value.</p>
+<p class="hint">The settings Rudolph sends every Mac at its sync, unless the Mac's own configuration overrides them (see each Mac's page). A Mac without its own client mode gets the strictest of its groups' client modes, when one of them has one (see each group's page), before this one. A setting that is not set is not sent, and Santa keeps its own value.</p>
 {{else}}
 <p>No global configuration is stored, so Rudolph sends its default configuration to Macs without their own settings.</p>
 {{end}}

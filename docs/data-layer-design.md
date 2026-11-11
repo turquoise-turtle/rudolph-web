@@ -28,7 +28,7 @@ As found on 2026-11-04. The `Hostname` and `Cert#` findings have since been fixe
 | Machine detail | Query `PK = Machine#<id>`, `SK BETWEEN Config AND SyncState`, Limit 8: config, current sensor data, groups (`Groups`), groups as sent (`ReportedGroups`) and sync state in one call, leaving out tracking internals. No sensor data row (90-day TTL) means not found. |
 | Global client mode (machine detail) | GetItem `GlobalConfig` / `Config`, its own read so machine detail stays one Query; no item means MONITOR, as Rudolph sends. A failed read is logged and the page names no global mode. |
 | Machine rules | Query `PK = MachineRules#<id>`; state (in force, removing, expired) computed per the contract |
-| Groups | GetItem `GroupRegistry` / `Current`, sorted by name; no item means no groups. `rudolph:ungrouped` is never registered and is always listed. A group page answers 404 for a name not in the registry. |
+| Groups | GetItem `GroupRegistry` / `Current`, sorted by name; no item means no groups. `rudolph:ungrouped` is registered only once it has a rule or a client mode, and is always listed. A group page answers 404 for a name not in the registry. |
 | Group rules | Query `PK = GroupRules#<group>`, Limit = page size; the cursor is bound to the method and the group. |
 | Global rules, all or by type | Query `PK = GlobalRules` [`begins_with(SK, "Binary#" / "Cert#" / "TeamID#" / "SigningID#" / "CDHash#")`] |
 | Global rules by policy | Query GSI `GlobalRulePolicy_SK`, `GlobalRulePolicy = :n`, plus `begins_with(SK)` when a rule type is also given (never a FilterExpression: Limit applies before the filter, so pages would come back short). The cursor is the index key: PK, SK and GlobalRulePolicy. |

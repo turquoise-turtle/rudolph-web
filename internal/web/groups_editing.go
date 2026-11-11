@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"slices"
@@ -107,14 +108,9 @@ type machineGroupForms struct {
 	Assignable []string
 }
 
-// machineGroupForms reads the registered groups for a Mac's group forms. The
-// page is still useful without them, so a failure only leaves them out.
-func (s *server) machineGroupForms(r *http.Request, m store.MachineDetail) machineGroupForms {
-	registered, err := s.store.ListGroups(r.Context())
-	if err != nil {
-		s.log.Warn("reading the groups for the machine's group forms failed", "err", err)
-		return machineGroupForms{}
-	}
+// machineGroupFormsOf works out a Mac's group forms from the registered
+// groups.
+func machineGroupFormsOf(registered []store.Group, m store.MachineDetail) machineGroupForms {
 	names := map[string]bool{}
 	var f machineGroupForms
 	for _, g := range registered {
@@ -132,4 +128,84 @@ func (s *server) machineGroupForms(r *http.Request, m store.MachineDetail) machi
 		f.NewGroups = append(f.NewGroups, sent)
 	}
 	return f
+}
+
+// groupModeOptions are the choices of a group's client mode form. Unlike a
+// configuration's, "not set" is always offered: it removes the group's mode.
+func groupModeOptions(current store.ClientMode) []configOption {
+	options := []configOption{{Value: "", Label: "not set", Selected: current == ""}}
+	for _, m := range store.ClientModes {
+		options = append(options, configOption{Value: string(m), Label: string(m), Selected: m == current})
+	}
+	return options
+}
+
+// updateGroupConfig changes a group's client mode, as rudolph config update
+// --group (or --ungrouped) does. The form is the configuration form cut down
+// to the one setting a group has.
+func (s *server) updateGroupConfig(w http.ResponseWriter, r *http.Request) {
+	if !s.parseForm(w, r) {
+		return
+	}
+	for name, values := range r.PostForm {
+		switch name {
+		case "name", "ClientMode", origPrefix + "ClientMode", "confirm_mode":
+		default:
+			s.renderError(w, r, http.StatusBadRequest, fmt.Sprintf("Not saved: %q is not a setting a group has; a group has only a client mode.", name))
+			return
+		}
+		if len(values) != 1 {
+			s.renderError(w, r, http.StatusBadRequest, fmt.Sprintf("Not saved: %s was sent more than once.", name))
+			return
+		}
+	}
+	modes, posted := r.PostForm["ClientMode"]
+	if !posted {
+		s.renderError(w, r, http.StatusBadRequest, "Not saved: no client mode was given.")
+		return
+	}
+	mode := store.ClientMode(modes[0])
+	if mode != "" && !slices.Contains(store.ClientModes, mode) {
+		s.renderError(w, r, http.StatusBadRequest, "Not saved: unknown client mode; choose MONITOR, LOCKDOWN or STANDALONE, or not set.")
+		return
+	}
+	// Consistent, so that the check against what the form showed sees a
+	// change made a moment ago.
+	registered, err := s.store.ListGroups(store.Consistent(r.Context()))
+	if err != nil {
+		s.storeError(w, r, err)
+		return
+	}
+	name := r.PostForm.Get("name")
+	group, ok := findGroup(registered, name)
+	if !ok {
+		s.renderError(w, r, http.StatusNotFound, "Group not found: it may have been deleted.")
+		return
+	}
+	// As on the configuration forms: a mode left as the form showed it is not
+	// a change, so a form drawn before someone else changed it does not put it
+	// back; one changed on the form is refused when the stored mode is no
+	// longer what the form showed, since saving would overwrite a change the
+	// person has not seen.
+	orig, hasOrig := r.PostForm[origPrefix+"ClientMode"]
+	if hasOrig && mode == store.ClientMode(orig[0]) {
+		http.Redirect(w, r, groupURL(name), http.StatusSeeOther)
+		return
+	}
+	if hasOrig && mode != group.ClientMode && store.ClientMode(orig[0]) != group.ClientMode {
+		s.renderError(w, r, http.StatusConflict, "Not saved: the group's client mode was changed since this page was loaded; reload it to see it as it is now, and make your change again.")
+		return
+	}
+	if mode != group.ClientMode {
+		if mode != "" && mode != store.ClientModeMonitor && !modeConfirmed(r.PostForm, string(mode)) {
+			s.renderError(w, r, http.StatusBadRequest, fmt.Sprintf("Not saved: %s blocks unknown binaries on every Mac of the group without its own client mode. To confirm, type %s in the confirmation box.", mode, mode))
+			return
+		}
+		err := s.writer.SetGroupClientMode(r.Context(), actorOf(r), name, mode)
+		if err != nil && !errors.Is(err, store.ErrNothingToChange) {
+			s.writeError(w, r, err, "Group not found: it may have been deleted.")
+			return
+		}
+	}
+	http.Redirect(w, r, groupURL(name), http.StatusSeeOther)
 }

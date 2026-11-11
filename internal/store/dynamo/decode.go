@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	rudolphgroups "github.com/airbnb/rudolph/pkg/model/groups"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
 	"github.com/turquoise-turtle/rudolph-web/internal/store"
@@ -365,7 +366,8 @@ func sortedStrings(s []string) []string {
 // DecodeGroupRegistry decodes the GroupRegistry/Current item: its Groups map,
 // name to entry, sorted by name. An entry that is not a map is skipped, and a
 // mistyped Description or AcceptReported is shown as empty or false, so one
-// bad entry does not hide the others.
+// bad entry does not hide the others. ClientMode is read as Rudolph's
+// groups.StoredClientMode reads it, so a value Rudolph ignores shows as none.
 func DecodeGroupRegistry(item map[string]types.AttributeValue) []store.Group {
 	m, ok := item["Groups"].(*types.AttributeValueMemberM)
 	if !ok {
@@ -383,6 +385,14 @@ func DecodeGroupRegistry(item map[string]types.AttributeValue) []store.Group {
 		}
 		if a, ok := entry.Value["AcceptReported"].(*types.AttributeValueMemberBOOL); ok {
 			g.AcceptReported = a.Value
+		}
+		if v, ok := entry.Value["ClientMode"]; ok {
+			var stored rudolphgroups.StoredClientMode
+			if err := stored.UnmarshalDynamoDBAttributeValue(v); err == nil {
+				if mode, ok := stored.Mode(); ok {
+					g.ClientMode = clientModes[int64(mode)]
+				}
+			}
 		}
 		groups = append(groups, g)
 	}
