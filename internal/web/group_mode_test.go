@@ -14,7 +14,7 @@ package web_test
 //     groups.SetClientMode plus the CLI's audit entry (config.update, target group:<name> or ungrouped, summary
 //     "ClientMode=LOCKDOWN" or "ClientMode inherited"). Unchanged: 303, nothing written. LOCKDOWN and STANDALONE need
 //     the mode's name typed in confirm_mode (400 otherwise). A stale form (orig_ClientMode no longer the stored mode):
-//     409. Unknown group: 404. Unknown mode: 400. Viewers 403; editing off 404.
+//     409; posted as the form showed it (equal to orig_ClientMode) it is left alone, as on the other config forms. Unknown group: 404. Unknown mode: 400. Viewers 403; editing off 404.
 //   - A Mac's Configuration table marks a client mode that comes from a group "(group <name>)": when the Mac has no own
 //     ClientMode, its groups (assigned and reported-and-counted, or ungrouped when none) decide it before the global
 //     config. The Mac's page reads the groups with one ListGroups call.
@@ -162,7 +162,7 @@ func TestGroupMode_Refusals(t *testing.T) {
 		form url.Values
 		code int
 	}{
-		"stale form":    {url.Values{"name": {"pilot"}, "ClientMode": {"MONITOR"}, "orig_ClientMode": {"MONITOR"}}, http.StatusConflict},
+		"stale form":    {url.Values{"name": {"pilot"}, "ClientMode": {"MONITOR"}, "orig_ClientMode": {""}}, http.StatusConflict},
 		"unknown group": {url.Values{"name": {"nope"}, "ClientMode": {"MONITOR"}, "orig_ClientMode": {""}}, http.StatusNotFound},
 		"unknown mode":  {url.Values{"name": {"staff"}, "ClientMode": {"PARANOID"}, "orig_ClientMode": {""}, "confirm_mode": {"PARANOID"}}, http.StatusBadRequest},
 		"wrong confirm": {url.Values{"name": {"staff"}, "ClientMode": {"LOCKDOWN"}, "orig_ClientMode": {""}, "confirm_mode": {"STANDALONE"}}, http.StatusBadRequest},
