@@ -6,7 +6,8 @@
 //
 //	PK=Machine#<id>       SK=Current      sensor data      -> Machine
 //	PK=Machine#<id>       SK=SyncState    sync state       -> SyncState
-//	PK=Machine#<id>       SK=Config       machine config   -> MachineDetail.ConfiguredClientMode
+//	PK=Machine#<id>       SK=Config       machine config   -> MachineDetail.Config, ConfiguredClientMode
+//	PK=GlobalConfig       SK=Config       global config    -> Config
 //	PK=GlobalRules        SK=<Type>#<id>  global rules     -> Rule
 //	PK=MachineRules#<id>  SK=<Type>#<id>  machine rules    -> Rule
 //	PK=Machine#<id>       SK=Groups       a Mac's groups   -> MachineDetail.AssignedGroups, ReportedGroups
@@ -223,11 +224,40 @@ type SyncState struct {
 	RulesProcessed int
 }
 
+// Config is a global or machine config row: the settings `rudolph config
+// update` sets, by Rudolph's attribute names. A nil setting (or an empty
+// ClientMode or OverrideFileAccessAction) is one the row does not store with
+// a readable value, so a Mac takes it from the global config, or Santa keeps
+// its own when the global config does not store it either. USB settings are
+// left out: Santa 2026.8 replaces them with a removable media policy Rudolph
+// does not model yet.
+type Config struct {
+	// Exists says whether the row is there at all. Without a global config
+	// Rudolph sends its defaults, so GlobalConfig then reports MONITOR.
+	Exists                    bool
+	ClientMode                ClientMode
+	AllowedPathRegex          *string
+	BlockedPathRegex          *string
+	BatchSize                 *int
+	EnableBundles             *bool
+	EnableTransitiveRules     *bool
+	FullSyncInterval          *int    // seconds
+	UploadLogsURL             *string // attribute UploadLogsUrl
+	EnableAllEventUpload      *bool
+	DisableUnknownEventUpload *bool
+	OverrideFileAccessAction  string // NONE, AUDIT_ONLY or DISABLE
+	EventDetailURL            *string
+	EventDetailText           *string
+}
+
 // MachineDetail combines sensor data with sync state and machine config. Sync
 // is nil when the machine has no sync state row (never synced, or expired).
 type MachineDetail struct {
 	Machine
 	Sync *SyncState
+	// Config is the Mac's own config (SK=Config): only the settings it
+	// overrides; the global config supplies the rest.
+	Config Config
 	// ConfiguredClientMode is the mode the machine config (SK=Config) sets,
 	// which can differ from the mode the Mac last reported until it syncs.
 	// Empty when the machine config does not set one, so the global config
@@ -426,7 +456,7 @@ type MachineReader interface {
 	// serial (no filter, or a serial prefix) or hostname. Prefixes are trimmed;
 	// serial prefixes match upper case and hostname prefixes ignore case.
 	ListMachines(ctx context.Context, f MachineFilter, p PageRequest) (Page[Machine], error)
-	// GetMachine reads one machine's sensor data and sync state
+	// GetMachine reads one machine's sensor data, sync state and own config
 	// (a single Query on PK=Machine#<id>). Returns ErrNotFound.
 	GetMachine(ctx context.Context, machineID string) (MachineDetail, error)
 	// ListMachineRules returns rules in PK=MachineRules#<id>, in SK order.
@@ -436,6 +466,10 @@ type MachineReader interface {
 	// machine config sets none. MONITOR when there is no global config, as
 	// Rudolph then sends; "" when the row sets no client mode.
 	GlobalClientMode(ctx context.Context) (ClientMode, error)
+	// GlobalConfig returns the global config (one GetItem of
+	// PK=GlobalConfig, SK=Config). Without the row, Exists is false and
+	// ClientMode is MONITOR, as Rudolph then sends.
+	GlobalConfig(ctx context.Context) (Config, error)
 }
 
 // RuleReader reads global rules.
@@ -522,6 +556,10 @@ func (Unavailable) ListMachineRules(context.Context, string, PageRequest) (Page[
 
 func (Unavailable) GlobalClientMode(context.Context) (ClientMode, error) {
 	return "", ErrUnavailable
+}
+
+func (Unavailable) GlobalConfig(context.Context) (Config, error) {
+	return Config{}, ErrUnavailable
 }
 
 func (Unavailable) ListGlobalRules(context.Context, RuleFilter, PageRequest) (Page[Rule], error) {

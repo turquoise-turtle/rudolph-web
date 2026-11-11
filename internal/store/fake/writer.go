@@ -30,10 +30,10 @@ func (s *Store) storedMachineID(id string) (string, error) {
 		}
 	}
 	for _, sp := range spellings {
-		_, mode := s.configModes[sp]
+		_, config := s.configs[sp]
 		_, temp := s.tempModes[sp]
 		_, clean := s.cleanSyncs[sp]
-		if mode || temp || clean {
+		if config || temp || clean {
 			return sp, nil
 		}
 	}

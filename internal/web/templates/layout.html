@@ -20,6 +20,7 @@
     <a href="/events/top-blocked"{{if eq .Nav "top-blocked"}} aria-current="page"{{end}}>Top blocked</a>
     <a href="/events/top-allowed"{{if eq .Nav "top-allowed"}} aria-current="page"{{end}}>Top allowed</a>
     {{if .IsAdmin}}<a href="/admin"{{if eq .Nav "admin"}} aria-current="page"{{end}}>Admin</a>{{end}}
+    {{if .IsAdmin}}<a href="/admin/config"{{if eq .Nav "config"}} aria-current="page"{{end}}>Settings</a>{{end}}
     {{if .IsAdmin}}<a href="/admin/audit"{{if eq .Nav "audit"}} aria-current="page"{{end}}>Audit</a>{{end}}
   </nav>
   {{if .User.Subject}}
@@ -33,7 +34,7 @@
 <h1>{{.Title}}</h1>
 {{template "content" .Page}}
 </main>
-<script>{{localTimeScript}}</script>
+{{if .TimeScript}}<script>{{localTimeScript}}</script>{{end}}
 </body>
 </html>
 {{/* A time: UTC from the server, which is what the page shows without the script;
@@ -50,6 +51,23 @@ the script adds the viewer's own zone in the browser. Zero shows a dash. */}}
 time script, so a click (or Tab to it) selects the whole command for the usual
 copy. */}}
 {{define "cmd"}}{{if .Command}}<li><span class="cmd-label">{{.Label}}</span> <code class="cmd" tabindex="0">{{.Command}}</code></li>{{end}}{{end}}
+{{/* A configuration table: the global config, or what a Mac gets with where
+each value comes from. */}}
+{{define "configtable"}}
+<div class="scroll">
+<table>
+<thead><tr><th>Setting</th><th>Value</th></tr></thead>
+<tbody>
+{{range .}}
+<tr data-setting="{{.Setting}}">
+  <td>{{.Label}}</td>
+  <td>{{if .Set}}{{if eq .Value ""}}<span class="muted">empty</span>{{else if .Code}}<code>{{.Value}}</code>{{else}}{{.Value}}{{end}}{{with .Origin}} <span class="muted">({{.}})</span>{{end}}{{else}}<span class="muted">not set</span>{{end}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+</div>
+{{end}}
 {{/* Edit forms (Rudolph.Admin, with editing on). Plain forms with no script,
 so removing asks nothing more than the clearly labelled button. */}}
 {{define "addrule"}}

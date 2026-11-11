@@ -79,7 +79,8 @@ func DecodeMachinePartition(items []map[string]types.AttributeValue) (store.Mach
 			st := r.syncState()
 			d.Sync = &st
 		case skConfig:
-			d.ConfiguredClientMode = r.configClientMode()
+			d.Config = r.config()
+			d.ConfiguredClientMode = d.Config.ClientMode
 			d.TemporaryClientMode, d.TemporaryClientModeUntil = r.configTemporaryClientMode()
 			d.CleanSyncRequested = r.configCleanSync()
 		case skGroups:
@@ -238,15 +239,69 @@ func (r *reader) clientMode() store.ClientMode {
 	return enum(r.num("ClientMode"), clientModes)
 }
 
-// configClientMode reads ClientMode from a machine config row. Rudolph skips a
-// machine config attribute it cannot decode and applies the global value, so a
-// mistyped one is shown as not set instead of failing the machine page.
-func (r *reader) configClientMode() store.ClientMode {
-	n, ok := r.configNum("ClientMode")
-	if !ok {
-		return ""
+// DecodeConfig decodes a global or machine config row. With no row (a nil or
+// empty item) Exists is false and ClientMode is MONITOR, as Rudolph then
+// sends its defaults (machineconfiguration.GetUniversalDefaultConfig); the
+// Mac page reads a machine's row through DecodeMachinePartition instead.
+func DecodeConfig(item map[string]types.AttributeValue) store.Config {
+	if len(item) == 0 {
+		return store.Config{ClientMode: store.ClientModeMonitor}
 	}
-	return enum(n, clientModes)
+	r := reader{item: item}
+	return r.config()
+}
+
+// config reads the settings of a config row. Rudolph leaves out an attribute
+// whose stored type does not fit its setting rather than failing every sync
+// that reads the row, and a Mac then follows the global value, so a mistyped
+// one is shown as not set instead of failing the page.
+func (r *reader) config() store.Config {
+	c := store.Config{
+		Exists:                    true,
+		AllowedPathRegex:          r.configStr("AllowedPathRegex"),
+		BlockedPathRegex:          r.configStr("BlockedPathRegex"),
+		BatchSize:                 r.configInt("BatchSize"),
+		EnableBundles:             r.configBool("EnableBundles"),
+		EnableTransitiveRules:     r.configBool("EnableTransitiveRules"),
+		FullSyncInterval:          r.configInt("FullSyncInterval"),
+		UploadLogsURL:             r.configStr("UploadLogsUrl"),
+		EnableAllEventUpload:      r.configBool("EnableAllEventUpload"),
+		DisableUnknownEventUpload: r.configBool("DisableUnknownEventUpload"),
+		EventDetailURL:            r.configStr("EventDetailURL"),
+		EventDetailText:           r.configStr("EventDetailText"),
+	}
+	if n, ok := r.configNum("ClientMode"); ok {
+		c.ClientMode = enum(n, clientModes)
+	}
+	if v := r.configStr("OverrideFileAccessAction"); v != nil {
+		c.OverrideFileAccessAction = *v
+	}
+	return c
+}
+
+func (r *reader) configStr(name string) *string {
+	v, ok := r.item[name].(*types.AttributeValueMemberS)
+	if !ok {
+		return nil
+	}
+	return &v.Value
+}
+
+func (r *reader) configBool(name string) *bool {
+	v, ok := r.item[name].(*types.AttributeValueMemberBOOL)
+	if !ok {
+		return nil
+	}
+	return &v.Value
+}
+
+func (r *reader) configInt(name string) *int {
+	n, ok := r.configNum(name)
+	if !ok || int64(int(n)) != n {
+		return nil
+	}
+	i := int(n)
+	return &i
 }
 
 // configTemporaryClientMode reads TemporaryClientMode and

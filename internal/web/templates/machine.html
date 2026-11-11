@@ -58,6 +58,9 @@
 </form>
 {{end}}
 {{end}}
+<h2>Configuration</h2>
+<p class="hint">What Rudolph sends this Mac at its sync: its own setting, marked (this Mac), or the global one, marked (global config). URLs show only their scheme, host and path. A setting that is not set is not sent, and Santa keeps its own value.{{if $.GlobalUnread}} The global configuration could not be read, so only this Mac's own settings are shown.{{end}}</p>
+{{template "configtable" $.Config}}
 <h2>Groups</h2>
 <dl>
   <dt>Assigned in Rudolph</dt><dd>{{range $i, $g := .AssignedGroups}}{{if $i}}, {{end}}<a href="{{groupURL $g}}">{{$g}}</a>{{else}}none{{end}}</dd>

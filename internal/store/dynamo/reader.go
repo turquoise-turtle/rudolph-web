@@ -157,6 +157,22 @@ func (s *Store) GlobalClientMode(ctx context.Context) (store.ClientMode, error) 
 	return DecodeGlobalClientMode(out.Item)
 }
 
+// GlobalConfig implements store.MachineReader with one GetItem of the global
+// config.
+func (s *Store) GlobalConfig(ctx context.Context) (store.Config, error) {
+	out, err := s.client.GetItem(ctx, &dynamodb.GetItemInput{
+		TableName: aws.String(s.table),
+		Key: map[string]types.AttributeValue{
+			"PK": &types.AttributeValueMemberS{Value: pkGlobalConfig},
+			"SK": &types.AttributeValueMemberS{Value: skConfig},
+		},
+	})
+	if err != nil {
+		return store.Config{}, fmt.Errorf("dynamo: reading the global config: %w", err)
+	}
+	return DecodeConfig(out.Item), nil
+}
+
 // ListGroups implements store.GroupReader with one GetItem of the registry.
 func (s *Store) ListGroups(ctx context.Context) ([]store.Group, error) {
 	out, err := s.client.GetItem(ctx, &dynamodb.GetItemInput{

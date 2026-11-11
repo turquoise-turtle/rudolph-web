@@ -210,6 +210,9 @@ func New(opts Options) (http.Handler, error) {
 	// The audit trail is read-only and also lists the CLI's changes, so admins
 	// see who changed what even when the web view cannot edit (owner request).
 	mux.Handle("GET /admin/audit", admin(s.audit))
+	// Reading the settings needs no writes, so admins see them with editing
+	// off too, like the audit trail.
+	mux.Handle("GET /admin/config", admin(s.globalConfig))
 	if s.writer != nil {
 		// Every POST passes the cross-origin protection below before it gets
 		// here, and only an admin's reaches the handler.
@@ -370,12 +373,17 @@ func securityHeaders(csp string, next http.Handler) http.Handler {
 // Rendering
 
 type layoutData struct {
-	Title   string
-	Nav     string
-	User    auth.Session
-	IsAdmin bool
-	Page    any
+	Title      string
+	Nav        string
+	User       auth.Session
+	IsAdmin    bool
+	TimeScript bool
+	Page       any
 }
+
+// pagesWithoutTimes show no times, so they leave out the script, which only
+// rewrites <time> elements.
+var pagesWithoutTimes = map[string]bool{"config": true}
 
 var funcs = template.FuncMap{
 	// The machine list's last seen is a UTC date (Rudolph's LastSeenDay), not
@@ -550,7 +558,7 @@ func (s *server) render(w http.ResponseWriter, r *http.Request, status int, page
 	sess, _ := auth.SessionFromContext(r.Context())
 	var buf bytes.Buffer
 	err := s.pages[page].ExecuteTemplate(&buf, "layout.html", layoutData{
-		Title: title, Nav: nav, User: sess, IsAdmin: sess.HasRole(auth.RoleAdmin), Page: data,
+		Title: title, Nav: nav, User: sess, IsAdmin: sess.HasRole(auth.RoleAdmin), TimeScript: !pagesWithoutTimes[page], Page: data,
 	})
 	if err != nil {
 		s.log.Error("render failed", "page", page, "err", err)

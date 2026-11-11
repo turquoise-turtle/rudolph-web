@@ -1,0 +1,9 @@
+{{define "content"}}
+{{if .Exists}}
+<p class="hint">The settings Rudolph sends every Mac at its sync, unless the Mac's own configuration overrides them (see each Mac's page). A setting that is not set is not sent, and Santa keeps its own value.</p>
+{{else}}
+<p>No global configuration is stored, so Rudolph sends its default configuration to Macs without their own settings.</p>
+{{end}}
+{{template "configtable" .Rows}}
+<p class="hint">URLs show only their scheme, host and path, as the rest may hold a token. USB settings are not shown. <code>rudolph config get --global</code> shows every setting in full.</p>
+{{end}}
