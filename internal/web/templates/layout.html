@@ -19,6 +19,7 @@
     <a href="/events"{{if eq .Nav "events"}} aria-current="page"{{end}}>Events</a>
     <a href="/events/top-blocked"{{if eq .Nav "top-blocked"}} aria-current="page"{{end}}>Top blocked</a>
     <a href="/events/top-allowed"{{if eq .Nav "top-allowed"}} aria-current="page"{{end}}>Top allowed</a>
+    <a href="/events/top-unknown"{{if eq .Nav "top-unknown"}} aria-current="page"{{end}}>Top unknown</a>
     {{if .IsAdmin}}<a href="/admin"{{if eq .Nav "admin"}} aria-current="page"{{end}}>Admin</a>{{end}}
     {{if .IsAdmin}}<a href="/admin/config"{{if eq .Nav "config"}} aria-current="page"{{end}}>Settings</a>{{end}}
     {{if .IsAdmin}}<a href="/admin/audit"{{if eq .Nav "audit"}} aria-current="page"{{end}}>Audit</a>{{end}}
@@ -101,19 +102,19 @@ an inherit box for each setting the Mac sets itself. */}}
 {{/* Edit forms (Rudolph.Admin, with editing on). Plain forms with no script,
 so removing asks nothing more than the clearly labelled button. */}}
 {{define "addrule"}}
-<details class="edit"><summary>{{.Title}}</summary>
+<details class="edit"{{if .Open}} open{{end}}><summary>{{.Title}}</summary>
 <form class="edit-form" method="post" action="/admin/rules">
   <input type="hidden" name="target" value="{{.Target}}">
   {{with .Machine}}<input type="hidden" name="machine" value="{{.}}">{{end}}
   {{with .Group}}<input type="hidden" name="group" value="{{.}}">{{end}}
   <label>Type
-    <select name="type" required>{{range .Edit.RuleTypes}}<option value="{{.}}">{{.}}</option>{{end}}</select>
+    <select name="type" required>{{range .Edit.RuleTypes}}<option value="{{.}}"{{if eq . $.Type}} selected{{end}}>{{.}}</option>{{end}}</select>
   </label>
   <label>Identifier
-    <input name="identifier" required maxlength="300" size="44" autocomplete="off" spellcheck="false">
+    <input name="identifier" required maxlength="300" size="44" autocomplete="off" spellcheck="false"{{with .Identifier}} value="{{.}}"{{end}}>
   </label>
   <label>Policy
-    <select name="policy" required>{{range .Edit.Policies}}<option value="{{.}}"{{if eq . "BLOCKLIST"}} selected{{end}}>{{.}}</option>{{end}}</select>
+    <select name="policy" required>{{range .Edit.Policies}}<option value="{{.}}"{{if eq . $.Policy}} selected{{end}}>{{.}}</option>{{end}}</select>
   </label>
   <label>Custom message <span class="hint">(optional, shown when blocked)</span>
     <input name="custom_message" maxlength="4096" size="30">

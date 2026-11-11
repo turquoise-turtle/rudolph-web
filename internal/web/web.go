@@ -205,6 +205,7 @@ func New(opts Options) (http.Handler, error) {
 	mux.Handle("GET /events", viewer(s.events))
 	mux.Handle("GET /events/top-blocked", viewer(s.topBlocked))
 	mux.Handle("GET /events/top-allowed", viewer(s.topAllowed))
+	mux.Handle("GET /events/top-unknown", viewer(s.topUnknown))
 	admin := func(h http.HandlerFunc) http.Handler { return opts.Auth.RequireOr(auth.RoleAdmin, h, s.forbidden) }
 	mux.Handle("GET /admin", admin(s.admin))
 	// The audit trail is read-only and also lists the CLI's changes, so admins
@@ -216,6 +217,9 @@ func New(opts Options) (http.Handler, error) {
 	if s.writer != nil {
 		// Every POST passes the cross-origin protection below before it gets
 		// here, and only an admin's reaches the handler.
+		// Only a page of forms, but like the other editing routes it exists
+		// only with editing on, as nothing could be saved from it otherwise.
+		mux.Handle("GET /admin/rules/new", admin(s.newRule))
 		mux.Handle("POST /admin/rules", admin(s.addRule))
 		mux.Handle("POST /admin/rules/remove", admin(s.removeRule))
 		mux.Handle("POST /admin/rules/collect", admin(s.setRuleCollection))

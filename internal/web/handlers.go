@@ -358,7 +358,7 @@ func (s *server) events(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// topListPage is one of the ranker's two lists.
+// topListPage is one of the ranker's list pages.
 type topListPage struct {
 	Kind  store.TopKind
 	Path  string
@@ -370,7 +370,25 @@ type topListPage struct {
 var (
 	topBlockedPage = topListPage{Kind: store.TopKindBlocked, Path: "/events/top-blocked", Title: "Top blocked binaries", Nav: "top-blocked", Noun: "blocked executions"}
 	topAllowedPage = topListPage{Kind: store.TopKindAllowed, Path: "/events/top-allowed", Title: "Top allowed binaries", Nav: "top-allowed", Noun: "allowed executions"}
+	topUnknownPage = topListPage{Kind: store.TopKindUnknown, Path: "/events/top-unknown", Title: "Top unknown binaries", Nav: "top-unknown", Noun: "unknown executions"}
+	// topPages is the order the pages link to each other in.
+	topPages = []topListPage{topBlockedPage, topAllowedPage, topUnknownPage}
 )
+
+// topUnknownDecision is one choice of the top unknown page's decision filter.
+type topUnknownDecision struct {
+	Value string
+	Label string
+	Kind  store.TopKind
+	Noun  string
+}
+
+// topUnknownDecisions are the filter's choices, the default first.
+var topUnknownDecisions = []topUnknownDecision{
+	{"all", "Blocked and allowed", store.TopKindUnknown, "unknown executions"},
+	{"blocked", "Blocked (lockdown)", store.TopKindUnknownBlocked, "unknown blocked executions"},
+	{"allowed", "Allowed (monitor)", store.TopKindUnknownAllowed, "unknown allowed executions"},
+}
 
 const defaultTopWindowDays = 7
 
@@ -385,12 +403,49 @@ type topWindowLink struct {
 	Current bool
 }
 
+// topLink links to another top list page.
+type topLink struct {
+	Title string
+	URL   string
+}
+
+// topRow is a top list row with what the page adds to it.
+type topRow struct {
+	store.TopBinary
+	// RuleType and RuleIdentifier describe GlobalRule; RuleType is empty
+	// when the row has none (or one this version cannot read).
+	RuleType       string
+	RuleIdentifier string
+	// AddRuleURL is the pre-filled add-rule page, for admins with editing
+	// on, on unknown rows that no global rule covers yet and that have an
+	// identifier a rule can take.
+	AddRuleURL string
+}
+
 func (s *server) topBlocked(w http.ResponseWriter, r *http.Request) {
-	s.topList(w, r, topBlockedPage)
+	s.topList(w, r, topBlockedPage, nil)
 }
 
 func (s *server) topAllowed(w http.ResponseWriter, r *http.Request) {
-	s.topList(w, r, topAllowedPage)
+	s.topList(w, r, topAllowedPage, nil)
+}
+
+// topUnknown serves the three unknown lists on one page, chosen with the
+// decision filter, which every link on the page keeps.
+func (s *server) topUnknown(w http.ResponseWriter, r *http.Request) {
+	raw := r.URL.Query().Get("decision")
+	if raw == "" {
+		raw = topUnknownDecisions[0].Value
+	}
+	i := slices.IndexFunc(topUnknownDecisions, func(d topUnknownDecision) bool { return d.Value == raw })
+	if i < 0 {
+		s.renderError(w, r, http.StatusBadRequest, "Unknown decision; choose all, blocked or allowed.")
+		return
+	}
+	d := topUnknownDecisions[i]
+	page := topUnknownPage
+	page.Kind, page.Noun = d.Kind, d.Noun
+	s.topList(w, r, page, &d)
 }
 
 // topWindowDays reads `days`, which must be written exactly as one of the
@@ -408,14 +463,47 @@ func topWindowDays(q url.Values) (int, bool) {
 	return 0, false
 }
 
-func topListURL(path string, days int) string {
-	return path + "?" + url.Values{"days": {strconv.Itoa(days)}}.Encode()
+// topListURL links to a window of a list page; decision is the unknown page's
+// filter, or "" for the default.
+func topListURL(path string, days int, decision string) string {
+	return path + "?" + topListQuery(days, decision).Encode()
+}
+
+func topListQuery(days int, decision string) url.Values {
+	v := url.Values{"days": {strconv.Itoa(days)}}
+	if decision != "" && decision != topUnknownDecisions[0].Value {
+		v.Set("decision", decision)
+	}
+	return v
+}
+
+// globalRuleLabels name the rule types the ranker's GlobalRule can hold.
+var globalRuleLabels = map[store.RuleType]string{
+	store.RuleTypeBinary:    "Binary",
+	store.RuleTypeSigningID: "Signing ID",
+	store.RuleTypeTeamID:    "Team ID",
+}
+
+// newRuleURL links to the pre-filled add-rule page for a row, or returns ""
+// when no identifier of the row would make a valid rule, so the page never
+// offers a link that ends in an error.
+func newRuleURL(b store.TopBinary) string {
+	v := url.Values{}
+	for _, c := range prefillChoices(b.SigningID, b.TeamID, b.FileSHA256) {
+		if rudolphrules.ValidIdentifier(c.Type, c.Identifier) {
+			v.Set(c.Param, c.Identifier)
+		}
+	}
+	if len(v) == 0 {
+		return ""
+	}
+	return "/admin/rules/new?" + v.Encode()
 }
 
 // topList shows one page of a ranker list. The cursor pins the snapshot of
 // the first page, so later pages stay consistent when the ranker runs
-// meanwhile.
-func (s *server) topList(w http.ResponseWriter, r *http.Request, page topListPage) {
+// meanwhile. decision is the unknown page's filter, nil on the others.
+func (s *server) topList(w http.ResponseWriter, r *http.Request, page topListPage, decision *topUnknownDecision) {
 	q := r.URL.Query()
 	days, ok := topWindowDays(q)
 	if !ok {
@@ -431,39 +519,61 @@ func (s *server) topList(w http.ResponseWriter, r *http.Request, page topListPag
 		s.storeError(w, r, err)
 		return
 	}
+	decisionValue := ""
+	if decision != nil {
+		decisionValue = decision.Value
+	}
 	windows := make([]topWindowLink, 0, len(store.TopWindowDays))
 	for _, d := range store.TopWindowDays {
-		windows = append(windows, topWindowLink{Days: d, URL: topListURL(page.Path, d), Current: d == days})
+		windows = append(windows, topWindowLink{Days: d, URL: topListURL(page.Path, d, decisionValue), Current: d == days})
 	}
-	other := topAllowedPage
-	if page.Kind == store.TopKindAllowed {
-		other = topBlockedPage
+	var others []topLink
+	for _, p := range topPages {
+		if p.Path != page.Path {
+			others = append(others, topLink{Title: p.Title, URL: topListURL(p.Path, days, "")})
+		}
+	}
+	canEdit := s.canEdit(r)
+	rows := make([]topRow, 0, len(list.Items))
+	for _, b := range list.Items {
+		row := topRow{TopBinary: b}
+		if t, id, ok := rudolphrules.RuleFromSortKey(b.GlobalRule); ok && globalRuleLabels[t] != "" {
+			row.RuleType, row.RuleIdentifier = globalRuleLabels[t], id
+		}
+		if canEdit && page.Kind.IsUnknown() && b.GlobalRule == "" {
+			row.AddRuleURL = newRuleURL(b)
+		}
+		rows = append(rows, row)
 	}
 	computed := !list.GeneratedAt.IsZero()
 	s.render(w, r, http.StatusOK, "toplist", page.Title, page.Nav, struct {
 		List        topListPage
+		Unknown     bool
+		Decision    string
+		Decisions   []topUnknownDecision
 		Days        int
 		Windows     []topWindowLink
-		OtherTitle  string
-		OtherURL    string
+		Others      []topLink
 		Computed    bool
 		GeneratedAt time.Time
 		Stale       bool
 		StaleHours  string
-		Binaries    []store.TopBinary
+		Binaries    []topRow
 		Pager       pager
 	}{
 		List:        page,
+		Unknown:     decision != nil,
+		Decision:    decisionValue,
+		Decisions:   topUnknownDecisions,
 		Days:        days,
 		Windows:     windows,
-		OtherTitle:  other.Title,
-		OtherURL:    topListURL(other.Path, days),
+		Others:      others,
 		Computed:    computed,
 		GeneratedAt: list.GeneratedAt,
 		Stale:       computed && s.now().Sub(list.GeneratedAt) > s.topListStaleAfter,
 		StaleHours:  strconv.FormatFloat(s.topListStaleAfter.Hours(), 'f', -1, 64),
-		Binaries:    list.Items,
-		Pager:       links(page.Path, url.Values{"days": {strconv.Itoa(days)}}, nav, list.NextCursor),
+		Binaries:    rows,
+		Pager:       links(page.Path, topListQuery(days, decisionValue), nav, list.NextCursor),
 	})
 }
 

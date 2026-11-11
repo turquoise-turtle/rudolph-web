@@ -34,8 +34,11 @@ const (
 
 // topKindNames are the kind segments Rudolph writes in the keys.
 var topKindNames = map[store.TopKind]string{
-	store.TopKindBlocked: "Blocked",
-	store.TopKindAllowed: "Allowed",
+	store.TopKindBlocked:        "Blocked",
+	store.TopKindAllowed:        "Allowed",
+	store.TopKindUnknown:        "Unknown",
+	store.TopKindUnknownBlocked: "UnknownBlocked",
+	store.TopKindUnknownAllowed: "UnknownAllowed",
 }
 
 // topList is one validated kind and window.
@@ -234,7 +237,8 @@ func isRank(sk string) bool {
 }
 
 // DecodeTopBinary decodes one snapshot row. Machines is absent below the
-// first 100 rows, where the ranker does not count Macs.
+// first 100 rows, where the ranker does not count Macs, and so is GlobalRule,
+// which only the unknown lists carry.
 func DecodeTopBinary(item map[string]types.AttributeValue) (store.TopBinary, error) {
 	r := &reader{item: item}
 	b := store.TopBinary{
@@ -244,6 +248,7 @@ func DecodeTopBinary(item map[string]types.AttributeValue) (store.TopBinary, err
 		SigningID:     r.str("SigningID"),
 		Count:         int(r.requiredNum("Count")),
 		MachinesKnown: r.present(attrTopMachines),
+		GlobalRule:    r.str("GlobalRule"),
 	}
 	if b.MachinesKnown {
 		b.Machines = int(r.num(attrTopMachines))

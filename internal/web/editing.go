@@ -11,6 +11,7 @@ import (
 
 	"github.com/turquoise-turtle/rudolph-web/internal/auth"
 	"github.com/turquoise-turtle/rudolph-web/internal/store"
+	"github.com/turquoise-turtle/rudolph-web/internal/store/rudolphrules"
 )
 
 // Admin writes (plan F2). Every form is plain HTML (the CSP allows no
@@ -67,11 +68,17 @@ type ruleFormData struct {
 	Group   string
 	Edit    editForms
 	Rule    store.Rule
+	// Type, Identifier and Policy pre-fill the add-rule form; Open shows it
+	// unfolded.
+	Type       store.RuleType
+	Identifier string
+	Policy     store.Policy
+	Open       bool
 }
 
 var editFuncs = map[string]any{
 	"addRuleForm": func(title, target, id string, e editForms) ruleFormData {
-		d := ruleFormData{Title: title, Target: target, Edit: e}
+		d := ruleFormData{Title: title, Target: target, Edit: e, Policy: store.PolicyBlocklist}
 		d.setID(id)
 		return d
 	},
@@ -198,6 +205,54 @@ func (s *server) addRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, back, http.StatusSeeOther)
+}
+
+// prefillChoice is one identifier the pre-filled add-rule page may offer: the
+// query parameter it comes in and the rule type it makes.
+type prefillChoice struct {
+	Param      string
+	Label      string
+	Type       store.RuleType
+	Identifier string
+}
+
+// prefillChoices lists a binary's identifiers in the order the pre-filled
+// page offers them: a signing ID rule survives updates and is narrower than
+// a team ID, and a binary rule breaks on the next update, so it comes last.
+func prefillChoices(signingID, teamID, sha256 string) []prefillChoice {
+	return []prefillChoice{
+		{"signing_id", "Signing ID", store.RuleTypeSigningID, signingID},
+		{"team_id", "Team ID", store.RuleTypeTeamID, teamID},
+		{"sha256", "Binary", store.RuleTypeBinary, sha256},
+	}
+}
+
+// newRule shows one global add-rule form for each identifier in the query
+// that Rudolph would take for its type, pre-filled, for the "Add a rule"
+// links of the top unknown page. Each form posts to addRule like the one on
+// the rules page, which checks everything again. The policy defaults to
+// ALLOWLIST because unknown binaries are mostly ones to let run.
+func (s *server) newRule(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	edit := s.editForms(r)
+	var forms []ruleFormData
+	for _, c := range prefillChoices(q.Get("signing_id"), q.Get("team_id"), q.Get("sha256")) {
+		id := strings.TrimSpace(c.Identifier)
+		if !rudolphrules.ValidIdentifier(c.Type, id) {
+			continue
+		}
+		forms = append(forms, ruleFormData{
+			Title: "Add a global " + c.Label + " rule", Target: "global", Edit: edit,
+			Type: c.Type, Identifier: id, Policy: store.PolicyAllowlist, Open: true,
+		})
+	}
+	if len(forms) == 0 {
+		s.renderError(w, r, http.StatusBadRequest, "No identifier here would make a valid rule: a signing ID such as TEAMID:signing.id, a Team ID such as EQHXZ8M8AV, or a SHA-256 of 64 lower-case hexadecimal digits.")
+		return
+	}
+	s.render(w, r, http.StatusOK, "newrule", "Add a rule", "rules", struct {
+		Forms []ruleFormData
+	}{forms})
 }
 
 func (s *server) removeRule(w http.ResponseWriter, r *http.Request) {
