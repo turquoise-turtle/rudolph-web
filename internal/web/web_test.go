@@ -761,6 +761,10 @@ func TestQueryBudget_OneBoundedPaginatedQueryPerList(t *testing.T) {
 	}
 	s.SetTopList(store.TopKindBlocked, 7, fixedNow, top)
 	s.SetTopList(store.TopKindAllowed, 7, fixedNow, top)
+	s.AddGroup(store.Group{Name: "eng", AcceptReported: true})
+	for i := 1; i <= 300; i++ {
+		s.SetMachineGroups(fmt.Sprintf("machine-%03d", i), []string{"eng"}, nil, nil)
+	}
 	a := newApp(t, s, pageSize)
 
 	cases := []struct {
@@ -778,6 +782,7 @@ func TestQueryBudget_OneBoundedPaginatedQueryPerList(t *testing.T) {
 		{"/events?machine=machine-001", "ListExecutionEvents", 3}, // GetMachine for the stored spelling: as typed, upper, lower case (first page only)
 		{"/events/top-blocked", "TopBinaries", 0},
 		{"/events/top-allowed", "TopBinaries", 0},
+		{"/groups/eng/members", "ListGroupMembers", 1}, // ListGroups
 	}
 	for _, tc := range cases {
 		t.Run(tc.target, func(t *testing.T) {
