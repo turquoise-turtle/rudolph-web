@@ -1,0 +1,29 @@
+{{define "content"}}
+<p><a href="{{groupURL .Group.Name}}">Group <code>{{.Group.Name}}</code></a>{{with .Group.Description}}: {{.}}{{end}}</p>
+{{if .AssignedOnly}}
+<p class="hint">This group counts only assigned Macs, so only assigned Macs are listed: a Mac that just reports the group is not a member.</p>
+{{else}}
+<p class="hint">Members are the Macs assigned this group in Rudolph and the Macs that reported it at their last preflight.</p>
+{{end}}
+{{if .Members}}
+<div class="scroll">
+<table>
+<thead><tr><th>Hostname</th><th>Serial</th><th>Model</th><th>Membership</th><th>Last seen (UTC)</th></tr></thead>
+<tbody>
+{{range .Members}}
+<tr data-row>
+  <td><a href="{{machineURL .MachineID}}">{{with .Hostname}}{{.}}{{else}}<code>{{.MachineID}}</code>{{end}}</a></td>
+  <td>{{orDash .SerialNum}}</td>
+  <td>{{orDash .ModelIdentifier}}{{with modelName .ModelIdentifier}} - {{.}}{{end}}</td>
+  <td>{{.How}}</td>
+  <td>{{template "time" .LastSeen}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+</div>
+{{else}}
+<p>No Macs in this group.</p>
+{{end}}
+{{template "pager" .Pager}}
+{{end}}

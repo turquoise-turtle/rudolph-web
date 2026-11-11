@@ -14,6 +14,7 @@
 //	PK=Machine#<id>       SK=ReportedGroups  groups as sent -> MachineDetail.ReportedAsSent
 //	PK=GroupRegistry      SK=Current      group registry   -> Group
 //	PK=GroupRules#<name>  SK=<Type>#<id>  group rules      -> Rule
+//	PK=GroupMembers#<name> SK=<machine id> a group's Macs  -> GroupMember
 //
 // Execution events come from Rudolph's separate events table:
 //
@@ -304,6 +305,23 @@ type Group struct {
 	ClientMode ClientMode
 }
 
+// GroupMember is one of a group's Macs. Machine always has MachineID; the
+// rest comes from the Mac's sensor data and is empty when it has none (a Mac
+// assigned before it ever synced). Assigned and Reported say how it is a
+// member: assigned in Rudolph, or reporting the group (which then counts only
+// when the group accepts reported membership).
+type GroupMember struct {
+	Machine  Machine
+	Assigned bool
+	Reported bool
+}
+
+// GroupMemberFilter narrows ListGroupMembers. AssignedOnly leaves out Macs
+// that only report the group, for a group that counts only assigned Macs.
+type GroupMemberFilter struct {
+	AssignedOnly bool
+}
+
 // MachineFilter narrows ListMachines. At most one prefix may be set; each maps
 // to a different index.
 type MachineFilter struct {
@@ -510,6 +528,9 @@ type GroupReader interface {
 	ListGroups(ctx context.Context) ([]Group, error)
 	// ListGroupRules returns rules in PK=GroupRules#<group>, in SK order.
 	ListGroupRules(ctx context.Context, group string, p PageRequest) (Page[Rule], error)
+	// ListGroupMembers returns the group's Macs from PK=GroupMembers#<group>,
+	// in machine ID order, with each page's sensor data read in one batch.
+	ListGroupMembers(ctx context.Context, group string, f GroupMemberFilter, p PageRequest) (Page[GroupMember], error)
 }
 
 // EventReader reads uploaded events and summaries.
@@ -597,6 +618,10 @@ func (Unavailable) ListGroups(context.Context) ([]Group, error) {
 
 func (Unavailable) ListGroupRules(context.Context, string, PageRequest) (Page[Rule], error) {
 	return Page[Rule]{}, ErrUnavailable
+}
+
+func (Unavailable) ListGroupMembers(context.Context, string, GroupMemberFilter, PageRequest) (Page[GroupMember], error) {
+	return Page[GroupMember]{}, ErrUnavailable
 }
 
 func (Unavailable) ListExecutionEvents(context.Context, EventFilter, PageRequest) (Page[ExecutionEvent], error) {

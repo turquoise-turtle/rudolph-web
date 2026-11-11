@@ -408,6 +408,30 @@ func (s *Store) ListGroupRules(_ context.Context, group string, p store.PageRequ
 	return paginate(s.cursors, keyed, fingerprint("ListGroupRules", "", group), p)
 }
 
+// ListGroupMembers implements store.GroupReader, deriving the members from
+// SetMachineGroups' assigned and reported lists, as Rudolph's member rows
+// mirror each Mac's groups item.
+func (s *Store) ListGroupMembers(_ context.Context, group string, f store.GroupMemberFilter, p store.PageRequest) (store.Page[store.GroupMember], error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.record(Call{Method: "ListGroupMembers", Filter: f, Page: p}); err != nil {
+		return store.Page[store.GroupMember]{}, err
+	}
+	var keyed []keyedItem[store.GroupMember]
+	for id, g := range s.machineGrps {
+		m := store.GroupMember{Assigned: slices.Contains(g.assigned, group), Reported: slices.Contains(g.reported, group)}
+		if !m.Assigned && (!m.Reported || f.AssignedOnly) {
+			continue
+		}
+		var ok bool
+		if m.Machine, ok = s.machines[id]; !ok {
+			m.Machine = store.Machine{MachineID: id}
+		}
+		keyed = append(keyed, keyedItem[store.GroupMember]{key: id, item: m})
+	}
+	return paginate(s.cursors, keyed, fingerprint("ListGroupMembers", group, f), p)
+}
+
 // ListExecutionEvents implements store.EventReader. Like the DynamoDB reader,
 // which has one key per filter, it refuses more than one filter at once.
 func (s *Store) ListExecutionEvents(_ context.Context, f store.EventFilter, p store.PageRequest) (store.Page[store.ExecutionEvent], error) {
