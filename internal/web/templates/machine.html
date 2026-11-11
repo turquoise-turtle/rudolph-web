@@ -119,7 +119,7 @@
 <table>
 <thead><tr><th>Type</th><th>Policy</th><th>Identifier</th><th>Custom message</th><th>Description</th><th>Expires</th><th>State</th><th>Rudolph CLI</th>{{if .Edit.On}}<th>Change</th>{{end}}</tr></thead>
 <tbody>
-{{range .Rules}}
+{{range $rule := .Rules}}
 <tr data-row>
   <td>{{.RuleType}}</td>
   <td>{{.Policy}}</td>
@@ -127,11 +127,12 @@
   <td>{{.CustomMessage}}</td>
   <td>{{.Description}}</td>
   <td>{{template "time" .ExpiresAt}}</td>
-  <td>{{with .State}}{{.}}{{else}}—{{end}}</td>
+  <td>{{with .State}}{{.}}{{else}}—{{end}}{{if .CollectAllowedEvents}}<br><span class="muted">collecting allowed executions</span>{{end}}</td>
   <td>{{with cliRemoveMachine .RuleType .Identifier $.Machine.MachineID}}<details class="cmds"><summary>Commands</summary><ul>
     {{template "cmd" (cmd "Remove" .)}}
+    {{if canCollect $rule}}{{if $rule.CollectAllowedEvents}}{{template "cmd" (cmd "Stop collecting allowed executions" (cliCollectMachine $rule.RuleType $rule.Identifier $.Machine.MachineID false))}}{{else}}{{template "cmd" (cmd "Collect allowed executions" (cliCollectMachine $rule.RuleType $rule.Identifier $.Machine.MachineID true))}}{{end}}{{end}}
   </ul></details>{{end}}</td>
-  {{if $.Edit.On}}<td>{{if eq .State "IN_FORCE"}}{{template "removerule" (removeRuleForm "machine" $.Machine.MachineID .)}}{{end}}</td>{{end}}
+  {{if $.Edit.On}}<td>{{if eq .State "IN_FORCE"}}{{template "removerule" (removeRuleForm "machine" $.Machine.MachineID .)}}{{end}}{{if canCollect .}}{{template "collectrule" (removeRuleForm "machine" $.Machine.MachineID .)}}{{end}}</td>{{end}}
 </tr>
 {{end}}
 </tbody>

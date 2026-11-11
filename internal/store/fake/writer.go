@@ -379,3 +379,37 @@ func (s *Store) changeAssigned(actor store.Actor, machineID, group string, assig
 func groupAuditTarget(name string) string {
 	return store.RuleTarget{Kind: store.TargetGroup, Group: name}.AuditTarget()
 }
+
+// SetRuleCollection implements store.Writer.
+func (s *Store) SetRuleCollection(_ context.Context, actor store.Actor, target store.RuleTarget, ruleType store.RuleType, identifier string, collect bool) error {
+	ch, err := rudolphrules.CheckCollection(actor, target, ruleType, identifier)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.err != nil {
+		return s.err
+	}
+	rules := s.globalRules
+	if ch.Target.Kind == store.TargetMachine {
+		if ch.Target.MachineID, err = s.storedMachineID(ch.Target.MachineID); err != nil {
+			return err
+		}
+		rules = s.machineRules[ch.Target.MachineID]
+	}
+	key := ruleKey(store.Rule{RuleType: ruleType, Identifier: identifier})
+	r, ok := rules[key]
+	switch {
+	case !ok || r.State == store.RuleStateExpired:
+		return store.ErrNotFound
+	case r.State == store.RuleStateRemoving:
+		return store.Invalid("the rule is being removed from the Mac; add it again instead")
+	case r.CollectAllowedEvents == collect:
+		return store.ErrNothingToChange
+	}
+	r.CollectAllowedEvents = collect
+	rules[key] = r
+	s.recordAudit(ch.Actor, store.ActionRuleUpdate, ch.Target.AuditTarget(), rudolphrules.CollectionSummaryOf(r.RuleType, r.Identifier, r.Policy, collect))
+	return nil
+}

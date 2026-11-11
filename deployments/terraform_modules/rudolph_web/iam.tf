@@ -96,8 +96,8 @@ data "aws_iam_policy_document" "web" {
     }
   }
 
-  # Admin writes (enable_editing), made with Rudolph's own packages, so exactly the writes of the CLI's rule add and
-  # remove, its temporary client mode and its group create, update, delete, add and remove: PutItem, UpdateItem and
+  # Admin writes (enable_editing), made with Rudolph's own packages, so exactly the writes of the CLI's rule add,
+  # remove and update (collecting allowed executions), its temporary client mode and its group create, update, delete, add and remove: PutItem, UpdateItem and
   # DeleteItem, also inside TransactWriteItems, which has no IAM action of its own, and BatchWriteItem, which has one
   # and which groups.DeleteGroup uses to delete a group's rules (group delete --force). Only on the store table itself
   # (never an index or the events table), and only to the partitions those writes touch:

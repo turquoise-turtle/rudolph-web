@@ -80,6 +80,18 @@ var editFuncs = map[string]any{
 		d.setID(id)
 		return d
 	},
+	"canCollect": canCollect,
+}
+
+// canCollect reports whether a rule gets a button to collect its allowed
+// executions, or to stop: an allowing rule in force, or one collecting
+// already. Blocked executions are always stored, so blocking rules have
+// nothing to collect.
+func canCollect(r store.Rule) bool {
+	if r.State != store.RuleStateInForce {
+		return false
+	}
+	return r.CollectAllowedEvents || r.Policy == store.PolicyAllowlist || r.Policy == store.PolicyAllowlistCompiler
 }
 
 func (d *ruleFormData) setID(id string) {
@@ -206,6 +218,43 @@ func (s *server) removeRule(w http.ResponseWriter, r *http.Request) {
 	err := s.writer.RemoveRule(r.Context(), actorOf(r), target, ruleType, strings.TrimSpace(f.Get("identifier")))
 	if err != nil {
 		s.writeError(w, r, err, "There is no such rule to remove: it may have been removed already, or Rudolph has nothing for this machine.")
+		return
+	}
+	http.Redirect(w, r, back, http.StatusSeeOther)
+}
+
+func (s *server) setRuleCollection(w http.ResponseWriter, r *http.Request) {
+	if !s.parseForm(w, r) {
+		return
+	}
+	f := r.PostForm
+	target, back, ok := formTarget(f)
+	if !ok {
+		s.renderError(w, r, http.StatusBadRequest, "Not changed: unknown target.")
+		return
+	}
+	if target.Kind == store.TargetGroup {
+		s.renderError(w, r, http.StatusBadRequest, "Not changed: Rudolph collects the allowed executions of global and machine rules only, not group rules.")
+		return
+	}
+	ruleType := store.RuleType(f.Get("type"))
+	if !slices.Contains(store.RuleTypes, ruleType) {
+		s.renderError(w, r, http.StatusBadRequest, "Not changed: unknown rule type.")
+		return
+	}
+	var collect bool
+	switch f.Get("collect") {
+	case "on":
+		collect = true
+	case "off":
+	default:
+		s.renderError(w, r, http.StatusBadRequest, "Not changed: collect must be on or off.")
+		return
+	}
+	err := s.writer.SetRuleCollection(r.Context(), actorOf(r), target, ruleType, strings.TrimSpace(f.Get("identifier")), collect)
+	// A second click, or a change made with the CLI meanwhile, leaves the rule as asked.
+	if err != nil && !errors.Is(err, store.ErrNothingToChange) {
+		s.writeError(w, r, err, "There is no such rule: it may have been removed, or the machine rule may have expired.")
 		return
 	}
 	http.Redirect(w, r, back, http.StatusSeeOther)

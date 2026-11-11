@@ -279,3 +279,24 @@ func Spellings(id string) []string {
 func UnknownMachine(id string) error {
 	return fmt.Errorf("%w: Rudolph has nothing for machine %s", store.ErrNotFound, id)
 }
+
+// CheckCollection checks a change to whether a rule's allowed executions are
+// collected. Rudolph's index of collected rules has global and machine scopes
+// only, so group rules are refused.
+func CheckCollection(actor store.Actor, target store.RuleTarget, ruleType store.RuleType, identifier string) (Remove, error) {
+	if target.Kind == store.TargetGroup {
+		return Remove{}, store.Invalid("Rudolph collects the allowed executions of global and machine rules only, not group rules")
+	}
+	return CheckRemove(actor, target, ruleType, identifier)
+}
+
+// CollectionSummary describes a change to a rule's collection for the audit
+// trail, as the CLI's rule update does.
+func CollectionSummary(ruleType types.RuleType, identifier string, policy types.Policy, collect bool) string {
+	return Summary(ruleType, identifier, policy, fmt.Sprintf("collect allowed events %t", collect))
+}
+
+// CollectionSummaryOf is CollectionSummary for a rule in the store's terms.
+func CollectionSummaryOf(ruleType store.RuleType, identifier string, policy store.Policy, collect bool) string {
+	return SummaryOf(ruleType, identifier, policy, fmt.Sprintf("collect allowed events %t", collect))
+}

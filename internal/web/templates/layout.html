@@ -109,3 +109,16 @@ so removing asks nothing more than the clearly labelled button. */}}
   <button type="submit" class="danger">Remove rule</button>
 </form>
 {{end}}
+{{/* Turns collection of a rule's allowed executions on or off: off when it
+collects, else on. */}}
+{{define "collectrule"}}
+<form class="inline" method="post" action="/admin/rules/collect">
+  <input type="hidden" name="target" value="{{.Target}}">
+  {{with .Machine}}<input type="hidden" name="machine" value="{{.}}">{{end}}
+  <input type="hidden" name="type" value="{{.Rule.RuleType}}">
+  <input type="hidden" name="identifier" value="{{.Rule.Identifier}}">
+  {{if .Rule.CollectAllowedEvents}}<input type="hidden" name="collect" value="off">
+  <button type="submit">Stop collecting</button>{{else}}<input type="hidden" name="collect" value="on">
+  <button type="submit">Collect allowed executions</button>{{end}}
+</form>
+{{end}}

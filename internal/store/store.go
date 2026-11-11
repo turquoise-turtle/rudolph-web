@@ -329,6 +329,9 @@ type Rule struct {
 	Description   string
 	ExpiresAt     time.Time // machine rules only; zero if none
 	State         RuleState
+	// CollectAllowedEvents: Rudolph stores the executions this global or
+	// machine rule allows, from Macs that upload allowed executions.
+	CollectAllowedEvents bool
 }
 
 // RuleFilter narrows ListGlobalRules. Zero values match everything.

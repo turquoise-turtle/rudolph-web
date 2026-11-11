@@ -137,6 +137,7 @@ func DecodeRule(item map[string]types.AttributeValue, now time.Time) (store.Rule
 		rule.ExpiresAt = time.Unix(exp, 0).UTC()
 	}
 	deleting := r.boolean("DeleteOnNextSync")
+	rule.CollectAllowedEvents = r.boolean("CollectAllowedEvents")
 	if r.err != nil {
 		return store.Rule{}, fmt.Errorf("dynamo: decoding rule %q: %w", r.str("SK"), r.err)
 	}

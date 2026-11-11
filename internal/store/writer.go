@@ -21,6 +21,7 @@ func Invalid(format string, args ...any) error {
 const (
 	ActionRuleAdd             = "rule.add"
 	ActionRuleRemove          = "rule.remove"
+	ActionRuleUpdate          = "rule.update"
 	ActionTemporaryMode       = "config.temporary-mode"
 	ActionEndTemporaryMode    = "config.end-temporary-mode"
 	ActionGroupCreate         = "group.create"
@@ -37,11 +38,12 @@ const (
 	auditTargetUngroupedGroup = "ungrouped"
 )
 
-// ErrNothingToChange is UpdateGroup's refusal when the group already has the
-// description and reported membership asked for. It wraps
-// ErrInvalidArgument, so a caller that does not tell it apart refuses it like
-// any other invalid change.
-var ErrNothingToChange = Invalid("nothing to change: the group already has this description and reported membership setting")
+// ErrNothingToChange is the refusal of a change that is already in place:
+// UpdateGroup when the group already has the description and reported
+// membership asked for, SetRuleCollection when the rule is already collected
+// (or not) as asked. It wraps ErrInvalidArgument, so a caller that does not
+// tell it apart refuses it like any other invalid change.
+var ErrNothingToChange = Invalid("nothing to change: it already is as asked")
 
 // Actor is the signed-in person a write is made for, from the Entra session.
 type Actor struct {
@@ -145,6 +147,13 @@ type Writer interface {
 	// rule is marked so that the Mac drops it (or gets the global rule back)
 	// at its next sync. ErrNotFound when there is no such rule.
 	RemoveRule(ctx context.Context, actor Actor, target RuleTarget, ruleType RuleType, identifier string) error
+	// SetRuleCollection sets or clears CollectAllowedEvents on a global or
+	// machine rule, as rudolph rule update --collect-allowed-events does, so
+	// that the allowed executions it matches are stored (or no longer are).
+	// ErrNothingToChange when the rule already is as asked; ErrNotFound when
+	// there is no such rule or the machine rule has expired. Group rules are
+	// ErrInvalidArgument: Rudolph cannot collect them.
+	SetRuleCollection(ctx context.Context, actor Actor, target RuleTarget, ruleType RuleType, identifier string, collect bool) error
 	// SetTemporaryMode sends mode to the Mac instead of its usual mode until
 	// until, which must be between a minute and 30 days ahead.
 	SetTemporaryMode(ctx context.Context, actor Actor, machineID string, mode ClientMode, until time.Time) error

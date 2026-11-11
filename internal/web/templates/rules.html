@@ -15,24 +15,26 @@
   <button type="submit">Filter</button>
   <a href="/rules">Clear</a>
 </form>
-{{if .Edit.On}}{{template "addrule" (addRuleForm "Add a global rule" "global" "" .Edit)}}{{end}}
+{{if .Edit.On}}{{template "addrule" (addRuleForm "Add a global rule" "global" "" .Edit)}}
+{{if not .AllEventUpload}}<p class="hint"><strong>Note:</strong> {{if .GlobalUnread}}the global configuration could not be read to check EnableAllEventUpload.{{else}}the global configuration does not turn on EnableAllEventUpload.{{end}} Santa uploads allowed executions only with it, so a rule collecting allowed executions stores nothing from a Mac unless its own configuration turns it on.</p>{{end}}{{end}}
 {{if .Rules}}
 <div class="scroll">
 <table>
 <thead><tr><th>Type</th><th>Policy</th><th>Identifier</th><th>Custom message</th><th>Description</th><th>State</th><th>Rudolph CLI</th>{{if .Edit.On}}<th>Change</th>{{end}}</tr></thead>
 <tbody>
-{{range .Rules}}
+{{range $rule := .Rules}}
 <tr data-row>
   <td>{{.RuleType}}</td>
   <td>{{.Policy}}</td>
   <td><code>{{.Identifier}}</code>{{with .CELExpr}}<br><code class="cel">{{.}}</code>{{end}}</td>
   <td>{{.CustomMessage}}{{with .CustomURL}}<br><span class="muted">{{.}}</span>{{end}}</td>
   <td>{{.Description}}</td>
-  <td>{{with .State}}{{.}}{{else}}—{{end}}</td>
+  <td>{{with .State}}{{.}}{{else}}—{{end}}{{if .CollectAllowedEvents}}<br><span class="muted">collecting allowed executions</span>{{end}}</td>
   <td>{{with cliRemoveGlobal .RuleType .Identifier}}<details class="cmds"><summary>Commands</summary><ul>
     {{template "cmd" (cmd "Remove" .)}}
+    {{if canCollect $rule}}{{if $rule.CollectAllowedEvents}}{{template "cmd" (cmd "Stop collecting allowed executions" (cliCollectGlobal $rule.RuleType $rule.Identifier false))}}{{else}}{{template "cmd" (cmd "Collect allowed executions" (cliCollectGlobal $rule.RuleType $rule.Identifier true))}}{{end}}{{end}}
   </ul></details>{{end}}</td>
-  {{if $.Edit.On}}<td>{{template "removerule" (removeRuleForm "global" "" .)}}</td>{{end}}
+  {{if $.Edit.On}}<td>{{template "removerule" (removeRuleForm "global" "" .)}}{{if canCollect .}}{{template "collectrule" (removeRuleForm "global" "" .)}}{{end}}</td>{{end}}
 </tr>
 {{end}}
 </tbody>
