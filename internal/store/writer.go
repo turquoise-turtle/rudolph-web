@@ -133,6 +133,10 @@ var AddablePolicies = []Policy{
 	PolicySilentGUIBlocklist, PolicySilentTTYBlocklist,
 }
 
+// MaxMovedRules is the most rules MoveMachineRules moves in one request;
+// bulk work is the CLI's.
+const MaxMovedRules = 500
+
 // ClientModes lists every valid ClientMode.
 var ClientModes = []ClientMode{ClientModeMonitor, ClientModeLockdown, ClientModeStandalone}
 
@@ -154,6 +158,17 @@ type Writer interface {
 	// there is no such rule or the machine rule has expired. Group rules are
 	// ErrInvalidArgument: Rudolph cannot collect them.
 	SetRuleCollection(ctx context.Context, actor Actor, target RuleTarget, ruleType RuleType, identifier string, collect bool) error
+	// MoveMachineRules copies every machine rule in force on one Mac to
+	// another, as stored (policy, messages, CEL expression, description,
+	// expiry and collection), recording rule.add on the new Mac for each, and
+	// with remove then removes each from the old Mac as rudolph rule remove
+	// does. A rule the new Mac already has with the same policy is not copied
+	// again. It returns how many rules it copied. Everything is checked before
+	// anything is written: the same Mac, a Mac with no rules in force, more
+	// than MaxMovedRules of them, or a rule the new Mac has with another
+	// policy is ErrInvalidArgument; a new Mac Rudolph has nothing for is
+	// ErrNotFound.
+	MoveMachineRules(ctx context.Context, actor Actor, from, to string, remove bool) (int, error)
 	// SetTemporaryMode sends mode to the Mac instead of its usual mode until
 	// until, which must be between a minute and 30 days ahead.
 	SetTemporaryMode(ctx context.Context, actor Actor, machineID string, mode ClientMode, until time.Time) error

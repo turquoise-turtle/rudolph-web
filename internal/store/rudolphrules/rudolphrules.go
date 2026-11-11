@@ -300,3 +300,70 @@ func CollectionSummary(ruleType types.RuleType, identifier string, policy types.
 func CollectionSummaryOf(ruleType store.RuleType, identifier string, policy store.Policy, collect bool) string {
 	return SummaryOf(ruleType, identifier, policy, fmt.Sprintf("collect allowed events %t", collect))
 }
+
+// CheckMove checks a move of machine rules from one Mac to another and
+// returns the actor's audit name. Machine IDs that differ only in case are
+// the same Mac to the person moving rules, whatever spellings Rudolph holds.
+func CheckMove(actor store.Actor, from, to string) (string, error) {
+	name, err := actor.AuditName()
+	if err != nil {
+		return "", err
+	}
+	if err := MachineID(from); err != nil {
+		return "", err
+	}
+	if err := MachineID(to); err != nil {
+		return "", err
+	}
+	if strings.EqualFold(from, to) {
+		return "", store.Invalid("the rules are already on machine %s; choose another Mac", from)
+	}
+	return name, nil
+}
+
+// TooManyToMove refuses a move of more than store.MaxMovedRules rules.
+func TooManyToMove(n int) error {
+	return store.Invalid("this Mac has %d rules in force, more than the %d the web view moves at once; use the CLI", n, store.MaxMovedRules)
+}
+
+// NothingToMove refuses a move from a Mac with no rules in force.
+func NothingToMove(machineID string) error {
+	return store.Invalid("machine %s has no rules in force to move", machineID)
+}
+
+// MoveConflict refuses a move that would replace a rule the new Mac has with
+// another policy: which one should win is the person's call.
+func MoveConflict(ruleType, identifier, has, moving string) error {
+	return store.Invalid("the new Mac already has the %s rule %s with the policy %s, not %s; change or remove one of them first", ruleType, identifier, has, moving)
+}
+
+// CheckCopy checks a stored machine rule as Rudolph checks one it writes, so
+// that a move is refused before anything is written rather than part-way.
+func CheckCopy(rule rules.SantaRule) error {
+	typeName, err := rule.RuleType.MarshalText()
+	if err != nil {
+		return store.Invalid("a rule of unknown type %d cannot be moved", rule.RuleType)
+	}
+	if !rules.ValidIdentifier(rule.RuleType, rule.Identifier) {
+		return store.Invalid("the %s rule %q cannot be moved: its identifier is not one Rudolph accepts now (%s); add it again on the new Mac", typeName, rule.Identifier, identifierShape(rule.RuleType))
+	}
+	if err := rules.ValidatePolicy(rule); err != nil {
+		return store.Invalid("the %s rule %s cannot be moved: %v", typeName, rule.Identifier, err)
+	}
+	if err := rules.ValidateFieldSizes(rule); err != nil {
+		return store.Invalid("the %s rule %s cannot be moved: %v", typeName, rule.Identifier, err)
+	}
+	return nil
+}
+
+// CopiedExtra is the end of the audit summary of a rule copied to the new
+// Mac: the CLI's rule add, saying where it came from.
+func CopiedExtra(expires time.Time, from string) string {
+	return "expires " + ExpiryText(expires) + ", copied from machine " + from
+}
+
+// MovedExtra is the end of the audit summary of a rule removed from the old
+// Mac: the CLI's rule remove, saying where it went.
+func MovedExtra(to string) string {
+	return "moved to machine " + to
+}

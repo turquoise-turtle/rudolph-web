@@ -221,6 +221,7 @@ func New(opts Options) (http.Handler, error) {
 		mux.Handle("POST /admin/rules/collect", admin(s.setRuleCollection))
 		mux.Handle("POST /admin/machines/{id}/temporary-mode", admin(s.setTemporaryMode))
 		mux.Handle("POST /admin/machines/{id}/temporary-mode/end", admin(s.endTemporaryMode))
+		mux.Handle("POST /admin/machines/{id}/rules/move", admin(s.moveMachineRules))
 		mux.Handle("POST /admin/groups", admin(s.createGroup))
 		mux.Handle("POST /admin/groups/update", admin(s.updateGroup))
 		mux.Handle("POST /admin/groups/delete", admin(s.deleteGroup))
