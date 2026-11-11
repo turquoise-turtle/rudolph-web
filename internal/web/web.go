@@ -210,6 +210,9 @@ func New(opts Options) (http.Handler, error) {
 	// The audit trail is read-only and also lists the CLI's changes, so admins
 	// see who changed what even when the web view cannot edit (owner request).
 	mux.Handle("GET /admin/audit", admin(s.audit))
+	// Reading the settings needs no writes, so admins see them with editing
+	// off too, like the audit trail.
+	mux.Handle("GET /admin/config", admin(s.globalConfig))
 	if s.writer != nil {
 		// Every POST passes the cross-origin protection below before it gets
 		// here, and only an admin's reaches the handler.

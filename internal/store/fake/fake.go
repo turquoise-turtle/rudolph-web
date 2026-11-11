@@ -31,7 +31,11 @@ type Call struct {
 // Paginated reports whether the call was a paginated list query (as opposed to
 // a bounded point read such as GetMachine or ListGroups, one registry item).
 func (c Call) Paginated() bool {
-	return c.Method != "GetMachine" && c.Method != "ListGroups" && c.Method != "GlobalClientMode"
+	switch c.Method {
+	case "GetMachine", "ListGroups", "GlobalClientMode", "GlobalConfig":
+		return false
+	}
+	return true
 }
 
 // Store is an in-memory store.Reader. The zero value is not usable; use New.
@@ -39,8 +43,8 @@ type Store struct {
 	mu           sync.Mutex
 	machines     map[string]store.Machine
 	syncStates   map[string]store.SyncState
-	configModes  map[string]store.ClientMode
-	globalMode   store.ClientMode
+	configs      map[string]store.Config
+	globalConfig store.Config
 	tempModes    map[string]tempMode
 	cleanSyncs   map[string]bool
 	globalRules  map[string]store.Rule
@@ -70,10 +74,10 @@ func New() *Store {
 	}
 	return &Store{
 		cursors:      codec,
-		globalMode:   store.ClientModeMonitor,
+		globalConfig: store.Config{ClientMode: store.ClientModeMonitor},
 		machines:     map[string]store.Machine{},
 		syncStates:   map[string]store.SyncState{},
-		configModes:  map[string]store.ClientMode{},
+		configs:      map[string]store.Config{},
 		tempModes:    map[string]tempMode{},
 		cleanSyncs:   map[string]bool{},
 		globalRules:  map[string]store.Rule{},
@@ -100,19 +104,38 @@ func (s *Store) SetSyncState(machineID string, st store.SyncState) {
 }
 
 // SetConfiguredClientMode sets the client mode a machine's config sets ("" to
-// follow the global config).
+// follow the global config), keeping its other settings.
 func (s *Store) SetConfiguredClientMode(machineID string, mode store.ClientMode) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.configModes[machineID] = mode
+	c := s.configs[machineID]
+	c.Exists = true
+	c.ClientMode = mode
+	s.configs[machineID] = c
 }
 
-// SetGlobalClientMode sets the global config's client mode. A new store has
-// MONITOR, which Rudolph sends when there is no global config.
+// SetMachineConfig replaces a machine's own config, including its client mode.
+func (s *Store) SetMachineConfig(machineID string, c store.Config) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.configs[machineID] = c
+}
+
+// SetGlobalClientMode sets the global config's client mode, keeping its other
+// settings. A new store has no global config and MONITOR, which Rudolph sends
+// then.
 func (s *Store) SetGlobalClientMode(mode store.ClientMode) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.globalMode = mode
+	s.globalConfig.Exists = true
+	s.globalConfig.ClientMode = mode
+}
+
+// SetGlobalConfig replaces the global config.
+func (s *Store) SetGlobalConfig(c store.Config) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.globalConfig = c
 }
 
 // GlobalClientMode implements store.MachineReader.
@@ -122,7 +145,17 @@ func (s *Store) GlobalClientMode(context.Context) (store.ClientMode, error) {
 	if err := s.record(Call{Method: "GlobalClientMode"}); err != nil {
 		return "", err
 	}
-	return s.globalMode, nil
+	return s.globalConfig.ClientMode, nil
+}
+
+// GlobalConfig implements store.MachineReader.
+func (s *Store) GlobalConfig(context.Context) (store.Config, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.record(Call{Method: "GlobalConfig"}); err != nil {
+		return store.Config{}, err
+	}
+	return s.globalConfig, nil
 }
 
 type topList struct {
@@ -298,7 +331,8 @@ func (s *Store) GetMachine(_ context.Context, machineID string) (store.MachineDe
 	tm := s.tempModes[machineID]
 	d := store.MachineDetail{
 		Machine:                  m,
-		ConfiguredClientMode:     s.configModes[machineID],
+		Config:                   s.configs[machineID],
+		ConfiguredClientMode:     s.configs[machineID].ClientMode,
 		TemporaryClientMode:      tm.mode,
 		TemporaryClientModeUntil: tm.until,
 		CleanSyncRequested:       s.cleanSyncs[machineID],

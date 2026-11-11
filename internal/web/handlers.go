@@ -89,13 +89,15 @@ func (s *server) machineDetail(w http.ResponseWriter, r *http.Request) {
 		s.storeError(w, r, err)
 		return
 	}
-	// The global mode only words the configured mode better, so the page is
-	// shown without it rather than failing.
-	globalMode, err := s.store.GlobalClientMode(r.Context())
-	if err != nil {
-		s.log.Warn("reading the global client mode failed", "err", err)
-		globalMode = ""
+	// The global config only fills in what the Mac's own config leaves out,
+	// so the page is shown without it rather than failing.
+	global, err := s.store.GlobalConfig(r.Context())
+	globalUnread := err != nil
+	if globalUnread {
+		s.log.Warn("reading the global config failed", "err", err)
+		global = store.Config{}
 	}
+	globalMode := global.ClientMode
 	title := machine.Hostname
 	if title == "" {
 		title = machine.MachineID
@@ -106,21 +108,25 @@ func (s *server) machineDetail(w http.ResponseWriter, r *http.Request) {
 		groupForms = s.machineGroupForms(r, machine)
 	}
 	s.render(w, r, http.StatusOK, "machine", "Machine "+title, "machines", struct {
-		Machine    store.MachineDetail
-		GlobalMode store.ClientMode
-		Health     syncHealth
-		Rules      []store.Rule
-		Pager      pager
-		Edit       editForms
-		Groups     machineGroupForms
+		Machine      store.MachineDetail
+		GlobalMode   store.ClientMode
+		Config       []configRow
+		GlobalUnread bool
+		Health       syncHealth
+		Rules        []store.Rule
+		Pager        pager
+		Edit         editForms
+		Groups       machineGroupForms
 	}{
-		Machine:    machine,
-		GlobalMode: globalMode,
-		Health:     machineHealth(machine, s.now(), globalMode),
-		Rules:      rules.Items,
-		Pager:      links("/machines/"+url.PathEscape(id), url.Values{}, nav, rules.NextCursor),
-		Edit:       edit,
-		Groups:     groupForms,
+		Machine:      machine,
+		GlobalMode:   globalMode,
+		Config:       machineConfigRows(machine.Config, global),
+		GlobalUnread: globalUnread,
+		Health:       machineHealth(machine, s.now(), globalMode),
+		Rules:        rules.Items,
+		Pager:        links("/machines/"+url.PathEscape(id), url.Values{}, nav, rules.NextCursor),
+		Edit:         edit,
+		Groups:       groupForms,
 	})
 }
 
