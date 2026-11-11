@@ -4,6 +4,7 @@
 {{else}}
 <p>No global configuration is stored, so Rudolph sends its default configuration to Macs without their own settings.</p>
 {{end}}
-{{if .Edit}}{{template "configform" .Form}}{{else}}{{template "configtable" .Rows}}{{end}}
+{{template "configtable" .Rows}}
+{{if .Edit}}{{template "configform" .Form}}{{end}}
 <p class="hint">URLs show only their scheme, host and path, as the rest may hold a token. USB settings are not shown. <code>rudolph config get --global</code> shows every setting in full.</p>
 {{end}}

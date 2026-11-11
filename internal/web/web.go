@@ -20,6 +20,7 @@ import (
 
 	"github.com/turquoise-turtle/rudolph-web/internal/auth"
 	"github.com/turquoise-turtle/rudolph-web/internal/clicmd"
+	"github.com/turquoise-turtle/rudolph-web/internal/macmodels"
 	"github.com/turquoise-turtle/rudolph-web/internal/store"
 )
 
@@ -414,6 +415,7 @@ var funcs = template.FuncMap{
 		return "/events?" + url.Values{"machine": {id}}.Encode()
 	},
 	"legacySanta":    store.LegacySantaVersion,
+	"modelName":      macmodels.Name,
 	"groupURL":       groupURL,
 	"groupLabel":     groupLabel,
 	"ungrouped":      func() string { return store.UngroupedGroup },

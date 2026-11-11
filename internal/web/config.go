@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/airbnb/rudolph/pkg/model/machineconfiguration"
+	"github.com/dlclark/regexp2"
 
 	"github.com/turquoise-turtle/rudolph-web/internal/store"
 	"github.com/turquoise-turtle/rudolph-web/internal/store/rudolphrules"
@@ -275,18 +276,30 @@ func withFields(rows []configRow, own store.Config, machine bool) []configRow {
 	return rows
 }
 
-// pathRegexError checks a path regex as the CLI does by default, with Go's
-// RE2 syntax: Santa silently ignores a regex it cannot compile, so a typo
-// would block or allow nothing without anyone noticing.
+// pathRegexError checks a path regex before it is saved: Santa compiles it
+// with ICU (NSRegularExpression) and silently ignores one it cannot compile,
+// so a typo would block or allow nothing without anyone noticing. Go's RE2
+// lacks lookaround, backreferences and atomic groups, which ICU has, so a
+// pattern RE2 refuses gets a second chance with regexp2, a backtracking
+// engine much closer to ICU. Syntax neither knows (possessive quantifiers,
+// for one) needs the form's "Save path regexes unchecked" box.
 func pathRegexError(label, v string) string {
 	if v == "" {
 		return ""
 	}
-	if _, err := regexp.Compile(v); err != nil {
-		return fmt.Sprintf("the %s is not a valid regex (checked as Go RE2 syntax, as the CLI does): %v. Use rudolph config update --skip-regex-validation for ICU-only syntax.", strings.ToLower(label), err)
+	if _, err := regexp.Compile(v); err == nil {
+		return ""
 	}
-	return ""
+	_, err := regexp2.Compile(v, regexp2.None)
+	if err == nil {
+		return ""
+	}
+	return fmt.Sprintf("the %s is not a regex Santa can use: %v. Santa ignores a regex it cannot compile, so it would allow or block nothing. If you are sure it is valid ICU syntax, tick Save path regexes unchecked and save again.", strings.ToLower(label), err)
 }
+
+// skipRegexField is the form's "Save path regexes unchecked" box, as
+// rudolph config update --skip-regex-validation.
+const skipRegexField = "skip_regex_validation"
 
 // origPrefix starts the hidden input that carries what a setting's input
 // showed when the form was drawn.
@@ -324,7 +337,7 @@ func parseConfigForm(f url.Values, own store.Config, machine bool) (store.Config
 		_, isOrig := known[strings.TrimPrefix(name, origPrefix)]
 		isOrig = isOrig && strings.HasPrefix(name, origPrefix)
 		switch {
-		case isSetting, isOrig, name == "confirm_mode":
+		case isSetting, isOrig, name == "confirm_mode", name == skipRegexField:
 		case name == "inherit" && machine:
 		case name == "inherit":
 			return change, badForm("the global configuration has nothing to inherit from.")
@@ -336,6 +349,7 @@ func parseConfigForm(f url.Values, own store.Config, machine bool) (store.Config
 		}
 	}
 
+	skipRegex := f.Get(skipRegexField) == "on"
 	changed := map[string]bool{}
 	for _, cs := range configSettings {
 		values, posted := f[cs.attribute]
@@ -358,7 +372,7 @@ func parseConfigForm(f url.Values, own store.Config, machine bool) (store.Config
 		}
 		switch cs.kind {
 		case kindText:
-			if cs.code {
+			if cs.code && !skipRegex {
 				if msg := pathRegexError(cs.label, v); msg != "" {
 					return change, badForm(msg)
 				}

@@ -70,19 +70,23 @@ each value comes from. */}}
 </div>
 {{end}}
 {{define "configvalue"}}{{if .Set}}{{if eq .Value ""}}<span class="muted">empty</span>{{else if .Code}}<code>{{.Value}}</code>{{else}}{{.Value}}{{end}}{{with .Origin}} <span class="muted">({{.}})</span>{{end}}{{else}}<span class="muted">not set</span>{{with .Sent}} <span class="muted">(Rudolph sends {{.}})</span>{{end}}{{end}}{{end}}
-{{/* The configuration table as a form (Rudolph.Admin, with editing on): an
-input per setting holding the edited config's own value, and on a Mac's page
-an inherit box for each setting the Mac sets itself. Each input has a hidden
-orig_ twin holding what it showed, so a save changes only what the person
-changed and is refused when that was changed by someone else meanwhile. */}}
+{{/* The configuration form (Rudolph.Admin, with editing on), folded below
+the read-only table so the page reads as settings first: an input per setting
+holding the edited config's own value, and on a Mac's page an inherit box for
+each setting the Mac sets itself. Its rows are data-edit-setting, not
+data-setting, so the read-only table stays the one row per setting. Each input
+has a hidden orig_ twin holding what it showed, so a save changes only what the
+person changed and is refused when that was changed by someone else
+meanwhile. */}}
 {{define "configform"}}
+<details class="edit config-edit"><summary>Change settings</summary>
 <form class="config-form" method="post" action="{{.Action}}">
 <div class="scroll">
 <table>
 <thead><tr><th>Setting</th><th>{{if .Machine}}This Mac gets{{else}}Value{{end}}</th><th>{{if .Machine}}This Mac's own setting{{else}}Change to{{end}}</th>{{if .Machine}}<th>Inherit</th>{{end}}</tr></thead>
 <tbody>
 {{range .Rows}}
-<tr data-setting="{{.Setting}}">
+<tr data-edit-setting="{{.Setting}}">
   <td><label for="cfg-{{.Setting}}">{{.Label}}</label></td>
   <td>{{template "configvalue" .}}</td>
   {{with .Field}}<td><input type="hidden" name="orig_{{.Name}}" value="{{.Input}}">{{if .Select}}<select name="{{.Name}}" id="cfg-{{.Name}}">{{range .Options}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select>{{else}}<input name="{{.Name}}" value="{{.Input}}" id="cfg-{{.Name}}" size="30" autocomplete="off" spellcheck="false">{{end}}{{if eq .Name "ClientMode"}}<p class="hint">{{if $.Machine}}LOCKDOWN and STANDALONE block every unknown binary on this Mac from its next sync; a temporary mode, while it lasts, is sent instead.{{else}}Every Mac without its own client mode follows this one from its next sync: LOCKDOWN or STANDALONE here blocks unknown binaries across the fleet. Warm Rudolph Lambdas cache the global configuration for up to 60 seconds, so Macs that sync within that minute may still get the old mode.{{end}}</p>{{end}}</td>
@@ -92,14 +96,16 @@ changed and is refused when that was changed by someone else meanwhile. */}}
 </tbody>
 </table>
 </div>
-<div class="edit-form">
+<p class="hint">Only the settings you change are saved, as <code>rudolph config update</code> would save them{{if .Machine}}; a value typed here becomes this Mac's own, even if it equals the global one. Tick inherit to remove this Mac's own value, so it follows the global configuration again{{end}}. URLs show only their scheme, host and path: leave one as shown to keep it, or type the whole new URL. Santa compiles path regexes with ICU, so they are checked as Go (RE2) regexes and then with an engine close to ICU, which allows lookahead, lookbehind, backreferences and atomic groups. For ICU syntax neither knows, such as possessive quantifiers, tick Save path regexes unchecked; a regex Santa cannot compile is ignored. USB settings are changed with the CLI.</p>
+<p class="regex-skip"><label><input type="checkbox" name="skip_regex_validation"> Save path regexes unchecked</label></p>
+<div class="form-actions">
   <label>To change the client mode to LOCKDOWN or STANDALONE, type the new mode's name
     <input name="confirm_mode" size="12" autocomplete="off" spellcheck="false">
   </label>
   <button type="submit">{{if .Machine}}Save this Mac's configuration{{else}}Save the global configuration{{end}}</button>
 </div>
-<p class="hint">Only the settings you change are saved, as <code>rudolph config update</code> would save them{{if .Machine}}; a value typed here becomes this Mac's own, even if it equals the global one. Tick inherit to remove this Mac's own value, so it follows the global configuration again{{end}}. URLs show only their scheme, host and path: leave one as shown to keep it, or type the whole new URL. Path regexes are checked as Go (RE2) regexes, as the CLI does; ICU-only syntax needs <code>rudolph config update --skip-regex-validation</code>. USB settings are changed with the CLI.</p>
 </form>
+</details>
 {{end}}
 {{/* Edit forms (Rudolph.Admin, with editing on). Plain forms with no script,
 so removing asks nothing more than the clearly labelled button. */}}
