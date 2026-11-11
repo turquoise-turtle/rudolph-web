@@ -11,7 +11,7 @@ package dynamo_test
 //     `from` has rules in force (ErrInvalidArgument), and no rule on `to` has the same type and identifier with a
 //     different policy (ErrInvalidArgument naming the identifier). A rule `to` already has with the same policy is
 //     not copied again (and still removed from `from` with remove).
-//   - At most 500 rules are moved in one request (ErrInvalidArgument above that: the CLI is for bulk work).
+//   - At most store.MaxMovedRules (50) rules are moved in one request, so a move fits the web Lambda's timeout (ErrInvalidArgument above that: the CLI is for bulk work).
 
 import (
 	"errors"

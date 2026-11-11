@@ -8,8 +8,8 @@ package web_test
 //   - every rule in force on the old Mac is copied as stored (policy, message, expiry, collection flag), each
 //     recorded as the CLI's rule.add on the new Mac, then, with remove, each removed from the old Mac (rule.remove);
 //   - refused with 400 and nothing written: the new Mac is the same Mac, no Mac matches `to`, the old Mac has no rules
-//     in force, or the new Mac already has a rule for the same identifier with a different policy (the page names
-//     it). A rule the new Mac already has with the same policy is left as it is, not copied again.
+//     in force, or the new Mac already has a different rule for the same identifier (the page names it). A rule the
+//     new Mac already has exactly as stored (see editing_review_test.go) is left as it is, not copied again.
 // Rules that are expired or being removed are not moved.
 
 import (
@@ -131,7 +131,7 @@ func TestMoveRules_CopyOnlyByMachineID(t *testing.T) {
 
 func TestMoveRules_SamePolicyAlreadyThereIsKept(t *testing.T) {
 	s := moveStore()
-	s.AddMachineRule(newMac, store.Rule{RuleType: store.RuleTypeBinary, Policy: store.PolicyAllowlist, Identifier: moveA, State: store.RuleStateInForce})
+	s.AddMachineRule(newMac, store.Rule{RuleType: store.RuleTypeBinary, Policy: store.PolicyAllowlist, Identifier: moveA, State: store.RuleStateInForce, CustomMessage: "Lab tool"})
 	a := newEditApp(t, s, true)
 	rec := a.post(t, "/admin/machines/"+oldMac+"/rules/move", url.Values{"to": {"C02NEW"}, "remove": {"on"}}, a.cookie(t, auth.RoleAdmin), true)
 	see303(t, rec, "/machines/"+newMac)
