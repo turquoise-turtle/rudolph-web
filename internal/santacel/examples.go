@@ -18,7 +18,7 @@ var Examples = []Example{
 		Name: "Stop the profiles command removing profiles",
 		Explanation: "On a SIGNINGID rule for /usr/bin/profiles (signing ID com.apple.profiles, a platform binary with no team ID), " +
 			"this blocks the profiles command when it is asked to remove profiles (remove, or the older -R and -D flags), " +
-			"so an admin user cannot run sudo profiles remove to take off the MDM profile or other profiles. " +
+			"so an admin user cannot take profiles off from the command line with sudo profiles remove. " +
 			"Listing and showing profiles and enrolment status still work. " +
 			"It does not stop removal in System Settings, which does not run the profiles command. " +
 			"The real protection against MDM unenrolment is enrolling Macs through Automated Device Enrolment with a non-removable MDM profile; this rule only closes the command-line route. " +
