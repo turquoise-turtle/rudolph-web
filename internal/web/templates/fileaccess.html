@@ -1,0 +1,49 @@
+{{define "content"}}
+<div class="filters">
+  <form method="get" action="/events/file-access" role="search" aria-label="File access events by machine">
+    <label>Machine ID <input name="machine" value="{{.Filter.MachineID}}" autocomplete="off"></label>
+    <button type="submit">Show</button>
+  </form>
+  <form method="get" action="/events/file-access" role="search" aria-label="File access events by decision">
+    <label>Decision
+      <select name="decision">
+        <option value="">Any</option>
+        {{range .Decisions}}<option value="{{.}}"{{if eq . $.Filter.Decision}} selected{{end}}>{{.}}</option>{{end}}
+      </select>
+    </label>
+    <button type="submit">Show</button>
+  </form>
+  <a href="/events/file-access">Clear</a>
+</div>
+<p class="hint">Newest first. Each filter replaces the others. Santa uploads these whenever a sync server is configured, for the file access policy in the Macs' configuration profile (<code>FileAccessPolicy</code>); Rudolph does not send that policy. <a href="/events">Execution events</a></p>
+{{if .Events}}
+<div class="scroll">
+<table>
+<thead><tr><th>Time</th><th>Machine</th><th>Rule</th><th>Path accessed</th><th>Decision</th><th>Process</th><th>Signing ID</th><th>Team ID</th><th>Parent processes</th></tr></thead>
+<tbody>
+{{range .Events}}
+<tr data-row>
+  <td>{{template "time" .AccessTime}}</td>
+  <td><a href="{{machineURL .MachineID}}">{{with index $.Hostnames .MachineID}}{{.}}{{else}}<code>{{.MachineID}}</code>{{end}}</a></td>
+  <td>{{.RuleName}}{{with .RuleVersion}}<br><span class="muted">version {{.}}</span>{{end}}</td>
+  <td><code>{{.Target}}</code></td>
+  <td class="{{if eq .Decision "AUDIT_ONLY"}}allow{{else}}block{{end}}">{{.Decision}}</td>
+  {{with .ProcessChain}}{{with index . 0}}
+  <td><code>{{.FilePath}}</code>{{if .PID}}<br><span class="muted">PID {{.PID}}</span>{{end}}</td>
+  <td>{{.SigningID}}</td>
+  <td>{{.TeamID}}</td>
+  {{end}}
+  <td>{{range $i, $p := slice . 1}}{{if $i}}<br>{{end}}<code>{{$p.FilePath}}</code>{{end}}</td>
+  {{else}}
+  <td class="muted">—</td><td></td><td></td><td></td>
+  {{end}}
+</tr>
+{{end}}
+</tbody>
+</table>
+</div>
+{{else}}
+<p>No file access events match.</p>
+{{end}}
+{{template "pager" .Pager}}
+{{end}}

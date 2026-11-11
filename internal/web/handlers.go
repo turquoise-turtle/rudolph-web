@@ -384,21 +384,29 @@ func groupURL(name string) string { return "/groups/" + url.PathEscape(name) }
 // each an exact point read. It returns id unchanged when no Mac matches, so events of a Mac with no machine row can
 // still be found.
 func (s *server) storedMachineID(ctx context.Context, id string) (string, error) {
+	m, err := s.storedMachine(ctx, id)
+	return m.MachineID, err
+}
+
+// storedMachine is storedMachineID with the Mac's sensor data, for pages that also show its hostname; without a
+// machine row only MachineID is set.
+func (s *server) storedMachine(ctx context.Context, id string) (store.Machine, error) {
 	tried := map[string]bool{}
 	for _, candidate := range []string{id, strings.ToUpper(id), strings.ToLower(id)} {
 		if tried[candidate] {
 			continue
 		}
 		tried[candidate] = true
-		_, err := s.store.GetMachine(ctx, candidate)
+		m, err := s.store.GetMachine(ctx, candidate)
 		if err == nil {
-			return candidate, nil
+			m.MachineID = candidate
+			return m.Machine, nil
 		}
 		if !errors.Is(err, store.ErrNotFound) {
-			return "", err
+			return store.Machine{}, err
 		}
 	}
-	return id, nil
+	return store.Machine{MachineID: id}, nil
 }
 
 func (s *server) events(w http.ResponseWriter, r *http.Request) {
@@ -458,6 +466,77 @@ func (s *server) events(w http.ResponseWriter, r *http.Request) {
 		Events:    page.Items,
 		Pager: links("/events", url.Values{"machine": {machine}, "decision": {string(filter.Decision)}, "team_id": {teamID}},
 			nav, page.NextCursor),
+	})
+}
+
+// fileAccessEvents lists Santa's file access authorisation events, as the events page lists executions.
+func (s *server) fileAccessEvents(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	machine, ok := textFilter(q, "machine")
+	if !ok {
+		s.renderError(w, r, http.StatusBadRequest, "Filter value is too long.")
+		return
+	}
+	decision := store.FileAccessDecision(q.Get("decision"))
+	// Checked before the machine lookup, so a request the store would refuse reads nothing.
+	if machine != "" && decision != "" {
+		s.renderError(w, r, http.StatusBadRequest, "Filter by one field at a time: machine or decision.")
+		return
+	}
+	if decision != "" && !slices.Contains(store.FileAccessDecisions, decision) {
+		s.renderError(w, r, http.StatusBadRequest, "Unknown decision.")
+		return
+	}
+	pr, nav, ok := s.pageRequest(w, r, q)
+	if !ok {
+		return
+	}
+	// The Mac's hostname comes with the machine read that finds its stored spelling, so a machine's list names it at
+	// no extra cost; the fleet list would need a read per Mac, so it shows machine IDs.
+	hostnames := map[string]string{}
+	if machine != "" {
+		// As for executions, later pages carry the spelling page 1 found; they read the Mac once more for its
+		// hostname.
+		var m store.Machine
+		var err error
+		if pr.Cursor == "" {
+			m, err = s.storedMachine(r.Context(), machine)
+		} else {
+			var d store.MachineDetail
+			if d, err = s.store.GetMachine(r.Context(), machine); errors.Is(err, store.ErrNotFound) {
+				err = nil
+			}
+			m = d.Machine
+		}
+		if err != nil {
+			s.storeError(w, r, err)
+			return
+		}
+		if m.MachineID != "" {
+			machine = m.MachineID
+		}
+		if m.Hostname != "" {
+			hostnames[machine] = m.Hostname
+		}
+	}
+	filter := store.FileAccessEventFilter{MachineID: machine, Decision: decision}
+	page, err := s.store.ListFileAccessEvents(r.Context(), filter, pr)
+	if err != nil {
+		s.storeError(w, r, err)
+		return
+	}
+	s.render(w, r, http.StatusOK, "fileaccess", "File access events", "events", struct {
+		Filter    store.FileAccessEventFilter
+		Decisions []store.FileAccessDecision
+		Events    []store.FileAccessEvent
+		Hostnames map[string]string
+		Pager     pager
+	}{
+		Filter:    filter,
+		Decisions: store.FileAccessDecisions,
+		Events:    page.Items,
+		Hostnames: hostnames,
+		Pager:     links("/events/file-access", url.Values{"machine": {machine}, "decision": {string(decision)}}, nav, page.NextCursor),
 	})
 }
 

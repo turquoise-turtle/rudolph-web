@@ -16,18 +16,19 @@
 //	PK=GroupRules#<name>  SK=<Type>#<id>  group rules      -> Rule
 //	PK=GroupMembers#<name> SK=<machine id> a group's Macs  -> GroupMember
 //
-// Execution events come from Rudolph's separate events table:
+// Execution and file access events come from Rudolph's separate events
+// table:
 //
 //	PK=Exec#<id>          SK=<TS>#<sha256>#<pid>          -> ExecutionEvent
+//	PK=FileAccess#<id>    SK=<TS>#<pid>#<hash>            -> FileAccessEvent
 //
-// with the indexes Fleet_TS, Decision_TS and TeamID_TS, and the top lists
+// with the indexes Fleet_TS ("Exec" or "FileAccess"), Decision_TS (file
+// access decisions keep Santa's FILE_ACCESS_DECISION_ prefix, so the two never
+// share a partition) and TeamID_TS (executions only), and the top lists
 // Rudolph's ranker writes to the same table:
 //
 //	PK=Top#<kind>#<days>                      SK=Current   pointer to the latest snapshot
 //	PK=TopSnapshot#<kind>#<days>#<snapshot>   SK=<rank>    -> TopBinary
-//
-// File access events are not read yet; their interface exists so the web
-// layer and fake can be built first.
 package store
 
 import (
@@ -151,7 +152,8 @@ func (d Decision) IsBlock() bool {
 	return len(d) > 6 && d[:6] == "BLOCK_"
 }
 
-// FileAccessDecision is Santa's file access authorization decision.
+// FileAccessDecision is Santa's file access authorization decision, named
+// without Santa's FILE_ACCESS_DECISION_ prefix.
 type FileAccessDecision string
 
 const (
@@ -159,6 +161,12 @@ const (
 	FileAccessDecisionDeniedInvalidSignature FileAccessDecision = "DENIED_INVALID_SIGNATURE"
 	FileAccessDecisionAuditOnly              FileAccessDecision = "AUDIT_ONLY"
 )
+
+// FileAccessDecisions lists the file access decisions a list can be filtered
+// by: the ones Santa uploads. Others read from the table are shown as stored.
+var FileAccessDecisions = []FileAccessDecision{
+	FileAccessDecisionDenied, FileAccessDecisionDeniedInvalidSignature, FileAccessDecisionAuditOnly,
+}
 
 // RuleCounts mirrors the per-type counts Santa reports in preflight.
 type RuleCounts struct {
@@ -412,7 +420,9 @@ type FileAccessEvent struct {
 	ProcessChain []Process
 }
 
-// FileAccessEventFilter narrows ListFileAccessEvents.
+// FileAccessEventFilter narrows ListFileAccessEvents. Zero values match
+// everything; as for EventFilter, the DynamoDB reader serves one filter at a
+// time and refuses both with ErrInvalidArgument.
 type FileAccessEventFilter struct {
 	MachineID string
 	Decision  FileAccessDecision

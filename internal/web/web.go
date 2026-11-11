@@ -206,6 +206,7 @@ func New(opts Options) (http.Handler, error) {
 	mux.Handle("GET /groups/{name}", viewer(s.groupDetail))
 	mux.Handle("GET /groups/{name}/members", viewer(s.groupMembers))
 	mux.Handle("GET /events", viewer(s.events))
+	mux.Handle("GET /events/file-access", viewer(s.fileAccessEvents))
 	mux.Handle("GET /events/top-blocked", viewer(s.topBlocked))
 	mux.Handle("GET /events/top-allowed", viewer(s.topAllowed))
 	mux.Handle("GET /events/top-unknown", viewer(s.topUnknown))
@@ -416,6 +417,9 @@ var funcs = template.FuncMap{
 	"machineURL": func(id string) string { return "/machines/" + url.PathEscape(id) },
 	"eventsForMachineURL": func(id string) string {
 		return "/events?" + url.Values{"machine": {id}}.Encode()
+	},
+	"fileAccessEventsForMachineURL": func(id string) string {
+		return "/events/file-access?" + url.Values{"machine": {id}}.Encode()
 	},
 	"legacySanta":     store.LegacySantaVersion,
 	"modelName":       macmodels.Name,

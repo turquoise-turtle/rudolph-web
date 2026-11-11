@@ -31,7 +31,7 @@
 </dl>
 </section>
 <p class="hint">Client mode (reported) is what the Mac reported at its last preflight, before applying that sync. Client mode (configured) is what Rudolph sends: the machine config's mode; when the machine config sets none, the strictest mode of the Mac's groups (LOCKDOWN, then STANDALONE, then MONITOR), or the global config's when none of its groups has one; a temporary mode takes their place while it lasts.</p>
-<p><a href="{{eventsForMachineURL .MachineID}}">Events for this machine</a></p>
+<p><a href="{{eventsForMachineURL .MachineID}}">Events for this machine</a> · <a href="{{fileAccessEventsForMachineURL .MachineID}}">File access events for this machine</a></p>
 {{with cliConfigGet .MachineID}}
 <details class="cmds"><summary>Rudolph CLI commands for this Mac</summary><ul>
   {{template "cmd" (cmd "Show its configuration" .)}}
