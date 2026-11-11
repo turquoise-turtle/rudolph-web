@@ -5,7 +5,7 @@
   <dt>Machine ID</dt><dd><code>{{.MachineID}}</code></dd>
   <dt>Hostname</dt><dd>{{orDash .Hostname}}</dd>
   <dt>Serial</dt><dd>{{orDash .SerialNum}}</dd>
-  <dt>Model</dt><dd>{{orDash .ModelIdentifier}}</dd>
+  <dt>Model</dt><dd>{{orDash .ModelIdentifier}}{{with modelName .ModelIdentifier}} - {{.}}{{end}}</dd>
   <dt>macOS</dt><dd>{{orDash .OSVersion}} ({{orDash .OSBuild}})</dd>
   <dt>Santa</dt><dd>{{orDash .SantaVersion}}{{if legacySanta .SantaVersion}} <span class="legacy">legacy client</span> <span class="muted">(below 2026.8: supported only on macOS 13, with limits)</span>{{end}}</dd>
   <dt>Client mode (reported)</dt><dd>{{.ClientMode}}</dd>
@@ -60,6 +60,7 @@
 {{end}}
 <h2>Configuration</h2>
 <p class="hint">What Rudolph sends this Mac at its sync: its own setting, marked (this Mac), or the global one, marked (global config). URLs show only their scheme, host and path. A setting that is not set is not sent, and Santa keeps its own value.{{if $.GlobalUnread}} The global configuration could not be read, so only this Mac's own settings are shown.{{end}}</p>
+{{template "configtable" $.Config}}
 {{if $.Edit.On}}{{template "configform" $.ConfigForm}}
 <h3>Clean sync</h3>
 {{if .CleanSyncRequested}}
@@ -75,7 +76,7 @@
 </form>
 {{end}}
 <p class="hint">At its next sync the Mac drops all its rules and downloads them again, once; nothing else changes.</p>
-{{else}}{{template "configtable" $.Config}}{{end}}
+{{end}}
 <h2>Groups</h2>
 <dl>
   <dt>Assigned in Rudolph</dt><dd>{{range $i, $g := .AssignedGroups}}{{if $i}}, {{end}}<a href="{{groupURL $g}}">{{$g}}</a>{{else}}none{{end}}</dd>
