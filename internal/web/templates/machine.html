@@ -129,17 +129,6 @@
 {{end}}
 {{end}}
 <h2>Machine-specific rules</h2>
-{{if .Edit.On}}{{template "addrule" (addRuleForm "Add a rule for this Mac" "machine" .Machine.MachineID .Edit)}}
-<details class="edit"><summary>Move this Mac's rules to another Mac</summary>
-<form class="edit-form" method="post" action="/admin{{machineURL .Machine.MachineID}}/rules/move">
-  <label>New Mac <span class="hint">(serial number or machine ID)</span>
-    <input name="to" required maxlength="128" size="38" autocomplete="off" spellcheck="false">
-  </label>
-  <label class="check"><input type="checkbox" name="remove" value="on" checked> also remove them from this Mac</label>
-  <button type="submit">Move rules</button>
-</form>
-<p class="hint">For when its user changes computers. Every rule in force here is copied to the new Mac as it is (policy, messages, expiry and collection of allowed executions); expired rules and rules being removed stay behind. A rule the new Mac already has exactly as here is left as it is, and one it has with a different policy, expiry, message, URL or CEL expression stops the move before anything changes. Untick the box to copy without removing. Both Macs get the change at their next sync.</p>
-</details>{{end}}
 {{if .Rules}}
 <div class="scroll">
 <table>
@@ -158,7 +147,7 @@
     {{template "cmd" (cmd "Remove" .)}}
     {{if canCollect $rule}}{{if $rule.CollectAllowedEvents}}{{template "cmd" (cmd "Stop collecting allowed executions" (cliCollectMachine $rule.RuleType $rule.Identifier $.Machine.MachineID false))}}{{else}}{{template "cmd" (cmd "Collect allowed executions" (cliCollectMachine $rule.RuleType $rule.Identifier $.Machine.MachineID true))}}{{end}}{{end}}
   </ul></details>{{end}}</td>
-  {{if $.Edit.On}}<td>{{if eq .State "IN_FORCE"}}{{template "removerule" (removeRuleForm "machine" $.Machine.MachineID .)}}{{end}}{{if canCollect .}}{{template "collectrule" (removeRuleForm "machine" $.Machine.MachineID .)}}{{end}}</td>{{end}}
+  {{if $.Edit.On}}<td>{{if or (eq .State "IN_FORCE") (canCollect .)}}<details class="edit rule-edit"><summary>Change</summary>{{if eq .State "IN_FORCE"}}{{template "removerule" (removeRuleForm "machine" $.Machine.MachineID .)}}{{end}}{{if canCollect .}}{{template "collectrule" (removeRuleForm "machine" $.Machine.MachineID .)}}{{end}}</details>{{end}}</td>{{end}}
 </tr>
 {{end}}
 </tbody>
@@ -168,4 +157,15 @@
 <p>No machine-specific rules.</p>
 {{end}}
 {{template "pager" .Pager}}
+{{if .Edit.On}}{{template "addrule" (addRuleForm "Add a rule for this Mac" "machine" .Machine.MachineID .Edit)}}
+<details class="edit"><summary>Move this Mac's rules to another Mac</summary>
+<form class="edit-form" method="post" action="/admin{{machineURL .Machine.MachineID}}/rules/move">
+  <label>New Mac <span class="hint">(serial number or machine ID)</span>
+    <input name="to" required maxlength="128" size="38" autocomplete="off" spellcheck="false">
+  </label>
+  <label class="check"><input type="checkbox" name="remove" value="on" checked> also remove them from this Mac</label>
+  <button type="submit">Move rules</button>
+</form>
+<p class="hint">For when its user changes computers. Every rule in force here is copied to the new Mac as it is (policy, messages, expiry and collection of allowed executions); expired rules and rules being removed stay behind. A rule the new Mac already has exactly as here is left as it is, and one it has with a different policy, expiry, message, URL or CEL expression stops the move before anything changes. Untick the box to copy without removing. Both Macs get the change at their next sync.</p>
+</details>{{end}}
 {{end}}

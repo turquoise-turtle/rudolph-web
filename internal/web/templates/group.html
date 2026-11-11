@@ -57,7 +57,6 @@
 </details>
 {{end}}
 <h2>Rules</h2>
-{{if .Edit.On}}{{template "addrule" (addRuleForm "Add a rule for this group" "group" .Group.Name .Edit)}}{{end}}
 {{if .Rules}}
 <div class="scroll">
 <table>
@@ -74,7 +73,7 @@
   <td>{{with cliRuleGroup "deny" .RuleType .Identifier $.Group.Name}}<details class="cmds"><summary>Commands</summary><ul>
     {{template "cmd" (cmd "Block in this group" .)}}
   </ul></details>{{end}}</td>
-  {{if $.Edit.On}}<td>{{template "removerule" (removeRuleForm "group" $.Group.Name .)}}</td>{{end}}
+  {{if $.Edit.On}}<td><details class="edit rule-edit"><summary>Change</summary>{{template "removerule" (removeRuleForm "group" $.Group.Name .)}}</details></td>{{end}}
 </tr>
 {{end}}
 </tbody>
@@ -84,4 +83,5 @@
 <p>No rules for this group.</p>
 {{end}}
 {{template "pager" .Pager}}
+{{if .Edit.On}}{{template "addrule" (addRuleForm "Add a rule for this group" "group" .Group.Name .Edit)}}{{end}}
 {{end}}
