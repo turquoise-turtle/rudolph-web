@@ -61,7 +61,8 @@ data "aws_iam_policy_document" "web" {
     }
   }
 
-  # The DynamoDB reader. Every list issues one bounded query, so there is no Scan here. Writes are
+  # The DynamoDB reader. Every list issues one bounded query, so there is no Scan here; a page of a
+  # group's members also reads its Macs' sensor data with one BatchGetItem. Writes are
   # in their own statement below, which exists only with enable_editing. /admin/audit reads the
   # Audit#<day> partitions through this statement with editing off too, so keep it unconditional
   # and not limited by partition.
@@ -69,6 +70,7 @@ data "aws_iam_policy_document" "web" {
     sid    = "ReadRudolphStore"
     effect = "Allow"
     actions = [
+      "dynamodb:BatchGetItem",
       "dynamodb:GetItem",
       "dynamodb:Query",
     ]
@@ -112,6 +114,8 @@ data "aws_iam_policy_document" "web" {
   #                                every Mac without its own gets, including the fleet's client mode
   #   GroupRules#*, GroupRegistry  group rules and the rules version bumped with each, the registry of groups, and the
   #                                deletion of a deleted group's rules (groups)
+  #   GroupMembers#*               a group's member rows, written in the same transaction as a Mac's Groups row when a
+  #                                group is assigned or removed (groups)
   #   EventCollection              the index of rules whose allowed executions are collected (eventcollection)
   # The audit trail (one partition per UTC day) is a statement of its own with PutItem only: the role cannot update or
   # delete an entry; overwriting one is prevented by Rudolph's conditional put (attribute_not_exists), not by IAM. The actions are in for_each so that they exist only when editing is on; each
@@ -121,7 +125,7 @@ data "aws_iam_policy_document" "web" {
       {
         sid          = "WriteRudolphRules"
         actions      = ["dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:DeleteItem", "dynamodb:BatchWriteItem"]
-        leading_keys = ["GlobalRules", "RulesFeed", "MachineRules#*", "Machine#*", "GlobalConfig", "GroupRules#*", "GroupRegistry", "EventCollection"]
+        leading_keys = ["GlobalRules", "RulesFeed", "MachineRules#*", "Machine#*", "GlobalConfig", "GroupRules#*", "GroupRegistry", "GroupMembers#*", "EventCollection"]
       },
       {
         sid          = "AppendRudolphAudit"

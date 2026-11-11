@@ -307,6 +307,66 @@ func (s *server) groupDetail(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// memberRow is one Mac on a group's members page. How is "assigned",
+// "reported" or "assigned, reported".
+type memberRow struct {
+	store.Machine
+	How string
+}
+
+// groupMembers lists a registered group's Macs from Rudolph's member rows.
+// The ungrouped group has none: Rudolph does not index the Macs in no group,
+// and listing them would need a Scan.
+func (s *server) groupMembers(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	groups, err := s.store.ListGroups(r.Context())
+	if err != nil {
+		s.storeError(w, r, err)
+		return
+	}
+	group, ok := findGroup(groups, name)
+	if !ok || name == store.UngroupedGroup {
+		s.renderError(w, r, http.StatusNotFound, "Group not found.")
+		return
+	}
+	pr, nav, ok := s.pageRequest(w, r, r.URL.Query())
+	if !ok {
+		return
+	}
+	// A Mac that only reports a group not accepting reported membership has a
+	// member row (Rudolph mirrors what the Mac sent) but is not a member.
+	filter := store.GroupMemberFilter{AssignedOnly: !group.AcceptReported}
+	page, err := s.store.ListGroupMembers(r.Context(), name, filter, pr)
+	if err != nil {
+		s.storeError(w, r, err)
+		return
+	}
+	rows := make([]memberRow, 0, len(page.Items))
+	for _, m := range page.Items {
+		var how []string
+		if m.Assigned {
+			how = append(how, "assigned")
+		}
+		if m.Reported {
+			how = append(how, "reported")
+		}
+		rows = append(rows, memberRow{Machine: m.Machine, How: strings.Join(how, ", ")})
+	}
+	s.render(w, r, http.StatusOK, "members", "Macs in group "+name, "groups", struct {
+		Group        store.Group
+		AssignedOnly bool
+		Members      []memberRow
+		Pager        pager
+	}{
+		Group:        group,
+		AssignedOnly: filter.AssignedOnly,
+		Members:      rows,
+		Pager:        links(groupMembersURL(name), url.Values{}, nav, page.NextCursor),
+	})
+}
+
+func groupMembersURL(name string) string { return groupURL(name) + "/members" }
+
 // groupLabel is how a group is named on the page.
 func groupLabel(name string) string {
 	if name == store.UngroupedGroup {

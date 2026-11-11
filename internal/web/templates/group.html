@@ -6,6 +6,7 @@
   {{else}}
   <dt>Description</dt><dd>{{orDash .Group.Description}}</dd>
   <dt>Reported membership counts</dt><dd>{{if .Group.AcceptReported}}yes{{else}}no{{end}}</dd>
+  <dt>Members</dt><dd><a href="{{groupMembersURL .Group.Name}}">List this group's Macs</a></dd>
   {{end}}
   <dt>Client mode</dt><dd>{{with .Group.ClientMode}}{{.}}{{else}}<span class="muted">not set</span>: its Macs follow another of their groups' modes, or the global mode{{end}}</dd>
 </dl>

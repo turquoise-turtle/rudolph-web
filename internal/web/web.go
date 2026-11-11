@@ -203,6 +203,7 @@ func New(opts Options) (http.Handler, error) {
 	mux.Handle("GET /rules", viewer(s.rules))
 	mux.Handle("GET /groups", viewer(s.groups))
 	mux.Handle("GET /groups/{name}", viewer(s.groupDetail))
+	mux.Handle("GET /groups/{name}/members", viewer(s.groupMembers))
 	mux.Handle("GET /events", viewer(s.events))
 	mux.Handle("GET /events/top-blocked", viewer(s.topBlocked))
 	mux.Handle("GET /events/top-allowed", viewer(s.topAllowed))
@@ -415,14 +416,15 @@ var funcs = template.FuncMap{
 	"eventsForMachineURL": func(id string) string {
 		return "/events?" + url.Values{"machine": {id}}.Encode()
 	},
-	"legacySanta":    store.LegacySantaVersion,
-	"modelName":      macmodels.Name,
-	"groupURL":       groupURL,
-	"groupLabel":     groupLabel,
-	"ungrouped":      func() string { return store.UngroupedGroup },
-	"addRuleForm":    editFuncs["addRuleForm"],
-	"removeRuleForm": editFuncs["removeRuleForm"],
-	"canCollect":     editFuncs["canCollect"],
+	"legacySanta":     store.LegacySantaVersion,
+	"modelName":       macmodels.Name,
+	"groupURL":        groupURL,
+	"groupMembersURL": groupMembersURL,
+	"groupLabel":      groupLabel,
+	"ungrouped":       func() string { return store.UngroupedGroup },
+	"addRuleForm":     editFuncs["addRuleForm"],
+	"removeRuleForm":  editFuncs["removeRuleForm"],
+	"canCollect":      editFuncs["canCollect"],
 	"orDash": func(s string) string {
 		if s == "" {
 			return "—"
