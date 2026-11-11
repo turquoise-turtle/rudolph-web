@@ -64,7 +64,7 @@ func (s *Store) AddRule(_ context.Context, actor store.Actor, target store.RuleT
 	}
 	rule := store.Rule{
 		RuleType: r.RuleType, Policy: r.Policy, Identifier: r.Identifier, CustomMessage: r.CustomMessage,
-		Description: r.Description, ExpiresAt: r.ExpiresAt, State: store.RuleStateInForce,
+		CELExpr: add.Rule.CELExpr, Description: r.Description, ExpiresAt: r.ExpiresAt, State: store.RuleStateInForce,
 	}
 	switch add.Target.Kind {
 	case store.TargetGlobal:

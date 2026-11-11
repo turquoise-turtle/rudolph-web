@@ -150,22 +150,25 @@ func MachineAuditTarget(machineID string) string {
 }
 
 // NewRule is a rule to add. ExpiresAt is for machine rules only; zero means
-// the rule never expires.
+// the rule never expires. CELExpr is the expression of a CEL rule, and only
+// of one.
 type NewRule struct {
 	RuleType      RuleType
 	Identifier    string
 	Policy        Policy
 	CustomMessage string
+	CELExpr       string
 	Description   string
 	ExpiresAt     time.Time
 }
 
 // AddablePolicies are the policies a rule can be added with from the web
-// view. REMOVE is what removing a rule sends, ALLOWLIST_TRANSITIVE is never
-// sent to Santa, and CEL needs an expression the web view does not take.
+// view. REMOVE is what removing a rule sends and ALLOWLIST_TRANSITIVE is never
+// sent to Santa. CEL comes with an expression, checked as Santa's CEL v1
+// compiles it.
 var AddablePolicies = []Policy{
 	PolicyAllowlist, PolicyAllowlistCompiler, PolicyBlocklist, PolicySilentBlocklist,
-	PolicySilentGUIBlocklist, PolicySilentTTYBlocklist,
+	PolicySilentGUIBlocklist, PolicySilentTTYBlocklist, PolicyCEL,
 }
 
 // MaxMovedRules is the most rules MoveMachineRules moves in one request;

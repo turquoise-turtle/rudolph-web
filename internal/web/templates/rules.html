@@ -15,6 +15,7 @@
   <button type="submit">Filter</button>
   <a href="/rules">Clear</a>
 </form>
+<p class="hint">A rule with the CEL policy decides with its expression each time the binary runs: see <a href="/rules/cel">CEL rules</a> for what one can use, examples and a place to try one.</p>
 {{if .Edit.On}}{{if not .AllEventUpload}}<p class="hint"><strong>Note:</strong> {{if .GlobalUnread}}the global configuration could not be read to check EnableAllEventUpload.{{else}}the global configuration does not turn on EnableAllEventUpload.{{end}} Santa uploads allowed executions only with it, so a rule collecting allowed executions stores nothing from a Mac unless its own configuration turns it on.</p>{{end}}{{end}}
 {{if .Rules}}
 <div class="scroll">

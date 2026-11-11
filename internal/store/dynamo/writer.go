@@ -138,6 +138,9 @@ func (s *Store) AddRule(ctx context.Context, actor store.Actor, target store.Rul
 	if add.Rule.CustomMessage != "" {
 		options = append(options, rules.WithCustomMessage(add.Rule.CustomMessage))
 	}
+	if add.Rule.CELExpr != "" {
+		options = append(options, rules.WithCELExpr(add.Rule.CELExpr))
+	}
 	switch add.Target.Kind {
 	case store.TargetGlobal:
 		if err := globalrules.AddNewGlobalRule(s.writeClock, c, add.Rule.Identifier, add.Rule.RuleType, add.Rule.Policy, add.Description, options...); err != nil {

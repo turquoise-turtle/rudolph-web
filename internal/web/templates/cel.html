@@ -1,0 +1,84 @@
+{{define "content"}}
+<p>A rule with the CEL policy matches a binary like any other rule, by its binary hash, certificate, team ID, signing ID or CDHash, and then decides with a <a href="https://cel.dev">CEL</a> expression each time the binary runs. Santa evaluates it on the Mac, with the execution's arguments, environment and user, so one rule can allow a tool for most uses and block one of them.</p>
+<p>Rudolph talks to Santa with sync protocol v1, so Santa evaluates its CEL rules with CEL v1. The web view checks an expression the same way before saving it: an expression Santa could not compile is refused, as Santa would skip the rule on every Mac.</p>
+
+<h2>What an expression can use</h2>
+<div class="scroll">
+<table>
+<thead><tr><th>Name</th><th>Type</th><th>What it is</th></tr></thead>
+<tbody>
+<tr><td><code>target.signing_id</code></td><td>string</td><td>The binary's signing ID as a rule has it, such as <code>EQHXZ8M8AV:com.google.Chrome</code> or <code>platform:com.apple.profiles</code>.</td></tr>
+<tr><td><code>target.team_id</code></td><td>string</td><td>The team ID it is signed with; empty for platform binaries and unsigned ones.</td></tr>
+<tr><td><code>target.is_platform_binary</code></td><td>bool</td><td>Whether it is part of macOS.</td></tr>
+<tr><td><code>target.signing_time</code></td><td>timestamp</td><td>When it was signed, by the signer's own clock. Test with <code>has(target.signing_time)</code> first: a binary may not have one.</td></tr>
+<tr><td><code>target.secure_signing_time</code></td><td>timestamp</td><td>When Apple's timestamp server says it was signed, which the signer cannot change. Test with <code>has(target.secure_signing_time)</code> first.</td></tr>
+<tr><td><code>args</code></td><td>list of strings</td><td>The arguments, starting with the command as it was run (<code>args[0]</code>).</td></tr>
+<tr><td><code>envs</code></td><td>map of strings</td><td>The environment variables. <code>envs['NAME']</code> is an error when NAME is not set, so test <code>'NAME' in envs</code> first.</td></tr>
+<tr><td><code>euid</code></td><td>int</td><td>The effective user ID: 0 is root, as with <code>sudo</code>.</td></tr>
+<tr><td><code>cwd</code></td><td>string</td><td>The working directory.</td></tr>
+<tr><td><code>path</code></td><td>string</td><td>The path of the binary being run.</td></tr>
+</tbody>
+</table>
+</div>
+<p>The expression returns <code>true</code> to allow (as ALLOWLIST) or <code>false</code> to block (as BLOCKLIST), or one of the policies {{range $i, $p := .Policies}}{{if $i}}, {{end}}<code>{{$p}}</code>{{end}}, usually as <code>condition ? BLOCKLIST : ALLOWLIST</code>. It has CEL's standard functions and macros (such as <code>startsWith</code>, <code>endsWith</code>, <code>contains</code>, <code>matches</code>, <code>size</code>, <code>in</code>, <code>exists</code>, <code>all</code> and <code>timestamp</code>) and the string functions <code>charAt</code>, <code>format</code>, <code>indexOf</code>, <code>join</code>, <code>lastIndexOf</code>, <code>lowerAscii</code>, <code>replace</code>, <code>reverse</code>, <code>split</code>, <code>substring</code>, <code>trim</code> and <code>upperAscii</code>. An expression that fails while it runs, such as reading <code>args[5]</code> of a shorter command, decides nothing: Santa goes on to the binary's other rules and then its client mode, or blocks it on a Mac set to fail closed.</p>
+
+<h2>What needs Workshop</h2>
+<p>Workshop, North Pole Security's commercial sync server, sends rules with CEL v2, which adds <code>ancestors</code> (the processes that started this one), <code>fds</code> (its open file descriptors) and the <code>FD_TYPE_</code> values, <code>target.entitlements</code>, the policies <code>REQUIRE_TOUCHID</code>, <code>REQUIRE_TOUCHID_ONLY</code>, <code>SEATBELT</code> and <code>AUDIT</code>, and the functions <code>today()</code>, <code>now()</code>, <code>days()</code>, <code>weekdays()</code>, <code>policy_for_range()</code>, <code>kill_on_expiry()</code>, <code>require_touchid_with_cooldown_minutes()</code> and <code>require_touchid_only_with_cooldown_minutes()</code>. Rules from Rudolph cannot use any of them, and an expression that does is refused.</p>
+
+<h2>Caching</h2>
+<p>Santa normally caches its decision for a binary until the binary or the rules change. When an expression reads only <code>target</code>, its answer is the same every time the binary runs, so Santa caches it. Once it reads <code>args</code>, <code>envs</code>, <code>euid</code>, <code>cwd</code> or <code>path</code>, Santa evaluates it again on every execution, which costs a little each time the binary runs: keep such rules to the binaries that need them.</p>
+
+<h2>Try an expression</h2>
+<form class="cel-try" method="get" action="/rules/cel">
+  <label class="wide">Expression
+    <textarea name="expr" rows="3" cols="80" maxlength="16384" autocomplete="off" spellcheck="false" required>{{.Try.Expr}}</textarea>
+  </label>
+  <label>Arguments <span class="hint">(one per line, the command first)</span>
+    <textarea name="args" rows="4" cols="36" autocomplete="off" spellcheck="false">{{.Try.Args}}</textarea>
+  </label>
+  <label>Environment <span class="hint">(NAME=value, one per line)</span>
+    <textarea name="envs" rows="4" cols="36" autocomplete="off" spellcheck="false">{{.Try.Envs}}</textarea>
+  </label>
+  <label>euid <span class="hint">(0 is root)</span>
+    <input name="euid" value="{{.Try.EUID}}" size="6" inputmode="numeric" autocomplete="off">
+  </label>
+  <label>path
+    <input name="path" value="{{.Try.Path}}" size="30" autocomplete="off" spellcheck="false">
+  </label>
+  <label>cwd
+    <input name="cwd" value="{{.Try.CWD}}" size="20" autocomplete="off" spellcheck="false">
+  </label>
+  <label>target.signing_id
+    <input name="signing_id" value="{{.Try.SigningID}}" size="30" autocomplete="off" spellcheck="false">
+  </label>
+  <label>target.team_id
+    <input name="team_id" value="{{.Try.TeamID}}" size="12" autocomplete="off" spellcheck="false">
+  </label>
+  <label>target.signing_time <span class="hint">(empty for none)</span>
+    <input name="signing_time" value="{{.Try.SigningTime}}" size="20" placeholder="2025-01-31" autocomplete="off">
+  </label>
+  <label>target.secure_signing_time
+    <input name="secure_signing_time" value="{{.Try.SecureSigningTime}}" size="20" placeholder="2025-01-31" autocomplete="off">
+  </label>
+  <label class="check"><input type="checkbox" name="platform" value="1"{{if .Try.Platform}} checked{{end}}> target.is_platform_binary</label>
+  <button type="submit">Try</button>
+</form>
+{{if .Try.Tried}}
+<p class="cel-answer">{{if .Try.Error}}Santa would not apply this: <output class="cel-error">{{.Try.Error}}</output>{{else}}Santa would apply <output class="cel-result">{{.Try.Result}}</output>, and the result is <output class="cel-cache">{{if .Try.Cacheable}}cached{{else}}not cached{{end}}</output>.{{end}}</p>
+{{end}}
+<p class="hint">Nothing is saved: this only runs the expression here, as Santa would. To add a CEL rule, choose the CEL policy on an add-rule form (admins, on the rules page, a Mac's page or a group's page) and put the expression in its CEL expression box.</p>
+
+<h2>Examples</h2>
+{{range .Examples}}
+<section class="cel-example">
+<h3>{{.Name}}</h3>
+<p>{{.Explanation}}</p>
+<dl>
+  <dt>Rule type</dt><dd>{{.RuleType}}</dd>
+  <dt>Identifier</dt><dd>{{with .Identifier}}<code>{{.}}</code>{{else}}<span class="muted">the tool's own</span>{{end}}</dd>
+  <dt>Expression</dt><dd><code class="cmd" tabindex="0">{{.Expression}}</code></dd>
+</dl>
+<p><a href="/rules/cel?expr={{.Expression}}">Try it</a></p>
+</section>
+{{end}}
+{{end}}
