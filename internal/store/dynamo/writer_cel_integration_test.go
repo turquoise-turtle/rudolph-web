@@ -19,17 +19,17 @@ func TestAddRule_CELExpression(t *testing.T) {
 	if err := st.AddRule(ctx, writerActor, store.RuleTarget{Kind: store.TargetGlobal}, rule); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.CreateGroup(ctx, writerActor, "eng", "", true); err != nil {
+	if _, err := st.CreateGroup(ctx, writerActor, "cel", "", true); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.AddRule(ctx, writerActor, store.RuleTarget{Kind: store.TargetGroup, Group: "eng"}, rule); err != nil {
+	if err := st.AddRule(ctx, writerActor, store.RuleTarget{Kind: store.TargetGroup, Group: "cel"}, rule); err != nil {
 		t.Fatal(err)
 	}
 	global, err := st.ListGlobalRules(ctx, store.RuleFilter{}, store.PageRequest{Limit: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
-	group, err := st.ListGroupRules(ctx, "eng", store.PageRequest{Limit: 10})
+	group, err := st.ListGroupRules(ctx, "cel", store.PageRequest{Limit: 10})
 	if err != nil {
 		t.Fatal(err)
 	}

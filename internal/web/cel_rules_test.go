@@ -152,7 +152,7 @@ func TestCELRules_HelpPage(t *testing.T) {
 		mustContain(t, plain, e.Name, e.Expression)
 	}
 	mustContain(t, body, `<form`, `method="get"`, `action="/rules/cel"`, `name="expr"`, `name="args"`)
-	mustNotContain(t, body, `method="post"`)
+	mustNotContain(t, body, `method="post" action="/rules/cel"`) // the try form writes nothing; Sign out is a POST on every page
 }
 
 func celOutput(t *testing.T, body, class string) string {
