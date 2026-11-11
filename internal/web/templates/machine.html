@@ -113,13 +113,23 @@
 {{end}}
 {{end}}
 <h2>Machine-specific rules</h2>
-{{if .Edit.On}}{{template "addrule" (addRuleForm "Add a rule for this Mac" "machine" .Machine.MachineID .Edit)}}{{end}}
+{{if .Edit.On}}{{template "addrule" (addRuleForm "Add a rule for this Mac" "machine" .Machine.MachineID .Edit)}}
+<details class="edit"><summary>Move this Mac's rules to another Mac</summary>
+<form class="edit-form" method="post" action="/admin{{machineURL .Machine.MachineID}}/rules/move">
+  <label>New Mac <span class="hint">(serial number or machine ID)</span>
+    <input name="to" required maxlength="128" size="38" autocomplete="off" spellcheck="false">
+  </label>
+  <label class="check"><input type="checkbox" name="remove" value="on" checked> also remove them from this Mac</label>
+  <button type="submit">Move rules</button>
+</form>
+<p class="hint">For when its user changes computers. Every rule in force here is copied to the new Mac as it is (policy, messages, expiry and collection of allowed executions); expired rules and rules being removed stay behind. A rule the new Mac already has with the same policy is left as it is, and one it has with another policy stops the move before anything changes. Untick the box to copy without removing. Both Macs get the change at their next sync.</p>
+</details>{{end}}
 {{if .Rules}}
 <div class="scroll">
 <table>
 <thead><tr><th>Type</th><th>Policy</th><th>Identifier</th><th>Custom message</th><th>Description</th><th>Expires</th><th>State</th><th>Rudolph CLI</th>{{if .Edit.On}}<th>Change</th>{{end}}</tr></thead>
 <tbody>
-{{range .Rules}}
+{{range $rule := .Rules}}
 <tr data-row>
   <td>{{.RuleType}}</td>
   <td>{{.Policy}}</td>
@@ -127,11 +137,12 @@
   <td>{{.CustomMessage}}</td>
   <td>{{.Description}}</td>
   <td>{{template "time" .ExpiresAt}}</td>
-  <td>{{with .State}}{{.}}{{else}}—{{end}}</td>
+  <td>{{with .State}}{{.}}{{else}}—{{end}}{{if .CollectAllowedEvents}}<br><span class="muted">collecting allowed executions</span>{{end}}</td>
   <td>{{with cliRemoveMachine .RuleType .Identifier $.Machine.MachineID}}<details class="cmds"><summary>Commands</summary><ul>
     {{template "cmd" (cmd "Remove" .)}}
+    {{if canCollect $rule}}{{if $rule.CollectAllowedEvents}}{{template "cmd" (cmd "Stop collecting allowed executions" (cliCollectMachine $rule.RuleType $rule.Identifier $.Machine.MachineID false))}}{{else}}{{template "cmd" (cmd "Collect allowed executions" (cliCollectMachine $rule.RuleType $rule.Identifier $.Machine.MachineID true))}}{{end}}{{end}}
   </ul></details>{{end}}</td>
-  {{if $.Edit.On}}<td>{{if eq .State "IN_FORCE"}}{{template "removerule" (removeRuleForm "machine" $.Machine.MachineID .)}}{{end}}</td>{{end}}
+  {{if $.Edit.On}}<td>{{if eq .State "IN_FORCE"}}{{template "removerule" (removeRuleForm "machine" $.Machine.MachineID .)}}{{end}}{{if canCollect .}}{{template "collectrule" (removeRuleForm "machine" $.Machine.MachineID .)}}{{end}}</td>{{end}}
 </tr>
 {{end}}
 </tbody>

@@ -218,8 +218,10 @@ func New(opts Options) (http.Handler, error) {
 		// here, and only an admin's reaches the handler.
 		mux.Handle("POST /admin/rules", admin(s.addRule))
 		mux.Handle("POST /admin/rules/remove", admin(s.removeRule))
+		mux.Handle("POST /admin/rules/collect", admin(s.setRuleCollection))
 		mux.Handle("POST /admin/machines/{id}/temporary-mode", admin(s.setTemporaryMode))
 		mux.Handle("POST /admin/machines/{id}/temporary-mode/end", admin(s.endTemporaryMode))
+		mux.Handle("POST /admin/machines/{id}/rules/move", admin(s.moveMachineRules))
 		mux.Handle("POST /admin/groups", admin(s.createGroup))
 		mux.Handle("POST /admin/groups/update", admin(s.updateGroup))
 		mux.Handle("POST /admin/groups/delete", admin(s.deleteGroup))
@@ -410,6 +412,7 @@ var funcs = template.FuncMap{
 	"ungrouped":      func() string { return store.UngroupedGroup },
 	"addRuleForm":    editFuncs["addRuleForm"],
 	"removeRuleForm": editFuncs["removeRuleForm"],
+	"canCollect":     editFuncs["canCollect"],
 	"orDash": func(s string) string {
 		if s == "" {
 			return "—"
@@ -512,6 +515,12 @@ func cliFuncs(b clicmd.Builder) template.FuncMap {
 		},
 		"cliRemoveMachine": func(t store.RuleType, id, machine string) string {
 			return str(b.Remove(t, id, clicmd.Machine(machine, "")))
+		},
+		"cliCollectGlobal": func(t store.RuleType, id string, on bool) string {
+			return str(b.CollectAllowedEvents(t, id, clicmd.Global(), on))
+		},
+		"cliCollectMachine": func(t store.RuleType, id, machine string, on bool) string {
+			return str(b.CollectAllowedEvents(t, id, clicmd.Machine(machine, ""), on))
 		},
 		"cmd":             func(label, command string) cliCommand { return cliCommand{label, command} },
 		"cliMachineRules": func(machine string) string { return str(b.MachineRules(machine)) },

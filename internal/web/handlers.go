@@ -153,19 +153,35 @@ func (s *server) rules(w http.ResponseWriter, r *http.Request) {
 		s.storeError(w, r, err)
 		return
 	}
+	edit := s.editForms(r)
+	// Only admins can turn collection on, so only they need to know whether
+	// Macs upload allowed executions; viewers' pages cost no extra read.
+	var allEventUpload, globalUnread bool
+	if edit.On {
+		global, err := s.store.GlobalConfig(r.Context())
+		if err != nil {
+			s.log.Warn("reading the global config failed", "err", err)
+			globalUnread = true
+		}
+		allEventUpload = err == nil && global.EnableAllEventUpload != nil && *global.EnableAllEventUpload
+	}
 	s.render(w, r, http.StatusOK, "rules", "Global rules", "rules", struct {
-		Filter    store.RuleFilter
-		RuleTypes []store.RuleType
-		Policies  []store.Policy
-		Rules     []store.Rule
-		Pager     pager
-		Edit      editForms
+		Filter         store.RuleFilter
+		RuleTypes      []store.RuleType
+		Policies       []store.Policy
+		Rules          []store.Rule
+		Pager          pager
+		Edit           editForms
+		AllEventUpload bool
+		GlobalUnread   bool
 	}{
-		Filter:    filter,
-		RuleTypes: store.RuleTypes,
-		Policies:  store.Policies,
-		Rules:     page.Items,
-		Edit:      s.editForms(r),
+		Filter:         filter,
+		RuleTypes:      store.RuleTypes,
+		Policies:       store.Policies,
+		Rules:          page.Items,
+		Edit:           edit,
+		AllEventUpload: allEventUpload,
+		GlobalUnread:   globalUnread,
 		Pager: links("/rules", url.Values{"type": {string(filter.RuleType)}, "policy": {string(filter.Policy)}},
 			nav, page.NextCursor),
 	})

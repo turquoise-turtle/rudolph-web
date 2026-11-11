@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/turquoise-turtle/rudolph-web/internal/store"
@@ -378,4 +379,100 @@ func (s *Store) changeAssigned(actor store.Actor, machineID, group string, assig
 
 func groupAuditTarget(name string) string {
 	return store.RuleTarget{Kind: store.TargetGroup, Group: name}.AuditTarget()
+}
+
+// SetRuleCollection implements store.Writer.
+func (s *Store) SetRuleCollection(_ context.Context, actor store.Actor, target store.RuleTarget, ruleType store.RuleType, identifier string, collect bool) error {
+	ch, err := rudolphrules.CheckCollection(actor, target, ruleType, identifier)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.err != nil {
+		return s.err
+	}
+	rules := s.globalRules
+	if ch.Target.Kind == store.TargetMachine {
+		if ch.Target.MachineID, err = s.storedMachineID(ch.Target.MachineID); err != nil {
+			return err
+		}
+		rules = s.machineRules[ch.Target.MachineID]
+	}
+	key := ruleKey(store.Rule{RuleType: ruleType, Identifier: identifier})
+	r, ok := rules[key]
+	switch {
+	case !ok || r.State == store.RuleStateExpired:
+		return store.ErrNotFound
+	case r.State == store.RuleStateRemoving:
+		return store.Invalid("the rule is being removed from the Mac; add it again instead")
+	case r.CollectAllowedEvents == collect:
+		return store.ErrNothingToChange
+	}
+	r.CollectAllowedEvents = collect
+	rules[key] = r
+	s.recordAudit(ch.Actor, store.ActionRuleUpdate, ch.Target.AuditTarget(), rudolphrules.CollectionSummaryOf(r.RuleType, r.Identifier, r.Policy, collect))
+	return nil
+}
+
+// MoveMachineRules implements store.Writer. Whether a rule is in force is its
+// State, since the fake has no clock.
+func (s *Store) MoveMachineRules(_ context.Context, actor store.Actor, from, to string, remove bool) (int, error) {
+	who, err := rudolphrules.CheckMove(actor, from, to)
+	if err != nil {
+		return 0, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.err != nil {
+		return 0, s.err
+	}
+	if from, err = s.storedMachineID(from); err != nil {
+		return 0, err
+	}
+	if to, err = s.storedMachineID(to); err != nil {
+		return 0, err
+	}
+	var moving []store.Rule
+	for _, r := range s.machineRules[from] {
+		if r.State == store.RuleStateInForce {
+			moving = append(moving, r)
+		}
+	}
+	slices.SortFunc(moving, func(a, b store.Rule) int { return strings.Compare(ruleKey(a), ruleKey(b)) })
+	switch {
+	case len(moving) == 0:
+		return 0, rudolphrules.NothingToMove(from)
+	case len(moving) > store.MaxMovedRules:
+		return 0, rudolphrules.TooManyToMove(len(moving))
+	}
+	var copies []store.Rule
+	for _, r := range moving {
+		if h, ok := s.machineRules[to][ruleKey(r)]; ok && h.State == store.RuleStateInForce {
+			if h.Policy != r.Policy {
+				return 0, rudolphrules.MoveConflict(string(r.RuleType), r.Identifier, string(h.Policy), string(r.Policy))
+			}
+			continue
+		}
+		copies = append(copies, r)
+	}
+	if s.machineRules[to] == nil {
+		s.machineRules[to] = map[string]store.Rule{}
+	}
+	for _, r := range copies {
+		s.machineRules[to][ruleKey(r)] = r
+		s.recordAudit(who, store.ActionRuleAdd, store.MachineAuditTarget(to), rudolphrules.SummaryOf(r.RuleType, r.Identifier, r.Policy, rudolphrules.CopiedExtra(r.ExpiresAt, from)))
+	}
+	if remove {
+		for _, r := range moving {
+			// As RemoveRule: the row stays, marked, with the global rule's policy when there is one.
+			marked := store.Rule{RuleType: r.RuleType, Identifier: r.Identifier, Policy: store.PolicyRemove, State: store.RuleStateRemoving}
+			if g, ok := s.globalRules[ruleKey(r)]; ok {
+				marked.Policy, marked.CustomMessage, marked.CustomURL, marked.CELExpr = g.Policy, g.CustomMessage, g.CustomURL, g.CELExpr
+			}
+			s.machineRules[from][ruleKey(r)] = marked
+			s.recordAudit(who, store.ActionRuleRemove, store.MachineAuditTarget(from), rudolphrules.SummaryOf(r.RuleType, r.Identifier, r.Policy, rudolphrules.MovedExtra(to)))
+		}
+	}
+	return len(copies), nil
 }
