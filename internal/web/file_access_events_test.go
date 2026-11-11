@@ -45,7 +45,7 @@ func TestFileAccessEvents_ListNewestFirst(t *testing.T) {
 	}
 	mustContain(t, body, "Protect Jamf", "/usr/local/jamf/bin/jamf", "DENIED", "AUDIT_ONLY", "DENIED_INVALID_SIGNATURE",
 		"/bin/rm", "platform:com.apple.rm", "/bin/zsh", "/usr/bin/sudo", "EQHXZ8M8AV:com.example.tool", "Browser cookies",
-		`href="/machines/`+faaMac+`"`, "lab-mac-01", fixedNow.Add(-time.Minute).Format("2006-01-02 15:04:05")+" UTC")
+		`href="/machines/`+faaMac+`"`, fixedNow.Add(-time.Minute).Format("2006-01-02 15:04:05")+" UTC")
 	order := []string{"/usr/local/jamf/bin/jamf<", "Receipts/x.pkg", "Cookies.binarycookies", "jamfAgent"}
 	last := -1
 	for _, s := range order {
@@ -65,7 +65,7 @@ func TestFileAccessEvents_FiltersAndPagination(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("status %d", code)
 	}
-	mustContain(t, body, "/usr/local/jamf/bin/jamf<", "Receipts/x.pkg")
+	mustContain(t, body, "/usr/local/jamf/bin/jamf<", "Receipts/x.pkg", "lab-mac-01")
 	mustNotContain(t, body, "Cookies.binarycookies", "jamfAgent")
 	if calls := s.Calls(); calls[len(calls)-1].Filter != (store.FileAccessEventFilter{MachineID: faaMac}) {
 		t.Errorf("the machine filter was not the stored spelling: %+v", calls[len(calls)-1].Filter)
