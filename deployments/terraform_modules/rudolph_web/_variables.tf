@@ -118,7 +118,7 @@ variable "ssm_kms_key_arn" {
 #
 variable "dynamodb_table_name" {
   type        = string
-  description = "Name of Rudolph's DynamoDB table, typically <rudolph prefix>_rudolph_store. The role gets GetItem and Query on it and its indexes, and with enable_editing the writes described there."
+  description = "Name of Rudolph's DynamoDB table, typically <rudolph prefix>_rudolph_store. The role gets BatchGetItem, GetItem and Query on it and its indexes, and with enable_editing the writes described there (including BatchWriteItem)."
 }
 
 variable "dynamodb_table_arn" {
@@ -141,7 +141,7 @@ variable "events_dynamodb_table_name" {
 
 variable "enable_editing" {
   type        = bool
-  description = "Let Rudolph.Admin add and remove rules and set temporary client modes from the web view (RUDOLPH_WEB_EDITING); on by default, and only Rudolph.Admin holders see the forms. Grants the role PutItem, UpdateItem and DeleteItem on the store table, limited to Rudolph's rule, rules feed, machine, group, event collection and audit partitions (audit: PutItem only). Every change is recorded in Rudolph's audit trail. Set false to keep the view and its role read-only."
+  description = "Let Rudolph.Admin change rules, temporary client modes, a Mac's and the global configuration (including clean sync requests), and device groups and their members from the web view (RUDOLPH_WEB_EDITING); on by default, and only Rudolph.Admin holders see the forms. Grants the role PutItem, UpdateItem, DeleteItem and BatchWriteItem on the store table, limited to Rudolph's rule, rules feed, machine, global config, group, group member, event collection and audit partitions (audit: PutItem only, and never with ExpiresAfter). Every change is recorded in Rudolph's audit trail. Set false to keep the view and its role read-only."
   default     = true
 }
 
