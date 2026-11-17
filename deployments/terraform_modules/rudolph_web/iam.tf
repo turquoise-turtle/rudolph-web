@@ -23,7 +23,8 @@ data "aws_iam_policy_document" "assume_role" {
   }
 }
 
-# The AWS managed AWSLambdaBasicExecutionRole allows logs:* on every log group in the account.
+# The AWS managed AWSLambdaBasicExecutionRole allows logs:CreateLogGroup, logs:CreateLogStream and logs:PutLogEvents on
+# every log group in the account.
 # This function only needs to write to its own.
 data "aws_iam_policy_document" "web" {
   statement {
@@ -117,20 +118,37 @@ data "aws_iam_policy_document" "web" {
   #   GroupMembers#*               a group's member rows, written in the same transaction as a Mac's Groups row when a
   #                                group is assigned or removed (groups)
   #   EventCollection              the index of rules whose allowed executions are collected (eventcollection)
-  # The audit trail (one partition per UTC day) is a statement of its own with PutItem only: the role cannot update or
-  # delete an entry; overwriting one is prevented by Rudolph's conditional put (attribute_not_exists), not by IAM. The actions are in for_each so that they exist only when editing is on; each
-  # element is one statement.
+  # The audit trail (one partition per UTC day) is a statement of its own with PutItem only, so no UpdateItem or
+  # DeleteItem; but a PutItem can replace an entry with the same key, and what prevents that is Rudolph's conditional put
+  # (attribute_not_exists(PK)), not IAM. The actions are in for_each so that they exist only when editing is on; each
+  # element is one statement, and extra_conditions adds conditions to that statement alone.
+  #
+  # Every ForAllValues condition on LeadingKeys has a Null check beside it: ForAllValues is true for a request that
+  # carries no leading key at all, and the Null check refuses such a request.
   dynamic "statement" {
     for_each = var.enable_editing ? [
       {
-        sid          = "WriteRudolphRules"
-        actions      = ["dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:DeleteItem", "dynamodb:BatchWriteItem"]
-        leading_keys = ["GlobalRules", "RulesFeed", "MachineRules#*", "Machine#*", "GlobalConfig", "GroupRules#*", "GroupRegistry", "GroupMembers#*", "EventCollection"]
+        sid              = "WriteRudolphRules"
+        actions          = ["dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:DeleteItem", "dynamodb:BatchWriteItem"]
+        leading_keys     = ["GlobalRules", "RulesFeed", "MachineRules#*", "Machine#*", "GlobalConfig", "GroupRules#*", "GroupRegistry", "GroupMembers#*", "EventCollection"]
+        extra_conditions = []
       },
       {
         sid          = "AppendRudolphAudit"
         actions      = ["dynamodb:PutItem"]
         leading_keys = ["Audit#*"]
+        # Rudolph's audit entries never carry ExpiresAfter (pkg/model/audit), and the store table's TTL deletes items
+        # whose ExpiresAfter has passed, so a PutItem replacing an entry with a past ExpiresAfter would get it deleted.
+        # For PutItem, dynamodb:Attributes holds the item's top-level attribute names; with ForAllValues a request
+        # without the key passes, so this cannot refuse a genuine audit write. Not yet confirmed against real AWS:
+        # check that an audit write still succeeds and a PutItem with ExpiresAfter on Audit#<day> is denied.
+        extra_conditions = [
+          {
+            test     = "ForAllValues:StringNotEquals"
+            variable = "dynamodb:Attributes"
+            values   = ["ExpiresAfter"]
+          },
+        ]
       },
     ] : []
 
@@ -144,6 +162,22 @@ data "aws_iam_policy_document" "web" {
         test     = "ForAllValues:StringLike"
         variable = "dynamodb:LeadingKeys"
         values   = statement.value.leading_keys
+      }
+
+      condition {
+        test     = "Null"
+        variable = "dynamodb:LeadingKeys"
+        values   = ["false"]
+      }
+
+      dynamic "condition" {
+        for_each = statement.value.extra_conditions
+
+        content {
+          test     = condition.value.test
+          variable = condition.value.variable
+          values   = condition.value.values
+        }
       }
     }
   }
