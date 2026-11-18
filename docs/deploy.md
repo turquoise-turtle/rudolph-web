@@ -34,8 +34,8 @@ You only do this once.
 * **Terraform** 1.10 or newer (tested with 1.17), with the `hashicorp/aws` provider `~> 6.72`.
 * **AWS CLI**, authenticated as a role that may create Lambda functions, IAM roles, SSM parameters,
   CloudWatch log groups and, if you enable it, CloudFront distributions, ACM certificates and
-  Route 53 records. With a cost budget (see [The monthly cost budget](#the-monthly-cost-budget)) the role also needs `budgets:ViewBudget`, `budgets:ModifyBudget`, `budgets:TagResource`, `budgets:UntagResource` and `budgets:ListTagsForResource`; the tag permissions are needed because the provider's default tags are applied to the budget.
-* An **S3 bucket** for the Terraform state. It must already exist.
+  Route 53 records, and with [access logs](#cloudfront-access-logs) or [the WAF](#the-waf) what those sections list. With a cost budget (see [The monthly cost budget](#the-monthly-cost-budget)) the role also needs `budgets:ViewBudget`, `budgets:ModifyBudget`, `budgets:TagResource`, `budgets:UntagResource` and `budgets:ListTagsForResource`; the tag permissions are needed because the provider's default tags are applied to the budget.
+* An **S3 bucket** for the Terraform state. It must already exist. Terraform also keeps its state lock there; see [State locking](#state-locking).
 
 ### A Rudolph deployment
 
@@ -106,7 +106,7 @@ make init-env
 
 That copies the example into `deployments/environments/prod/`. Edit two files:
 
-* **`_backend.tf`** — the state bucket, key, region and KMS key, and the region of the two AWS
+* **`_backend.tf`** — the state bucket, key, region and KMS key (keep `use_lockfile = true`; see [State locking](#state-locking)), and the region of the two AWS
   providers. Keep the `aws.us_east_1` alias even if you deploy elsewhere and disable CloudFront:
   CloudFront certificates only exist in us-east-1, and the module declares that provider.
 * **`config.auto.tfvars.json`** — the settings, documented in
@@ -161,6 +161,67 @@ Cost: CloudWatch standard alarms cost about 0.10 US dollars each a month, so abo
 #### Upgrading: alarms
 
 This release adds the three alarms and the `alarm_sns_topic_arn` variable. `make plan`, `make deploy` and `make justdeploy` refuse an existing environment until it has the new setting (see [Upgrading an existing environment](#upgrading-an-existing-environment)): add the `alarm_sns_topic_arn` variable to its `_variables.tf`, the `alarm_sns_topic_arn = var.alarm_sns_topic_arn` argument to its `module "rudolph_web"` block, and `"alarm_sns_topic_arn": ""` to its `config.auto.tfvars.json`, or set that value to Rudolph's alarm SNS topic ARN to be notified. The plan then adds the three alarms and changes nothing else.
+
+### State locking
+
+The example's `_backend.tf` sets `use_lockfile = true`: while a plan or apply runs, Terraform holds a lock object, `<key>.tflock`, next to the state in the state bucket (for the example, `rudolph-web-example.tfstate.tflock`), and a second plan or apply against the same state waits for it or fails with "Error acquiring the state lock" instead of writing the state at the same time. It needs Terraform 1.10 or newer, which `versions.tf` already requires, and no DynamoDB table.
+
+The role that runs Terraform needs, on the lock object (`arn:aws:s3:::<state bucket>/<key>.tflock`), `s3:GetObject`, `s3:PutObject` and `s3:DeleteObject`, besides what it already has on the state object itself. The lock object is encrypted like the state, so with `kms_key_id` set the role also needs `kms:GenerateDataKey` and `kms:Decrypt` on that key, which it already uses for the state. If a run is killed and leaves the lock behind, `terraform -chdir=deployments/environments/$ENV force-unlock <lock ID>` removes it; make sure nothing else is running first.
+
+### The provider lock file
+
+`deployments/environments/example/.terraform.lock.hcl` is committed. It pins the `hashicorp/aws` release the example was tested with and records its package hashes for `linux_amd64`, `darwin_arm64` and `darwin_amd64`, so `terraform init` installs that build and refuses one that does not match. `make init-env` copies it into a new environment; every other `.terraform.lock.hcl` stays gitignored, like the environments themselves.
+
+To move to a newer `hashicorp/aws` release within the `versions.tf` constraint, or after changing the constraint, refresh it in the example and commit it:
+
+```sh
+cd deployments/environments/example
+terraform init -backend=false -upgrade
+terraform providers lock -platform=linux_amd64 -platform=darwin_arm64 -platform=darwin_amd64
+```
+
+`init -upgrade` picks the newest matching release and installs the module, which `providers lock` needs; `providers lock` then adds the hashes of all three platforms, so the file works wherever a deploy runs and not only on the computer that wrote it. Run `go test ./deployments` and `make tf-check`, then copy the new file into each environment (`cp deployments/environments/example/.terraform.lock.hcl deployments/environments/$ENV/`) and run `make tf-init`.
+
+### CloudFront access logs
+
+With `enable_cloudfront` on, set `"enable_cloudfront_logging": true` to keep CloudFront's access logs: one line per request through the distribution, with the time, the viewer's IP address, the path, the status and the edge location. They are delivered with CloudFront standard logging v2 to an S3 bucket the module creates for them, `<prefix>-rudolph-web-cf-logs-<account ID>`, in us-east-1 whatever the deployment's region, because CloudFront's log deliveries can only be set up there. The bucket:
+
+* blocks all public access (all four public access block settings) and keeps ACLs disabled; logging v2 writes through the bucket policy, which admits only the log delivery service (`delivery.logs.amazonaws.com`) acting for this account (`aws:SourceAccount`) and this deployment's delivery source (`aws:SourceArn`), and denies every request not made over TLS;
+* is encrypted with SSE-S3 (`AES256`);
+* is not versioned, and its lifecycle rule deletes each log `cloudfront_log_retention_days` after it is written (default `180`; it must be 1 or more) and aborts multipart uploads left incomplete for a day.
+
+Logs are written in W3C format, the layout of CloudFront's legacy access logs. Off by default, and ignored without `enable_cloudfront`; requests made straight to the Function URL do not go through CloudFront and are not in these logs.
+
+The deploying role also needs, in us-east-1, to manage the bucket (`s3:CreateBucket`, `s3:DeleteBucket`, `s3:PutBucketPolicy`, `s3:PutBucketPublicAccessBlock`, `s3:PutEncryptionConfiguration`, `s3:PutLifecycleConfiguration`, `s3:PutBucketTagging` and the matching `s3:Get*` and `s3:List*` reads) and the deliveries (`logs:PutDeliverySource`, `logs:PutDeliveryDestination`, `logs:CreateDelivery`, their `logs:Get*`, `logs:Describe*` and `logs:Delete*` counterparts, `logs:TagResource`, `logs:ListTagsForResource`), plus `cloudfront:AllowVendedLogDeliveryForResource` on the distribution.
+
+Cost: S3 storage for the logs, plus CloudWatch's charge for vended logs delivered to S3, per GB; an admin tool's traffic makes little of either.
+
+Turning logging off again removes the deliveries, but Terraform cannot delete a bucket that still holds logs, and the module deliberately does not set `force_destroy`, so an apply cannot delete logs by accident. Empty the bucket first (`aws s3 rm s3://<bucket> --recursive`), or remove it from the state with `terraform state rm` to keep it. The same goes for `make destroy` with logging on.
+
+### The WAF
+
+With `enable_cloudfront` on, set `"enable_waf": true` to attach an AWS WAF web ACL, `<prefix>-rudolph-web`, to the distribution. It is created in us-east-1 through the `aws.us_east_1` provider, as CloudFront requires, allows everything by default (the app does its own sign-in) and has two rules, both blocking:
+
+| Rule | Blocks |
+|---|---|
+| `aws-ip-reputation` | addresses on AWS's managed IP reputation list (`AWSManagedRulesAmazonIpReputationList`): sources AWS has seen in bots, scanning and DDoS. The group's own actions apply (`override_action { none {} }`). |
+| `rate-limit-per-ip` | one IP address making more than `waf_rate_limit` requests in any 5 minutes, until its rate falls back under the limit. |
+
+`waf_rate_limit` defaults to `1000`, about 3 requests a second sustained. Every request through CloudFront counts, including the cached static files, so a page view is a few requests; an admin clicking quickly makes perhaps 50 to 100 in 5 minutes, and a small team signed in from behind one office NAT, which shares one address, stays well under the limit, while a scripted flood or a crawler goes over it within a minute. Lower it if nobody shares an address; raise it if a larger team shares one. AWS WAF accepts 10 to 2,000,000,000. A blocked request is answered `403` by CloudFront. Both rules and the web ACL send CloudWatch metrics (namespace `AWS/WAFV2`, in us-east-1) and keep sampled requests, visible in the WAF console.
+
+**The WAF covers only traffic through CloudFront.** The Function URL stays directly reachable: anyone who has its address can send requests straight to it and go around the WAF, its rate limit and the access logs. This is deliberate (owner decision): the Function URL's host is random and is not published, and sign-in cannot complete there, because Entra ID only redirects back to `base_url` and the session cookie belongs to that host, so a direct request without a session gets no further than the sign-in redirect, the anonymous static files and `/favicon.ico`; what it does cost is a Lambda invocation each, which the rate limit cannot stop. Closing it needs OAC with `authorization_type = AWS_IAM` (see [CloudFront, the Function URL and cross-origin protection](#cloudfront-the-function-url-and-cross-origin-protection)), which is not part of this module.
+
+The deploying role also needs `wafv2:CreateWebACL`, `wafv2:GetWebACL`, `wafv2:UpdateWebACL`, `wafv2:DeleteWebACL`, `wafv2:ListTagsForResource` and `wafv2:TagResource` in us-east-1, and `cloudfront:UpdateDistribution` (which it has already) to attach it.
+
+Cost: about 7 US dollars a month (5 for the web ACL and 1 for each rule) plus 0.60 US dollars per million requests; the IP reputation list carries no charge of its own.
+
+#### Upgrading: CloudFront access logs, WAF and state locking
+
+This release adds `enable_cloudfront_logging`, `cloudfront_log_retention_days`, `enable_waf` and `waf_rate_limit`, `use_lockfile` in the example's `_backend.tf`, and a committed `.terraform.lock.hcl`. Nothing changes in an existing deployment until you opt in:
+
+1. `make plan`, `make deploy` and `make justdeploy` refuse an existing environment until it has the four new settings (see [Upgrading an existing environment](#upgrading-an-existing-environment)): add the four variables to its `_variables.tf`, the four `<name> = var.<name>` arguments to its `module "rudolph_web"` block, and `"enable_cloudfront_logging": false`, `"cloudfront_log_retention_days": 180`, `"enable_waf": false` and `"waf_rate_limit": 1000` to its `config.auto.tfvars.json`. The plan then changes nothing. Set `enable_cloudfront_logging` or `enable_waf` to `true` to add the log bucket and deliveries or the web ACL; both need `enable_cloudfront`.
+2. Add `use_lockfile = true` to the `backend "s3"` block of the environment's `_backend.tf`, give the deploying role the lock object permissions under [State locking](#state-locking), and run `terraform -chdir=deployments/environments/$ENV init -reconfigure` once: Terraform treats a changed backend block as a new backend configuration, and the plain `terraform init` that `make deploy` runs stops until it is reinitialised. The state stays where it is.
+3. Copy the example's `.terraform.lock.hcl` into the environment (`cp deployments/environments/example/.terraform.lock.hcl deployments/environments/$ENV/`), replacing the one `terraform init` wrote there, and run `make tf-init`. It installs the locked `hashicorp/aws` release if the environment had another.
 
 ---
 
@@ -287,6 +348,9 @@ Then check the top lists. **Top blocked** and **Top allowed** should show a list
 | `aws_route53_record` | validation record and the A/AAAA aliases |
 | `aws_budgets_budget` | `<prefix>_rudolph_web_monthly`, only with `monthly_budget_usd` above 0 |
 | `aws_cloudwatch_metric_alarm` ×3 | `<prefix>_rudolph_web_errors`, `_throttles` and `_duration` on the function; see [Alarms](#alarms) |
+| `aws_s3_bucket` (+ public access block, encryption, lifecycle, policy) | `<prefix>-rudolph-web-cf-logs-<account ID>` in us-east-1 for CloudFront's access logs, only with `enable_cloudfront` and `enable_cloudfront_logging`; see [CloudFront access logs](#cloudfront-access-logs) |
+| `aws_cloudwatch_log_delivery_source`, `aws_cloudwatch_log_delivery_destination`, `aws_cloudwatch_log_delivery` | CloudFront standard logging v2 from the distribution to that bucket, in us-east-1, with the bucket |
+| `aws_wafv2_web_acl` | `<prefix>-rudolph-web`, CLOUDFRONT scope in us-east-1, attached to the distribution, only with `enable_cloudfront` and `enable_waf`; see [The WAF](#the-waf) |
 
 ### The role
 
@@ -331,7 +395,7 @@ Worth knowing before you change any of it:
 
   The Function URL stays publicly reachable when CloudFront is in front of it. Restricting that
   needs OAC with `authorization_type = AWS_IAM`, which changes how the app is invoked, and is not
-  part of this module.
+  part of this module. Requests sent directly to it therefore bypass the WAF and the access logs; see [The WAF](#the-waf).
 
 ---
 

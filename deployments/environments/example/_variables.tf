@@ -169,6 +169,30 @@ variable "cloudfront_price_class" {
   default     = "PriceClass_100"
 }
 
+variable "enable_cloudfront_logging" {
+  type        = bool
+  description = "With enable_cloudfront, deliver CloudFront access logs to a private, encrypted S3 bucket the module creates in us-east-1"
+  default     = false
+}
+
+variable "cloudfront_log_retention_days" {
+  type        = number
+  description = "Days CloudFront access logs are kept before S3 deletes them"
+  default     = 180
+}
+
+variable "enable_waf" {
+  type        = bool
+  description = "With enable_cloudfront, attach an AWS WAF web ACL (per-IP rate limit and AWS's IP reputation list) to the distribution. It does not cover the directly reachable Function URL"
+  default     = false
+}
+
+variable "waf_rate_limit" {
+  type        = number
+  description = "Requests one IP address may make through CloudFront in any 5 minutes before the WAF blocks it"
+  default     = 1000
+}
+
 variable "tags" {
   type        = map(string)
   description = "Extra tags merged into every taggable resource"

@@ -52,6 +52,12 @@ module "rudolph_web" {
   use_existing_route53_zone = var.use_existing_route53_zone
   cloudfront_price_class    = var.cloudfront_price_class
 
+  # Optional CloudFront access logs and WAF; both need enable_cloudfront. The WAF does not cover the Function URL.
+  enable_cloudfront_logging     = var.enable_cloudfront_logging
+  cloudfront_log_retention_days = var.cloudfront_log_retention_days
+  enable_waf                    = var.enable_waf
+  waf_rate_limit                = var.waf_rate_limit
+
   # Optional monthly cost budget; alerts only, never caps spending.
   monthly_budget_usd  = var.monthly_budget_usd
   budget_alert_emails = var.budget_alert_emails
