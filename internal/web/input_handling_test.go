@@ -239,8 +239,10 @@ func TestEvents_ALongWalkPastTheLongestKeysKeepsLinksInsideAURL(t *testing.T) {
 // The try form on /rules/cel bounded the expression (16 KiB) and the number of arguments and environment variables
 // (256), but not how long a value of the sample execution is. cel-go charges for a regex match only after it has
 // run, so the cost limit does not help: matching a 15 KB pattern against a 60 KB path took 4.9 s on the review
-// machine, and it grows with the path. Front ends that cap a URL near 8 KB keep this to a tenth of a second, but
-// the handler must not rely on them. No real execution has a megabyte in one field.
+// machine, and it grows with the path. Bounding the sample, here or by a front end that caps a URL near 8 KB, is
+// not enough on its own: within 8 KB a pattern of repeated a{1000} compiles to hundreds of MiB, and a 400-byte
+// pattern of (a?){1000} matched against a 2,000-character path takes seconds (santacel's review_r2_test.go). No real
+// execution has a megabyte in one field.
 func TestCELTry_RefusesOversizedSampleValues(t *testing.T) {
 	a := newApp(t, fake.New(), 10)
 	big := strings.Repeat("a", 1<<20)
