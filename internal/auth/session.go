@@ -160,14 +160,20 @@ func (a *Authenticator) RequireOr(role string, next http.Handler, forbidden Forb
 // login page with the request URI as return_to, other methods get 401. A session cookie that is present, and so
 // invalid or expired, is cleared. Require uses it, and a caller answering for paths outside Require (such as unknown
 // ones) should too, so a signed-out visitor gets the same response everywhere and cannot tell which paths exist. The
-// login handler filters return_to, so whatever the request URI it cannot lead off the site.
+// login handler filters return_to, so whatever the request URI it cannot lead off the site. A request URI longer than
+// the login handler keeps is left out rather than sent: escaped, it can be three times as long, a redirect past what
+// browsers and front ends follow, for a return_to that would be discarded anyway.
 func (a *Authenticator) Unauthenticated(w http.ResponseWriter, r *http.Request) {
 	if _, err := r.Cookie(SessionCookieName); err == nil {
 		clearCookie(w, SessionCookieName)
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	if r.Method == http.MethodGet || r.Method == http.MethodHead {
-		http.Redirect(w, r, LoginPath+"?return_to="+url.QueryEscape(r.URL.RequestURI()), http.StatusFound)
+		target := LoginPath
+		if uri := r.URL.RequestURI(); a.keepsReturnTo(uri) {
+			target += "?return_to=" + url.QueryEscape(uri)
+		}
+		http.Redirect(w, r, target, http.StatusFound)
 		return
 	}
 	http.Error(w, "Authentication required.", http.StatusUnauthorized)

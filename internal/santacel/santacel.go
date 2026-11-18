@@ -18,6 +18,7 @@ import (
 
 	"cel.dev/cel-go/cel"
 	"cel.dev/cel-go/common/ast"
+	"cel.dev/cel-go/common/cost"
 	"cel.dev/cel-go/common/types"
 	"cel.dev/cel-go/ext"
 	"google.golang.org/protobuf/proto"
@@ -385,6 +386,49 @@ func Cacheable(expr string) (bool, error) {
 // can use; Santa's own rules are nowhere near it.
 const costLimit = 1_000_000
 
+// formatCost charges format by the string it builds, which cel-go's cost
+// model does not: '%s'.format([[path, path, ...]]) builds megabytes from a
+// short expression. Each byte of the arguments may be written as an escape of
+// several bytes, so it is counted eight times.
+var formatCost = cost.Model(cost.MemberOverload("string_format",
+	cost.EvalCost(cost.Sum(cost.Const(cost.CallCost), cost.Length(cost.Result()))),
+	cost.ResultSize(cost.AtMost(cost.Sum(cost.Target(), cost.Scale(cost.Arg(0), 8)))),
+))
+
+// sampleSizes are the lengths of a sample execution's values, keyed by their
+// path as cel-go's cost estimate names it, for estimating what an expression
+// may cost against that sample before it runs. An argument, name or value is
+// as long as the longest of its kind; one left out would count as unbounded.
+type sampleSizes map[string]uint64
+
+func (c Context) sizes() sampleSizes {
+	z := sampleSizes{
+		"path": uint64(len(c.Path)), "cwd": uint64(len(c.CWD)),
+		"target.signing_id": uint64(len(c.SigningID)), "target.team_id": uint64(len(c.TeamID)),
+		"args": uint64(len(c.Args)), "args.@items": 0,
+		"envs": uint64(len(c.Envs)), "envs.@keys": 0, "envs.@values": 0,
+	}
+	for _, a := range c.Args {
+		z["args.@items"] = max(z["args.@items"], uint64(len(a)))
+	}
+	for k, v := range c.Envs {
+		z["envs.@keys"] = max(z["envs.@keys"], uint64(len(k)))
+		z["envs.@values"] = max(z["envs.@values"], uint64(len(v)))
+	}
+	return z
+}
+
+func (z sampleSizes) EstimateSize(n cost.AstNode) *cost.SizeEstimate {
+	if size, ok := z[strings.Join(n.Path(), ".")]; ok {
+		return &cost.SizeEstimate{Min: size, Max: size}
+	}
+	return nil
+}
+
+func (sampleSizes) EstimateCallCost(string, string, *cost.AstNode, []cost.AstNode) *cost.CallEstimate {
+	return nil
+}
+
 // Evaluate runs an expression against a sample execution and returns the
 // policy Santa would apply: true is ALLOWLIST, false BLOCKLIST, and an int
 // the policy with that number. UNSPECIFIED, the values reserved for v2 and
@@ -393,6 +437,21 @@ func Evaluate(expr string, c Context) (string, error) {
 	checked, err := compile(expr)
 	if err != nil {
 		return "", err
+	}
+	// cel-go charges a call only once it has run, so the cost limit alone lets
+	// one call build a string far past it: path.replace('a', path) on an 8 KiB
+	// path allocates 64 MiB before it is stopped. The estimate charges for the
+	// strings an expression builds by their length, from the sample's own
+	// lengths, so one that could build or search that much is refused unrun.
+	// The aggregate sizing strategy follows those lengths through lists, so
+	// that path.split('/').join('-') is not estimated as one string per byte
+	// each as long as the path.
+	est, err := env.EstimateCost(checked, c.sizes(), cost.WithSizingStrategy(cost.AggregateSizingStrategy()), formatCost)
+	if err != nil {
+		return "", err
+	}
+	if est.Max > costLimit {
+		return "", errors.New("the expression could cost more than the try form allows with this sample execution: it may build or search strings too long to try here")
 	}
 	prg, err := env.Program(checked, cel.CostLimit(costLimit))
 	if err != nil {

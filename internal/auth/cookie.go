@@ -58,6 +58,16 @@ func (s *sealer) seal(name string, v any) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(out), nil
 }
 
+// sealedLen is the length of the value seal would return for v, which does
+// not depend on the key or the nonce.
+func (s *sealer) sealedLen(v any) (int, error) {
+	plaintext, err := json.Marshal(v)
+	if err != nil {
+		return 0, err
+	}
+	return base64.RawURLEncoding.EncodedLen(s.aead.NonceSize() + len(plaintext) + s.aead.Overhead()), nil
+}
+
 func (s *sealer) open(name, value string, v any) error {
 	// Strict decoding rejects non-canonical trailing bits, so every change to
 	// the encoded string changes the ciphertext.

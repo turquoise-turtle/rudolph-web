@@ -231,6 +231,22 @@ func safeReturnTo(s string) string {
 // leaves room for.
 const maxFlowCookieBytes = 3840
 
+// flowCookieFits reports whether fs seals to a flow cookie of at most
+// maxFlowCookieBytes, name and value together.
+func (a *Authenticator) flowCookieFits(fs flowState) bool {
+	n, err := a.sealer.sealedLen(fs)
+	return err == nil && len(FlowCookieName)+n <= maxFlowCookieBytes
+}
+
+// keepsReturnTo reports whether the login handler would keep returnTo rather
+// than fall back to /. The flow's tokens are random but always as long as
+// randomToken and oauth2.GenerateVerifier make them, 32 bytes in base64, so
+// placeholders of that length seal to a cookie of the same length.
+func (a *Authenticator) keepsReturnTo(returnTo string) bool {
+	token := strings.Repeat("x", base64.RawURLEncoding.EncodedLen(32))
+	return a.flowCookieFits(flowState{State: token, Nonce: token, Verifier: token, ReturnTo: returnTo, Created: a.now().Unix()})
+}
+
 func (a *Authenticator) login(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	p, err := a.getProvider()
@@ -252,20 +268,16 @@ func (a *Authenticator) login(w http.ResponseWriter, r *http.Request) {
 		ReturnTo: safeReturnTo(r.URL.Query().Get("return_to")),
 		Created:  a.now().Unix(),
 	}
+	// Browsers drop a cookie they find too long without saying so, and the
+	// callback would then fail however often the person tried. Signing in
+	// and landing on the home page is better than not signing in.
+	if !a.flowCookieFits(fs) {
+		fs.ReturnTo = "/"
+	}
 	value, err := a.sealer.seal(FlowCookieName, fs)
 	if err != nil {
 		http.Error(w, "Internal error.", http.StatusInternalServerError)
 		return
-	}
-	// Browsers drop a cookie they find too long without saying so, and the
-	// callback would then fail however often the person tried. Signing in
-	// and landing on the home page is better than not signing in.
-	if len(FlowCookieName)+len(value) > maxFlowCookieBytes {
-		fs.ReturnTo = "/"
-		if value, err = a.sealer.seal(FlowCookieName, fs); err != nil {
-			http.Error(w, "Internal error.", http.StatusInternalServerError)
-			return
-		}
 	}
 	http.SetCookie(w, newCookie(FlowCookieName, value, flowTTL))
 	authURL := p.oauth2.AuthCodeURL(state,
