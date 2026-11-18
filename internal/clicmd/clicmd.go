@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/turquoise-turtle/rudolph-web/internal/store"
+	"github.com/turquoise-turtle/rudolph-web/internal/textsafe"
 )
 
 var (
@@ -66,6 +67,12 @@ func quote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + 
 
 func validMachine(id string) bool { return machineRe.MatchString(id) }
 
+// validGroup refuses an empty group name, and one with characters the page
+// shows as escapes: a copied command would no longer name the group.
+func validGroup(name string) bool {
+	return name != "" && strings.IndexFunc(name, textsafe.Invisible) < 0
+}
+
 // ruleTypeArg returns the CLI's name for t and the identifier normalised for
 // it, or ok=false when the identifier does not have the type's shape.
 func ruleTypeArg(t store.RuleType, id string) (string, string, bool) {
@@ -112,7 +119,7 @@ func targetArgs(tg Target, withExpiry bool) (string, bool) {
 		if tg.value == store.UngroupedGroup {
 			return "--ungrouped", true
 		}
-		if tg.value == "" {
+		if !validGroup(tg.value) {
 			return "", false
 		}
 		return "--group " + quote(tg.value), true
@@ -211,7 +218,7 @@ func (b Builder) EndTemporaryMode(machineID string) (string, bool) {
 
 // GroupAdd assigns one Mac to a group.
 func (b Builder) GroupAdd(machineID, group string) (string, bool) {
-	if !validMachine(machineID) || group == "" || group == store.UngroupedGroup {
+	if !validMachine(machineID) || !validGroup(group) || group == store.UngroupedGroup {
 		return "", false
 	}
 	return b.join("group", "add", "--machine", quote(machineID), quote(group), "--yes")

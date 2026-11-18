@@ -84,6 +84,12 @@ func (s *Store) ListGroupMembers(ctx context.Context, group string, f store.Grou
 	page := store.Page[store.GroupMember]{Items: make([]store.GroupMember, 0, len(out.Items))}
 	for _, it := range out.Items {
 		r := reader{item: it}
+		if err := checkMachineID(r.str("SK")); err != nil {
+			// The member's page and links are built from this ID, so a row
+			// Rudolph would not write is skipped rather than shown.
+			s.log.Warn("skipping group member with an invalid machine ID", "pk", keyString(it["PK"]), "sk", keyString(it["SK"]), "err", err)
+			continue
+		}
 		m := store.GroupMember{
 			Machine:  store.Machine{MachineID: r.str("SK")},
 			Assigned: r.boolean("Assigned"),

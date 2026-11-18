@@ -87,5 +87,6 @@ button.danger { color: var(--block); border: 1px solid var(--block); background:
 .cel-answer output { font-weight: 600; }
 .cel-result, .cel-cache { color: var(--fg); }
 .cel-error { color: var(--block); white-space: pre-wrap; }
+code.cel { white-space: pre-wrap; }
 .cel-example { margin: 12px 0 20px; }
 .cel-example h3 { font-size: 14px; margin: 0 0 4px; }

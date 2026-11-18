@@ -1,20 +1,20 @@
 {{define "content"}}
 <div class="filters">
   <form method="get" action="/events" role="search" aria-label="Events by machine">
-    <label>Machine ID <input name="machine" value="{{.Filter.MachineID}}" autocomplete="off"></label>
+    <label>Machine ID <input name="machine" value="{{verbatim .Filter.MachineID}}" autocomplete="off"></label>
     <button type="submit">Show</button>
   </form>
   <form method="get" action="/events" role="search" aria-label="Events by decision">
     <label>Decision
       <select name="decision">
         <option value="">Any</option>
-        {{range .Decisions}}<option value="{{.}}"{{if eq . $.Filter.Decision}} selected{{end}}>{{.}}</option>{{end}}
+        {{range .Decisions}}<option value="{{verbatim .}}"{{if eq . $.Filter.Decision}} selected{{end}}>{{.}}</option>{{end}}
       </select>
     </label>
     <button type="submit">Show</button>
   </form>
   <form method="get" action="/events" role="search" aria-label="Events by team ID">
-    <label>Team ID <input name="team_id" value="{{.Filter.TeamID}}" autocomplete="off"></label>
+    <label>Team ID <input name="team_id" value="{{verbatim .Filter.TeamID}}" autocomplete="off"></label>
     <button type="submit">Show</button>
   </form>
   <a href="/events">Clear</a>

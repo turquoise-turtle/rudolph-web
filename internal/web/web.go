@@ -548,7 +548,7 @@ func cliFuncs(b clicmd.Builder) template.FuncMap {
 }
 
 func parseTemplates(extra ...template.FuncMap) (map[string]*template.Template, error) {
-	base := template.New("layout.html").Funcs(funcs)
+	base := template.New("layout.html").Funcs(funcs).Funcs(displayFuncs)
 	for _, fm := range extra {
 		base = base.Funcs(fm)
 	}
@@ -570,6 +570,7 @@ func parseTemplates(extra ...template.FuncMap) (map[string]*template.Template, e
 		if err != nil {
 			return nil, err
 		}
+		escapeOutput(t)
 		pages[short] = t
 	}
 	return pages, nil

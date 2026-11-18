@@ -57,7 +57,7 @@ func Target(t store.RuleTarget) (store.RuleTarget, error) {
 		}
 		return store.RuleTarget{Kind: store.TargetMachine, MachineID: t.MachineID}, nil
 	case store.TargetGroup:
-		name, err := groups.NormaliseTarget(t.Group)
+		name, err := targetName(t.Group)
 		if err != nil {
 			return store.RuleTarget{}, store.Invalid("group: %v", err)
 		}

@@ -7,6 +7,7 @@
 package dynamo
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	rudolphgroups "github.com/airbnb/rudolph/pkg/model/groups"
+	rudolphtypes "github.com/airbnb/rudolph/pkg/types"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
 	"github.com/turquoise-turtle/rudolph-web/internal/store"
@@ -27,6 +29,43 @@ const (
 	skGroups         = "Groups"
 	skReportedGroups = "ReportedGroups"
 )
+
+// errMachineID is the refusal of a row whose machine ID is not a canonical UUID.
+var errMachineID = errors.New("not a machine UUID")
+
+// checkMachineID refuses a machine ID that Rudolph's API would not accept: only
+// canonical UUIDs (either case) are written by Rudolph, and the view builds
+// links and form actions from the ID, so "..", a path or a script URL must
+// never reach a page however the row was written.
+func checkMachineID(id string) error {
+	if rudolphtypes.ValidateMachineID(id) != nil {
+		return fmt.Errorf("machine ID %q: %w", id, errMachineID)
+	}
+	return nil
+}
+
+// checkRowMachineIDs refuses a row unless both its MachineID attribute (when
+// it has one) and the machine ID in its partition key (when the row was read
+// with its key) are canonical UUIDs: lists link to the one and page through
+// the other.
+func checkRowMachineIDs(r *reader, attr, pkPrefix string) error {
+	if attr != "" {
+		if err := checkMachineID(attr); err != nil {
+			return err
+		}
+	}
+	if pk := r.str("PK"); pk != "" {
+		id, ok := strings.CutPrefix(pk, pkPrefix)
+		if !ok {
+			return fmt.Errorf("partition key %q: %w", pk, errMachineID)
+		}
+		return checkMachineID(id)
+	}
+	if attr == "" {
+		return fmt.Errorf("no machine ID: %w", errMachineID)
+	}
+	return nil
+}
 
 // pkGlobalConfig is the partition of the global config, whose one row has
 // SK=Config like a machine config.
@@ -66,8 +105,9 @@ var clientModes = map[int64]store.ClientMode{
 // (expired, or holding only a machine config) is store.ErrNotFound.
 func DecodeMachinePartition(items []map[string]types.AttributeValue) (store.MachineDetail, error) {
 	var (
-		d          store.MachineDetail
-		hasCurrent bool
+		d            store.MachineDetail
+		hasCurrent   bool
+		currentKeyOK bool
 	)
 	for _, it := range items {
 		r := reader{item: it}
@@ -76,6 +116,7 @@ func DecodeMachinePartition(items []map[string]types.AttributeValue) (store.Mach
 		case skCurrent:
 			hasCurrent = true
 			d.Machine = r.machine()
+			currentKeyOK = checkRowMachineIDs(&r, "", "Machine#") == nil
 		case skSyncState:
 			st := r.syncState()
 			d.Sync = &st
@@ -94,7 +135,9 @@ func DecodeMachinePartition(items []map[string]types.AttributeValue) (store.Mach
 			return store.MachineDetail{}, fmt.Errorf("dynamo: decoding %s row %q: %w", r.str("PK"), sk, r.err)
 		}
 	}
-	if !hasCurrent {
+	// A Mac whose ID Rudolph would refuse cannot have synced through it, so
+	// its page is not found rather than built around that ID.
+	if !hasCurrent || checkMachineID(d.Machine.MachineID) != nil || !currentKeyOK {
 		return store.MachineDetail{}, store.ErrNotFound
 	}
 	return d, nil
@@ -184,6 +227,9 @@ func DecodeMachineListItem(item map[string]types.AttributeValue) (store.Machine,
 	}
 	if r.err != nil {
 		return store.Machine{}, fmt.Errorf("dynamo: decoding machine list item %q: %w", r.str("PK"), r.err)
+	}
+	if err := checkRowMachineIDs(&r, m.MachineID, "Machine#"); err != nil {
+		return store.Machine{}, fmt.Errorf("dynamo: decoding machine list item %q: %w", r.str("PK"), err)
 	}
 	return m, nil
 }

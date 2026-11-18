@@ -1,9 +1,9 @@
 {{define "content"}}
 <div class="filters">
   {{if .Unknown}}<form class="inline" method="get" action="{{.List.Path}}">
-    <input type="hidden" name="days" value="{{.Days}}">
+    <input type="hidden" name="days" value="{{verbatim .Days}}">
     <label>Decision
-      <select name="decision">{{range .Decisions}}<option value="{{.Value}}"{{if eq .Value $.Decision}} selected{{end}}>{{.Label}}</option>{{end}}</select>
+      <select name="decision">{{range .Decisions}}<option value="{{verbatim .Value}}"{{if eq .Value $.Decision}} selected{{end}}>{{.Label}}</option>{{end}}</select>
     </label>
     <button type="submit">Show</button>
   </form>{{end}}

@@ -3,13 +3,13 @@
   <label>Type
     <select name="type">
       <option value="">Any</option>
-      {{range .RuleTypes}}<option value="{{.}}"{{if eq . $.Filter.RuleType}} selected{{end}}>{{.}}</option>{{end}}
+      {{range .RuleTypes}}<option value="{{verbatim .}}"{{if eq . $.Filter.RuleType}} selected{{end}}>{{.}}</option>{{end}}
     </select>
   </label>
   <label>Policy
     <select name="policy">
       <option value="">Any</option>
-      {{range .Policies}}<option value="{{.}}"{{if eq . $.Filter.Policy}} selected{{end}}>{{.}}</option>{{end}}
+      {{range .Policies}}<option value="{{verbatim .}}"{{if eq . $.Filter.Policy}} selected{{end}}>{{.}}</option>{{end}}
     </select>
   </label>
   <button type="submit">Filter</button>
@@ -26,7 +26,7 @@
 <tr data-row>
   <td>{{.RuleType}}</td>
   <td>{{.Policy}}</td>
-  <td><code>{{.Identifier}}</code>{{with .CELExpr}}<br><code class="cel">{{.}}</code>{{end}}</td>
+  <td><code>{{.Identifier}}</code>{{with .CELExpr}}<br><code class="cel">{{lines .}}</code>{{end}}</td>
   <td>{{.CustomMessage}}{{with .CustomURL}}<br><span class="muted">{{.}}</span>{{end}}</td>
   <td>{{.Description}}</td>
   <td>{{with .State}}{{.}}{{else}}—{{end}}{{if .CollectAllowedEvents}}<br><span class="muted">collecting allowed executions</span>{{end}}</td>

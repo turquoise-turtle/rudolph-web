@@ -326,6 +326,12 @@ func (s *Store) ListMachines(ctx context.Context, f store.MachineFilter, p store
 	page := store.Page[store.Machine]{Items: make([]store.Machine, 0, len(out.Items))}
 	for _, it := range out.Items {
 		m, err := DecodeMachineListItem(it)
+		if errors.Is(err, errMachineID) {
+			// Rudolph never writes such a row, so it is skipped like an
+			// undecodable event rather than hiding every other Mac.
+			s.log.Warn("skipping machine with an invalid machine ID", "pk", keyString(it["PK"]), "err", err)
+			continue
+		}
 		if err != nil {
 			return store.Page[store.Machine]{}, err
 		}
