@@ -33,9 +33,10 @@ import (
 )
 
 const (
-	// maxURLBytes is the longest URL CloudFront passes on (its "maximum length of a URL" quota); the deployment
-	// may sit behind it, and other front ends allow about as much.
-	maxURLBytes = 8192
+	// maxURLBytes is the longest path and query a page link may be. CloudFront passes on a URL of at most 8192
+	// bytes (its "maximum length of a URL" quota), but that counts the scheme and host as well, so a link has 512
+	// bytes fewer; the deployment may sit behind it, and other front ends allow about as much.
+	maxURLBytes = 8192 - 512
 	// maxLambdaResponseBytes is the largest response a Lambda may return; a longer one reaches the browser as a 502.
 	maxLambdaResponseBytes = 6 << 20
 	// maxQueryBytes is how much data one DynamoDB Query returns before it stops, whatever its Limit.
