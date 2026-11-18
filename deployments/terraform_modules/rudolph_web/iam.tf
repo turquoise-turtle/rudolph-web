@@ -81,8 +81,8 @@ data "aws_iam_policy_document" "web" {
     ]
   }
 
-  # Execution and file access events: one bounded Query per page on the table (a Mac's partition)
-  # or one of its TS indexes. GetItem is for the top lists, which read the pointer to the ranker's latest snapshot.
+  # Execution and file access events: bounded Queries on the table (a Mac's partition) or one of
+  # its TS indexes, at most five per page when an index page is refilled past the other list's rows. GetItem is for the top lists, which read the pointer to the ranker's latest snapshot.
   dynamic "statement" {
     for_each = local.events_enabled ? [local.events_dynamodb_table_arn] : []
 

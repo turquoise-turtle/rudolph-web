@@ -50,8 +50,11 @@ func (q eventQuery) fingerprint() string {
 }
 
 // newEventQuery picks the one key condition a filter maps to. Rudolph's
-// table has no index on two of these attributes, and a FilterExpression would
-// apply after Limit and return short pages, so combined filters are refused.
+// table has no index on two of these attributes, so a combined filter would
+// need a FilterExpression that routinely gives short or empty pages, and is
+// refused. The list prefix filter of queryEvents is different: it drops rows
+// only when the other list's rows are in the partition, and its refill is
+// bounded.
 func newEventQuery(f store.EventFilter) (eventQuery, error) {
 	machine := strings.TrimSpace(f.MachineID)
 	teamID := strings.TrimSpace(f.TeamID)
@@ -82,10 +85,12 @@ func newEventQuery(f store.EventFilter) (eventQuery, error) {
 	return q, nil
 }
 
-// ListExecutionEvents implements store.EventReader with one Query per page,
-// newest first; rows it cannot decode are logged and skipped, so a page may
-// hold fewer items than the limit: a machine filter reads the Mac's Exec#<id> partition, a
-// decision Decision_TS, a team ID TeamID_TS and no filter Fleet_TS.
+// ListExecutionEvents implements store.EventReader, newest first: a machine
+// filter reads the Mac's Exec#<id> partition, a decision Decision_TS, a team
+// ID TeamID_TS and no filter Fleet_TS. Rows it cannot decode are logged and
+// skipped, so a page may hold fewer items than the limit; so may one after a
+// run of file access rows in the index partition longer than the refill
+// budget reads, which can come back short or empty with a Next cursor.
 func (s *Store) ListExecutionEvents(ctx context.Context, f store.EventFilter, p store.PageRequest) (store.Page[store.ExecutionEvent], error) {
 	if s.eventsTable == "" {
 		return store.Page[store.ExecutionEvent]{}, fmt.Errorf("%w: no execution events table configured", store.ErrUnavailable)
@@ -97,12 +102,12 @@ func (s *Store) ListExecutionEvents(ctx context.Context, f store.EventFilter, p 
 	if err != nil {
 		return store.Page[store.ExecutionEvent]{}, err
 	}
-	out, err := s.queryEvents(ctx, q, p)
+	rows, err := s.queryEvents(ctx, q, p)
 	if err != nil {
 		return store.Page[store.ExecutionEvent]{}, fmt.Errorf("dynamo: reading execution events: %w", err)
 	}
-	page := store.Page[store.ExecutionEvent]{Items: make([]store.ExecutionEvent, 0, len(out.Items))}
-	for _, it := range out.Items {
+	page := store.Page[store.ExecutionEvent]{Items: make([]store.ExecutionEvent, 0, len(rows.items))}
+	for _, it := range rows.items {
 		e, err := DecodeExecutionEvent(it)
 		if err != nil {
 			// Failing the page would hide every older event of the list until
@@ -113,16 +118,33 @@ func (s *Store) ListExecutionEvents(ctx context.Context, f store.EventFilter, p 
 		}
 		page.Items = append(page.Items, e)
 	}
-	if page.NextCursor, err = s.eventCursor(q, out); err != nil {
+	if page.NextCursor, err = s.eventCursor(q, rows); err != nil {
 		return store.Page[store.ExecutionEvent]{}, err
 	}
 	return page, nil
 }
 
+// maxEventQueries is the most Queries one page of an event list may make.
+// Each reads at most the rows still missing from the page, so a request reads
+// at most this many pages' worth of rows, and the page itself never holds more
+// than the limit, far under Lambda's 6 MB response.
+const maxEventQueries = 5
+
+// eventRows is one page of an event list as DynamoDB returned it: the rows
+// kept, at most the page size, and the last key evaluated, nil on the last
+// page.
+type eventRows struct {
+	items   []map[string]types.AttributeValue
+	lastKey map[string]types.AttributeValue
+}
+
 // queryEvents reads one page of q, newest first, resuming after p.Cursor.
-// Errors from DynamoDB come back unwrapped for the caller to name its list;
-// a bad cursor is store.ErrInvalidCursor.
-func (s *Store) queryEvents(ctx context.Context, q eventQuery, p store.PageRequest) (*dynamodb.QueryOutput, error) {
+// When the filter drops the other list's rows, it queries again from the last
+// key evaluated for the rows still missing, so a run of foreign rows does not
+// leave the page empty, within maxEventQueries. Errors from DynamoDB come back
+// unwrapped for the caller to name its list; a bad cursor is
+// store.ErrInvalidCursor.
+func (s *Store) queryEvents(ctx context.Context, q eventQuery, p store.PageRequest) (eventRows, error) {
 	in := &dynamodb.QueryInput{
 		TableName:                aws.String(s.eventsTable),
 		KeyConditionExpression:   aws.String("#h = :h"),
@@ -130,36 +152,49 @@ func (s *Store) queryEvents(ctx context.Context, q eventQuery, p store.PageReque
 		ExpressionAttributeValues: map[string]types.AttributeValue{
 			":h": &types.AttributeValueMemberS{Value: q.hashValue},
 		},
-		Limit:            aws.Int32(int32(p.Limit)),
 		ScanIndexForward: aws.Bool(false),
 	}
 	if q.index != "" {
 		in.IndexName = aws.String(q.index)
 		// An index partition can also hold the other list's rows: Rudolph
 		// before its path traversal review (2026-11-19) stored a file access
-		// event's Decision as the Mac sent it, so a Mac could file FileAccess#<id> rows under BLOCK_BINARY
-		// for 90 days. The filter keeps them off the page; it applies after
-		// Limit, so the read cost and the page size stay bounded as before, and
-		// a page may come back short, or empty with a cursor.
+		// event's Decision as the Mac sent it, so a Mac could file
+		// FileAccess#<id> rows under BLOCK_BINARY for 90 days, and a row the
+		// store did not write can carry any index attribute. The filter keeps
+		// them off the page; it applies after Limit, hence the refill below.
 		in.FilterExpression = aws.String("begins_with(PK, :prefix)")
 		in.ExpressionAttributeValues[":prefix"] = &types.AttributeValueMemberS{Value: q.prefix}
 	}
 	if p.Cursor != "" {
 		key, err := s.decodeEventCursor(q, p.Cursor)
 		if err != nil {
-			return nil, err
+			return eventRows{}, err
 		}
 		in.ExclusiveStartKey = key
 	}
-	return s.client.Query(ctx, in)
+	var rows eventRows
+	for range maxEventQueries {
+		in.Limit = aws.Int32(int32(p.Limit - len(rows.items)))
+		out, err := s.client.Query(ctx, in)
+		if err != nil {
+			return eventRows{}, err
+		}
+		rows.items = append(rows.items, out.Items...)
+		rows.lastKey = out.LastEvaluatedKey
+		if len(rows.items) >= p.Limit || len(out.LastEvaluatedKey) == 0 {
+			break
+		}
+		in.ExclusiveStartKey = out.LastEvaluatedKey
+	}
+	return rows, nil
 }
 
-// eventCursor is the cursor to the page after out, or "" on the last page.
-func (s *Store) eventCursor(q eventQuery, out *dynamodb.QueryOutput) (string, error) {
-	if len(out.LastEvaluatedKey) == 0 {
+// eventCursor is the cursor to the page after rows, or "" on the last page.
+func (s *Store) eventCursor(q eventQuery, rows eventRows) (string, error) {
+	if len(rows.lastKey) == 0 {
 		return "", nil
 	}
-	return s.encodeCursor(q.fingerprint(), out.LastEvaluatedKey)
+	return s.encodeCursor(q.fingerprint(), rows.lastKey)
 }
 
 // decodeEventCursor checks, on top of the codec's HMAC, that the position is

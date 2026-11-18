@@ -30,8 +30,9 @@ const (
 	skReportedGroups = "ReportedGroups"
 )
 
-// errMachineID is the refusal of a row whose machine ID is not a canonical UUID.
-var errMachineID = errors.New("not a machine UUID")
+// errMachineID is the refusal of a row whose machine ID is not a canonical
+// UUID, or whose MachineID attribute and partition key name different Macs.
+var errMachineID = errors.New("invalid or mismatched machine ID")
 
 // checkMachineID refuses a machine ID that Rudolph's API would not accept: only
 // canonical UUIDs (either case) are written by Rudolph, and the view builds
