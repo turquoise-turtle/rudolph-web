@@ -12,14 +12,33 @@
 
 locals {
   cloudfront_logging = var.enable_cloudfront && var.enable_cloudfront_logging
+
+  # var.prefix is free-form, and existing deployments use prefixes such as my_org or Prod, which S3 refuses
+  # in a bucket name (lowercase letters, digits, dots and hyphens, 3 to 63 characters). A prefix that is
+  # already valid, short enough and not reserved by S3 (xn--, sthree-) is used as it is; any other is lowercased,
+  # made S3-safe and cut short, and an 8-character hash of the original keeps two prefixes that come out the
+  # same (my_org and my-org) apart.
+  # The account ID keeps the name globally unique, as S3 bucket names must be.
+  log_bucket_prefix_as_is = can(regex("^[a-z0-9][a-z0-9-]{0,29}$", var.prefix)) && !endswith(var.prefix, "-") && !startswith(var.prefix, "xn--") && !startswith(var.prefix, "sthree-")
+  log_bucket_safe_prefix  = trim(substr(trim(replace(lower(var.prefix), "/[^a-z0-9]+/", "-"), "-"), 0, 24), "-")
+  log_bucket_name = (local.log_bucket_prefix_as_is
+    ? "${var.prefix}-rudolph-web-cf-logs-${var.aws_account_id}"
+    : "${local.log_bucket_safe_prefix == "" || startswith(local.log_bucket_safe_prefix, "sthree-") ? trimsuffix("rw-${local.log_bucket_safe_prefix}", "-") : local.log_bucket_safe_prefix}-rw-cf-logs-${substr(sha1(var.prefix), 0, 8)}-${var.aws_account_id}"
+  )
+
+  # Log delivery source and destination names are letters, digits, _ and -, at most 60 characters.
+  log_delivery_safe_prefix = replace(var.prefix, "/[^A-Za-z0-9_-]/", "-")
+  log_delivery_prefix = (length(local.log_delivery_safe_prefix) <= 29 && local.log_delivery_safe_prefix == var.prefix
+    ? var.prefix
+    : "${substr(local.log_delivery_safe_prefix, 0, 20)}-${substr(sha1(var.prefix), 0, 8)}"
+  )
 }
 
-# The account ID keeps the name globally unique, as S3 bucket names must be.
 resource "aws_s3_bucket" "cloudfront_logs" {
   count    = local.cloudfront_logging ? 1 : 0
   provider = aws.us_east_1
 
-  bucket = "${var.prefix}-rudolph-web-cf-logs-${var.aws_account_id}"
+  bucket = local.log_bucket_name
 
   tags = local.tags
 }
@@ -127,7 +146,7 @@ resource "aws_cloudwatch_log_delivery_source" "cloudfront" {
   count    = local.cloudfront_logging ? 1 : 0
   provider = aws.us_east_1
 
-  name         = "${var.prefix}-rudolph-web-cloudfront"
+  name         = "${local.log_delivery_prefix}-rudolph-web-cloudfront"
   log_type     = "ACCESS_LOGS"
   resource_arn = aws_cloudfront_distribution.web[0].arn
 
@@ -138,7 +157,7 @@ resource "aws_cloudwatch_log_delivery_destination" "cloudfront" {
   count    = local.cloudfront_logging ? 1 : 0
   provider = aws.us_east_1
 
-  name = "${var.prefix}-rudolph-web-cloudfront-s3"
+  name = "${local.log_delivery_prefix}-rudolph-web-cloudfront-s3"
 
   # W3C is the layout of CloudFront's legacy access logs, which existing log tooling reads.
   output_format = "w3c"

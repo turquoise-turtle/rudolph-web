@@ -228,7 +228,7 @@ variable "cloudfront_price_class" {
 
 variable "enable_cloudfront_logging" {
   type        = bool
-  description = "With enable_cloudfront, deliver CloudFront access logs (CloudFront standard logging v2) to an S3 bucket the module creates in us-east-1, <prefix>-rudolph-web-cf-logs-<account ID>: private, SSE-S3 encrypted, TLS-only, with ACLs disabled, and expiring logs after cloudfront_log_retention_days. Ignored without CloudFront."
+  description = "With enable_cloudfront, deliver CloudFront access logs (CloudFront standard logging v2) to an S3 bucket the module creates in us-east-1, <prefix>-rudolph-web-cf-logs-<account ID> (or a lowercased, shortened prefix with a hash, when the prefix is not valid in a bucket name): private, SSE-S3 encrypted, TLS-only, with ACLs disabled, and expiring logs after cloudfront_log_retention_days. Without enable_cloudfront it creates nothing, and the plan warns."
   default     = false
 }
 
@@ -245,7 +245,7 @@ variable "cloudfront_log_retention_days" {
 
 variable "enable_waf" {
   type        = bool
-  description = "With enable_cloudfront, attach an AWS WAF web ACL to the distribution: a per-IP rate limit (waf_rate_limit) and AWS's IP reputation list, both blocking. It only sees traffic through CloudFront; the Function URL stays directly reachable. Ignored without CloudFront."
+  description = "With enable_cloudfront, attach an AWS WAF web ACL to the distribution: a per-IP rate limit (waf_rate_limit) and AWS's IP reputation list, both blocking. It only sees traffic through CloudFront; the Function URL stays directly reachable. Without enable_cloudfront it creates nothing, and the plan warns."
   default     = false
 }
 
