@@ -164,9 +164,10 @@ func TestEvents_NextLinkPastTheLongestKeyFitsAURL(t *testing.T) {
 	}
 }
 
-// The pager keeps the cursors of up to four earlier pages in each link, and leaves out one longer than it accepts
-// (1024 bytes), "store cursors are far shorter". An event cursor whose row has the longest sort key is over 1600
-// bytes however it is encoded, so past such rows the pager loses Prev and the numbered links to the pages before.
+// The pager keeps the cursors of up to four earlier pages in each link, and leaves out one longer than it accepts.
+// That was 1024 bytes, "store cursors are far shorter", while an event cursor whose row has the longest sort key
+// is over 1500 bytes however it is encoded, so past such rows the pager lost Prev and the numbered links to the
+// pages before.
 func TestEvents_EarlierPagesStayLinkedPastTheLongestKey(t *testing.T) {
 	sha := longestSHA("a")
 	api := &tableAPI{events: []map[string]types.AttributeValue{eventRow(1, sha), eventRow(2, sha), eventRow(3, sha), eventRow(4, sha)}}
@@ -202,11 +203,43 @@ func TestEvents_EarlierPagesStayLinkedPastTheLongestKey(t *testing.T) {
 	mustContain(t, body, "event-number-2")
 }
 
-// The try form on /rules/cel bounds the expression (16 KiB) and the number of arguments and environment variables
+// However many pages of such rows are walked, every link stays inside a URL and each page still links to the one
+// before it: the trail gives up its oldest pages when the cursors are long.
+func TestEvents_ALongWalkPastTheLongestKeysKeepsLinksInsideAURL(t *testing.T) {
+	sha := longestSHA("\x01")
+	api := &tableAPI{}
+	for n := 1; n <= 9; n++ {
+		api.events = append(api.events, eventRow(n, sha))
+	}
+	a := newTableApp(t, api, 1)
+	_, body := a.viewerGet(t, "/events")
+	for n := 2; n <= 9; n++ {
+		before := nextLink(t, body)
+		var code int
+		if code, body = a.viewerGet(t, before); code != http.StatusOK {
+			t.Fatalf("page %d: status %d", n, code)
+		}
+		mustContain(t, body, fmt.Sprintf("event-number-%d<", n))
+		p := readPager(t, body)
+		if p.prev == "" {
+			t.Errorf("page %d has no Prev link", n)
+		}
+		for number, link := range p.numbers {
+			if len(link) > maxURLBytes {
+				t.Errorf("page %d: the link to page %s is %d bytes long; a URL may be at most %d", n, number, len(link), maxURLBytes)
+			}
+			if code, _ := a.viewerGet(t, link); code != http.StatusOK {
+				t.Errorf("page %d: the link to page %s answers %d", n, number, code)
+			}
+		}
+	}
+}
+
+// The try form on /rules/cel bounded the expression (16 KiB) and the number of arguments and environment variables
 // (256), but not how long a value of the sample execution is. cel-go charges for a regex match only after it has
 // run, so the cost limit does not help: matching a 15 KB pattern against a 60 KB path took 4.9 s on the review
-// machine, and it grows with the path. Front ends that cap a URL near 8 KB keep this to a tenth of a second; the
-// handler itself accepts whatever reaches it. No real execution has a megabyte in one field.
+// machine, and it grows with the path. Front ends that cap a URL near 8 KB keep this to a tenth of a second, but
+// the handler must not rely on them. No real execution has a megabyte in one field.
 func TestCELTry_RefusesOversizedSampleValues(t *testing.T) {
 	a := newApp(t, fake.New(), 10)
 	big := strings.Repeat("a", 1<<20)

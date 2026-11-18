@@ -226,6 +226,11 @@ func safeReturnTo(s string) string {
 	return s
 }
 
+// maxFlowCookieBytes is the longest name and value the flow cookie is sent
+// with. Browsers keep 4096 bytes; some count the attributes too, which this
+// leaves room for.
+const maxFlowCookieBytes = 3840
+
 func (a *Authenticator) login(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	p, err := a.getProvider()
@@ -251,6 +256,16 @@ func (a *Authenticator) login(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, "Internal error.", http.StatusInternalServerError)
 		return
+	}
+	// Browsers drop a cookie they find too long without saying so, and the
+	// callback would then fail however often the person tried. Signing in
+	// and landing on the home page is better than not signing in.
+	if len(FlowCookieName)+len(value) > maxFlowCookieBytes {
+		fs.ReturnTo = "/"
+		if value, err = a.sealer.seal(FlowCookieName, fs); err != nil {
+			http.Error(w, "Internal error.", http.StatusInternalServerError)
+			return
+		}
 	}
 	http.SetCookie(w, newCookie(FlowCookieName, value, flowTTL))
 	authURL := p.oauth2.AuthCodeURL(state,
