@@ -400,7 +400,11 @@ func (s *server) audit(w http.ResponseWriter, r *http.Request) {
 		case e.Target == "ungrouped":
 			rows[i].TargetURL = groupURL(store.UngroupedGroup)
 		case strings.HasPrefix(e.Target, "machine:"):
-			rows[i].TargetURL = "/machines/" + url.PathEscape(strings.TrimPrefix(e.Target, "machine:"))
+			// The CLI records whatever it was given; only an ID Rudolph would
+			// accept names a Mac page, so anything else is shown as text.
+			if id := strings.TrimPrefix(e.Target, "machine:"); rudolphrules.MachineID(id) == nil {
+				rows[i].TargetURL = "/machines/" + url.PathEscape(id)
+			}
 		case strings.HasPrefix(e.Target, "group:"):
 			rows[i].TargetURL = groupURL(strings.TrimPrefix(e.Target, "group:"))
 		}

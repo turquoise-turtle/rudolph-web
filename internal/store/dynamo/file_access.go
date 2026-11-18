@@ -122,7 +122,7 @@ func DecodeFileAccessEvent(item map[string]types.AttributeValue) (store.FileAcce
 	if r.err != nil {
 		return store.FileAccessEvent{}, fmt.Errorf("dynamo: decoding file access event %q: %w", r.str("SK"), r.err)
 	}
-	if err := checkMachineID(e.MachineID); err != nil {
+	if err := checkRowMachineIDs(r, e.MachineID, fileAccessPartitionPrefix); err != nil {
 		return store.FileAccessEvent{}, fmt.Errorf("dynamo: decoding file access event %q: %w", r.str("SK"), err)
 	}
 	return e, nil

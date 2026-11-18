@@ -26,7 +26,7 @@
 <tr data-row>
   <td>{{.RuleType}}</td>
   <td>{{.Policy}}</td>
-  <td><code>{{.Identifier}}</code>{{with .CELExpr}}<br><code class="cel">{{.}}</code>{{end}}</td>
+  <td><code>{{.Identifier}}</code>{{with .CELExpr}}<br><code class="cel">{{lines .}}</code>{{end}}</td>
   <td>{{.CustomMessage}}{{with .CustomURL}}<br><span class="muted">{{.}}</span>{{end}}</td>
   <td>{{.Description}}</td>
   <td>{{with .State}}{{.}}{{else}}—{{end}}{{if .CollectAllowedEvents}}<br><span class="muted">collecting allowed executions</span>{{end}}</td>
