@@ -31,8 +31,9 @@ func TestDecodeMachineListItem_RefusesANonUUIDMachineID(t *testing.T) {
 		}
 	}
 	// Either case is a valid UUID: Rudolph keeps the case a Mac syncs under.
+	// The partition key carries the same spelling, as Rudolph writes both from one ID.
 	it := clone(row(t, "Machine#"+machineA, "Current"))
-	it["MachineID"] = str(strings.ToLower(machineA))
+	it["PK"], it["MachineID"] = str("Machine#"+strings.ToLower(machineA)), str(strings.ToLower(machineA))
 	if _, err := dynamo.DecodeMachineListItem(it); err != nil {
 		t.Errorf("lower-case UUID: %v", err)
 	}
@@ -94,5 +95,77 @@ func TestDecodeEvents_RefuseANonUUIDMachineID(t *testing.T) {
 	}
 	if _, err := dynamo.DecodeFileAccessEvent(eventItem("FileAccess#", machineA, nil)); err != nil {
 		t.Errorf("a valid file access event: %v", err)
+	}
+}
+
+// Rudolph writes a row's partition key and its MachineID attribute from the same ID, keeping the case the Mac sent
+// (Rudolph's ResolveMachineID: IDs are matched exactly, case included). A row whose two IDs differ was not written by
+// Rudolph, and the view would show one Mac's data with links and form actions built for the other, so the decoders
+// refuse it as they refuse a non-UUID ID; only an exact match is the same Mac (path traversal review, 2026-11-19).
+var otherMachineIDs = []string{machineB, strings.ToLower(machineA)}
+
+func TestDecodeMachineListItem_RefusesAMachineIDOtherThanThePartitions(t *testing.T) {
+	for _, id := range otherMachineIDs {
+		it := clone(row(t, "Machine#"+machineA, "Current"))
+		it["MachineID"] = str(id)
+		if m, err := dynamo.DecodeMachineListItem(it); err == nil {
+			t.Errorf("PK Machine#%s with MachineID %q decoded as %+v, want an error", machineA, id, m)
+		}
+	}
+}
+
+func TestDecodeMachinePartition_RefusesAMachineIDOtherThanThePartitions(t *testing.T) {
+	for _, id := range otherMachineIDs {
+		rows := rowsWithPK(t, "Machine#"+machineA)
+		for i, it := range rows {
+			if sk, _ := it["SK"].(*types.AttributeValueMemberS); sk != nil && sk.Value == "Current" {
+				c := clone(it)
+				c["MachineID"] = str(id)
+				rows[i] = c
+			}
+		}
+		if d, err := dynamo.DecodeMachinePartition(rows); err == nil {
+			t.Errorf("partition Machine#%s with MachineID %q decoded as %+v, want an error", machineA, id, d.Machine)
+		}
+	}
+}
+
+func TestDecodeEvents_RefuseAMachineIDOtherThanThePartitions(t *testing.T) {
+	for _, id := range otherMachineIDs {
+		attr := id
+		if e, err := dynamo.DecodeExecutionEvent(eventItem("Exec#", machineA, &attr)); err == nil {
+			t.Errorf("PK Exec#%s with MachineID %q decoded as %+v, want an error", machineA, id, e)
+		}
+		if e, err := dynamo.DecodeFileAccessEvent(eventItem("FileAccess#", machineA, &attr)); err == nil {
+			t.Errorf("PK FileAccess#%s with MachineID %q decoded as %+v, want an error", machineA, id, e)
+		}
+	}
+}
+
+// A Mac that syncs under a lower-case ID has it in both places, and is shown.
+func TestDecoders_AcceptTheSameLowerCaseMachineIDInBoth(t *testing.T) {
+	lower := strings.ToLower(machineA)
+	it := clone(row(t, "Machine#"+machineA, "Current"))
+	it["PK"], it["MachineID"] = str("Machine#"+lower), str(lower)
+	if m, err := dynamo.DecodeMachineListItem(it); err != nil || m.MachineID != lower {
+		t.Errorf("machine list item: %+v %v, want %s", m, err, lower)
+	}
+	var rows []item
+	for _, r := range rowsWithPK(t, "Machine#"+machineA) {
+		c := clone(r)
+		c["PK"] = str("Machine#" + lower)
+		if _, ok := c["MachineID"]; ok {
+			c["MachineID"] = str(lower)
+		}
+		rows = append(rows, c)
+	}
+	if d, err := dynamo.DecodeMachinePartition(rows); err != nil || d.Machine.MachineID != lower {
+		t.Errorf("machine partition: %+v %v, want %s", d.Machine, err, lower)
+	}
+	if e, err := dynamo.DecodeExecutionEvent(eventItem("Exec#", lower, &lower)); err != nil || e.MachineID != lower {
+		t.Errorf("execution event: %+v %v, want %s", e, err, lower)
+	}
+	if e, err := dynamo.DecodeFileAccessEvent(eventItem("FileAccess#", lower, &lower)); err != nil || e.MachineID != lower {
+		t.Errorf("file access event: %+v %v, want %s", e, err, lower)
 	}
 }
