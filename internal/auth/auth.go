@@ -239,10 +239,14 @@ func (a *Authenticator) flowCookieFits(fs flowState) bool {
 }
 
 // keepsReturnTo reports whether the login handler would keep returnTo rather
-// than fall back to /. The flow's tokens are random but always as long as
-// randomToken and oauth2.GenerateVerifier make them, 32 bytes in base64, so
-// placeholders of that length seal to a cookie of the same length.
+// than fall back to /: it is safe, and fits the flow cookie. The flow's tokens
+// are random but always as long as randomToken and oauth2.GenerateVerifier
+// make them, 32 bytes in base64, so placeholders of that length seal to a
+// cookie of the same length.
 func (a *Authenticator) keepsReturnTo(returnTo string) bool {
+	if safeReturnTo(returnTo) != returnTo {
+		return false
+	}
 	token := strings.Repeat("x", base64.RawURLEncoding.EncodedLen(32))
 	return a.flowCookieFits(flowState{State: token, Nonce: token, Verifier: token, ReturnTo: returnTo, Created: a.now().Unix()})
 }
