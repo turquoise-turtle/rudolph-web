@@ -22,15 +22,20 @@ const MaxGroups = groups.MaxGroups
 // GroupName normalises the name of a new group as Rudolph's groups.Normalise
 // does (Unicode NFC, trimmed, lower case), refusing what it refuses: empty,
 // "." or "..", control characters, over 128 bytes, or the reserved "rudolph:"
-// prefix. It refuses invisible format characters too, checking them itself so
-// the view refuses them whatever Rudolph version it is built against: such a
-// name would display as something it is not (stored-XSS review, 2026-11-18).
+// prefix. It also refuses every character that renders as nothing or hides or
+// reorders text (textsafe.HasHidden: default-ignorable code points, variation
+// selectors including the emoji presentation selector, and blank-looking
+// characters such as the Hangul fillers), keeping only the zero-width
+// (non-)joiners. "ops" with a variation selector after it looks like "ops"
+// while being another group (stored-XSS review, 2026-11-18; owner approved
+// 2026-11-19). It checks them itself so the view refuses them whatever Rudolph
+// version it is built against.
 func GroupName(name string) (string, error) {
 	if isUngrouped(name) {
 		return "", store.Invalid("the group of Macs in no group is Rudolph's own: a Mac is in it while it is in no other group")
 	}
-	if textsafe.HasFormat(name) {
-		return "", store.Invalid("a group name cannot contain invisible format characters (such as bidi or zero-width characters)")
+	if textsafe.HasHidden(name) {
+		return "", store.Invalid("a group name cannot contain invisible or blank-looking characters (such as bidi, zero-width or variation selector characters)")
 	}
 	n, err := groups.Normalise(name)
 	if err != nil {
@@ -51,13 +56,13 @@ func ExistingGroupName(name, doing string) (string, error) {
 
 // RegisteredGroupName normalises the name of a group that should already be
 // registered (to assign, unassign, change or delete it, or to target its
-// rules) as GroupName does, except that it accepts invisible format
-// characters: a group registered before they were refused must still be
+// rules) as GroupName does, except that it accepts the characters GroupName
+// refuses: a group registered before they were refused must still be
 // managed, and a name that is not registered is refused by the write itself.
 //
-// A Rudolph version that refuses format characters in groups.Normalise would
-// refuse such a name here too, so the rest of the name is checked without
-// them and the name itself is only trimmed and lower-cased. That leaves out
+// A Rudolph version that refuses such characters in groups.Normalise would
+// refuse the name here too, so the rest of the name is checked without them
+// and the name itself is only trimmed and lower-cased. That leaves out
 // Unicode NFC, which the name already had when it was registered; it comes
 // back from the page's forms as stored.
 func RegisteredGroupName(name string) (string, error) {
@@ -72,10 +77,10 @@ func RegisteredGroupName(name string) (string, error) {
 }
 
 func registeredName(name string) (string, error) {
-	if !textsafe.HasFormat(name) {
+	if !textsafe.HasHidden(name) {
 		return groups.Normalise(name)
 	}
-	if _, err := groups.Normalise(strings.Map(dropFormat, name)); err != nil {
+	if _, err := groups.Normalise(strings.Map(dropHidden, name)); err != nil {
 		return "", err
 	}
 	n := strings.ToLower(strings.TrimSpace(name))
@@ -85,10 +90,12 @@ func registeredName(name string) (string, error) {
 	return n, nil
 }
 
-// dropFormat drops every format character, joiners included, in case
-// groups.Normalise refuses them all.
-func dropFormat(r rune) rune {
-	if unicode.Is(unicode.Cf, r) {
+// dropHidden drops what GroupName refuses and every format character,
+// joiners included, in case groups.Normalise refuses them all. Control
+// characters are kept for groups.Normalise to refuse, as a registered name
+// never had one.
+func dropHidden(r rune) rune {
+	if !unicode.IsControl(r) && (textsafe.Hidden(r) || unicode.Is(unicode.Cf, r)) {
 		return -1
 	}
 	return r

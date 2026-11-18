@@ -2,6 +2,7 @@ package web
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
@@ -72,7 +73,8 @@ var percentEncoders = map[string]bool{
 // display escapes the text of v as html/template would print it. Typed template content (the layout's script) is
 // already trusted markup, and nil is left for html/template to print as before. Plain numbers and booleans cannot hold
 // such characters, so they are passed on as they are: html/template then writes them exactly as it would have, in a
-// script as a number or boolean with its own padding.
+// script as a number or boolean with its own padding. Slices, maps and structs become a shownValue, so a script still
+// gets them as JSON.
 func display(v any, escape func(string) string) any {
 	switch v := v.(type) {
 	case nil, template.HTML, template.HTMLAttr, template.JS, template.JSStr, template.CSS, template.URL, template.Srcset:
@@ -84,7 +86,80 @@ func display(v any, escape func(string) string) any {
 	if plainScalar(p) {
 		return v
 	}
+	if composite(p) {
+		return shownValue{v: v, text: p, escape: escape}
+	}
 	return escape(fmt.Sprint(p))
+}
+
+// shownValue is a slice, map or struct (or a pointer to one) as show prints it. html/template writes such a value into
+// a script as JSON (json.Marshaler) and everywhere else as its fmt.Sprint text (fmt.Stringer), so it answers both: the
+// text with the characters escaped as for any other value, and exactly html/template's JSON, except that each JSON
+// string holding such a character is that string escaped. A script is skipped by render's pass over the page, so
+// nothing else would stop them reaching the browser raw: html/template's JSON writes a bidi override as it is.
+type shownValue struct {
+	v, text any
+	escape  func(string) string
+}
+
+func (s shownValue) String() string { return s.escape(fmt.Sprint(s.text)) }
+
+func (s shownValue) MarshalJSON() ([]byte, error) {
+	b, err := json.Marshal(s.v)
+	if err != nil || bytes.IndexFunc(b, textsafe.Invisible) < 0 {
+		return b, err
+	}
+	var out bytes.Buffer
+	for i := 0; i < len(b); {
+		if b[i] != '"' {
+			out.WriteByte(b[i])
+			i++
+			continue
+		}
+		end := jsonStringEnd(b, i)
+		lit := b[i:end]
+		if bytes.IndexFunc(lit, textsafe.Invisible) >= 0 {
+			var str string
+			if err := json.Unmarshal(lit, &str); err != nil {
+				return nil, err
+			}
+			if lit, err = json.Marshal(s.escape(str)); err != nil {
+				return nil, err
+			}
+		}
+		out.Write(lit)
+		i = end
+	}
+	return out.Bytes(), nil
+}
+
+// jsonStringEnd returns the index just past the JSON string literal that begins at b[i], which json.Marshal wrote.
+func jsonStringEnd(b []byte, i int) int {
+	for j := i + 1; j < len(b); j++ {
+		switch b[j] {
+		case '\\':
+			j++
+		case '"':
+			return j + 1
+		}
+	}
+	return len(b)
+}
+
+// composite reports whether v, dereferenced by indirectToStringer and with no String or Error method, is a value
+// html/template writes into a script as a JSON array or object (or null, for a nil pointer).
+func composite(v any) bool {
+	if _, ok := v.(fmt.Stringer); ok {
+		return false
+	}
+	if _, ok := v.(error); ok {
+		return false
+	}
+	switch reflect.ValueOf(v).Kind() {
+	case reflect.Slice, reflect.Array, reflect.Map, reflect.Struct, reflect.Pointer:
+		return true
+	}
+	return false
 }
 
 // plainScalar reports whether v is a number or boolean without its own String or Error method, whose text can be
@@ -332,20 +407,22 @@ func commandIdent(c *parse.CommandNode) string {
 // already escaped every displayed value, so what is left is posted form values (verbatim), whose bytes must survive,
 // and a raw character no longer reaches the page whatever printed it.
 //
-// Scripts and style sheets are left alone, as character references are not decoded there. Line breaks and tabs are
-// ordinary page text. Most C1 controls stay as they are: HTML reads a reference to most of U+0080-U+009F as a
-// Windows-1252 character instead (&#x85; is an ellipsis), which would change a posted value. The five that Windows-1252
-// leaves undefined are read back as themselves, so they are written as references too.
+// Scripts and style sheets are left alone, as character references are not decoded there (rawTextSpans). Line breaks
+// and tabs are ordinary page text. Most C1 controls stay as they are: HTML reads a reference to most of U+0080-U+009F
+// as a Windows-1252 character instead (&#x85; is an ellipsis), which would change a posted value. The five that
+// Windows-1252 leaves undefined are read back as themselves, so they are written as references too.
 func invisibleAsCharRefs(page []byte) []byte {
 	if bytes.IndexFunc(page, needsCharRef) < 0 {
 		return page
 	}
 	var b bytes.Buffer
 	b.Grow(len(page) + 64)
+	spans := rawTextSpans(page)
 	for i := 0; i < len(page); {
-		if end := rawTextEnd(page, i); end > i {
-			b.Write(page[i:end])
-			i = end
+		if len(spans) > 0 && i == spans[0][0] {
+			b.Write(page[i:spans[0][1]])
+			i = spans[0][1]
+			spans = spans[1:]
 			continue
 		}
 		r, size := utf8.DecodeRune(page[i:])
@@ -369,30 +446,153 @@ func needsCharRef(r rune) bool {
 	return textsafe.Invisible(r)
 }
 
-var rawTextElements = [][]byte{[]byte("script"), []byte("style")}
-
-// rawTextEnd returns where the content of the script or style element whose start tag begins at page[i] ends (at its
-// end tag, or the end of the page), or i if none begins there.
-func rawTextEnd(page []byte, i int) int {
-	if page[i] != '<' {
-		return i
-	}
-	for _, name := range rawTextElements {
+// rawTextSpans returns the byte ranges [start, end) of page that are the contents of script and style elements, found
+// by following tag boundaries as a browser's tokeniser does. A byte scan for "<script" would also find one in an
+// attribute value, a comment or a textarea, and then leave the rest of the page unchecked (review, 2026-11-19).
+//
+// A script or style that is never closed gets no range: the browser reads the rest of the page as its contents, so
+// references written there change only text that is no longer a working script, while leaving it alone would let what
+// follows (a posted form value) reach the page with raw invisible characters. Everything else a scan can get wrong
+// errs the same way: it may write references inside something the browser treats as raw text, never leave raw
+// characters in text it shows. The one exception is a script or style inside SVG or MathML, which is parsed as
+// ordinary markup; the templates have no such element (TestTemplates_OnlyTheLayoutScript).
+func rawTextSpans(page []byte) [][2]int {
+	var spans [][2]int
+	for i := 0; i < len(page); {
+		lt := bytes.IndexByte(page[i:], '<')
+		if lt < 0 {
+			break
+		}
+		i += lt
 		rest := page[i+1:]
-		if len(rest) <= len(name) || !bytes.EqualFold(rest[:len(name)], name) {
-			continue
-		}
-		if c := rest[len(name)]; c != '>' && c != '/' && c != ' ' && c != '\t' && c != '\n' && c != '\r' && c != '\f' {
-			continue
-		}
-		body := i + 1 + len(name)
-		closing := append([]byte("</"), name...)
-		for j := body; j+len(closing) <= len(page); j++ {
-			if page[j] == '<' && bytes.EqualFold(page[j:j+len(closing)], closing) {
-				return j
+		var end int
+		switch {
+		case bytes.HasPrefix(rest, []byte("!--")):
+			end = commentEnd(page, i+4)
+		case len(rest) > 0 && (rest[0] == '!' || rest[0] == '?'), len(rest) > 1 && rest[0] == '/' && !isASCIILetter(rest[1]):
+			// A doctype, CDATA section or bogus comment runs to the first '>'.
+			end = pastByte(page, i+1, '>')
+		case len(rest) > 1 && rest[0] == '/':
+			_, end = tagEnd(page, i+2)
+		case len(rest) > 0 && isASCIILetter(rest[0]):
+			var name []byte
+			name, end = tagEnd(page, i+1)
+			if end < 0 {
+				return spans
 			}
+			switch {
+			case bytes.EqualFold(name, []byte("script")), bytes.EqualFold(name, []byte("style")):
+				closing := endTag(page, end, name)
+				if closing < 0 {
+					return spans
+				}
+				spans = append(spans, [2]int{end, closing})
+				end = closing
+			case bytes.EqualFold(name, []byte("textarea")), bytes.EqualFold(name, []byte("title")):
+				// Their contents are text, in which references are decoded, but hold no tags.
+				end = endTag(page, end, name)
+			}
+		default:
+			end = i + 1
 		}
-		return len(page)
+		if end < 0 {
+			return spans
+		}
+		i = end
+	}
+	return spans
+}
+
+// commentEnd returns where the comment whose text begins at page[i] ends (past "-->", "--!>", or the "<!-->" and
+// "<!--->" that end one at once), or -1 if it runs to the end of the page.
+func commentEnd(page []byte, i int) int {
+	rest := page[i:]
+	switch {
+	case bytes.HasPrefix(rest, []byte(">")):
+		return i + 1
+	case bytes.HasPrefix(rest, []byte("->")):
+		return i + 2
+	}
+	end := -1
+	for _, closer := range []string{"-->", "--!>"} {
+		if j := bytes.Index(rest, []byte(closer)); j >= 0 && (end < 0 || i+j+len(closer) < end) {
+			end = i + j + len(closer)
+		}
+	}
+	return end
+}
+
+// pastByte returns the index just past the first c at or after page[i], or -1 if there is none.
+func pastByte(page []byte, i int, c byte) int {
+	if j := bytes.IndexByte(page[i:], c); j >= 0 {
+		return i + j + 1
+	}
+	return -1
+}
+
+// tagEnd reads the tag whose name begins at page[i], and returns its name and the index just past its '>', or -1 if
+// the page ends inside it. Attribute values are skipped whole, so a '>' or "<script" inside a quoted one is not markup.
+func tagEnd(page []byte, i int) ([]byte, int) {
+	j := i
+	for j < len(page) && !isHTMLSpace(page[j]) && page[j] != '/' && page[j] != '>' {
+		j++
+	}
+	name := page[i:j]
+	for j < len(page) {
+		switch c := page[j]; {
+		case c == '>':
+			return name, j + 1
+		case isHTMLSpace(c), c == '/':
+			j++
+		default:
+			// An attribute name; its first character is part of it even when it is '='.
+			j++
+			for j < len(page) && !isHTMLSpace(page[j]) && page[j] != '/' && page[j] != '>' && page[j] != '=' {
+				j++
+			}
+			k := skipHTMLSpace(page, j)
+			if k >= len(page) || page[k] != '=' {
+				j = k
+				continue
+			}
+			k = skipHTMLSpace(page, k+1)
+			if k < len(page) && (page[k] == '"' || page[k] == '\'') {
+				if j = pastByte(page, k+1, page[k]); j < 0 {
+					return name, -1
+				}
+				continue
+			}
+			for k < len(page) && !isHTMLSpace(page[k]) && page[k] != '>' {
+				k++
+			}
+			j = k
+		}
+	}
+	return name, -1
+}
+
+// endTag returns the index of the end tag of the element name whose contents begin at page[i], or -1 if there is none.
+// As in a browser, it is "</" and the name in any case, followed by white space, '/' or '>'.
+func endTag(page []byte, i int, name []byte) int {
+	for j := i; j < len(page); j++ {
+		k := j + 2 + len(name)
+		if page[j] != '<' || k >= len(page) || page[j+1] != '/' || !bytes.EqualFold(page[j+2:k], name) {
+			continue
+		}
+		if c := page[k]; isHTMLSpace(c) || c == '/' || c == '>' {
+			return j
+		}
+	}
+	return -1
+}
+
+func skipHTMLSpace(page []byte, i int) int {
+	for i < len(page) && isHTMLSpace(page[i]) {
+		i++
 	}
 	return i
 }
+
+func isHTMLSpace(c byte) bool { return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' }
+
+func isASCIILetter(c byte) bool { return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' }

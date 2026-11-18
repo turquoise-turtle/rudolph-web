@@ -134,3 +134,12 @@ func Invisible(r rune) bool {
 func HasFormat(s string) bool { return strings.IndexFunc(s, isFormat) >= 0 }
 
 func isFormat(r rune) bool { return r != zwnj && r != zwj && unicode.Is(unicode.Cf, r) }
+
+// HasHidden reports whether s contains a character that a new group name refuses: one String escapes (Invisible), or
+// the emoji presentation selector. Shown text keeps that selector for emoji, but a name gains nothing from it, and two
+// names differing only by it would look the same (owner approved, 2026-11-19). The zero-width (non-)joiners are
+// allowed, as Persian and several Indic scripts need them in ordinary names.
+func HasHidden(s string) bool { return strings.IndexFunc(s, Hidden) >= 0 }
+
+// Hidden reports whether HasHidden refuses r.
+func Hidden(r rune) bool { return r == emojiSelector || Invisible(r) }
