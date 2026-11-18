@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/turquoise-turtle/rudolph-web/internal/store"
+	"github.com/turquoise-turtle/rudolph-web/internal/textsafe"
 )
 
 var (
@@ -112,7 +113,9 @@ func targetArgs(tg Target, withExpiry bool) (string, bool) {
 		if tg.value == store.UngroupedGroup {
 			return "--ungrouped", true
 		}
-		if tg.value == "" {
+		// The page shows a command's invisible characters as escapes, so a
+		// copied command would no longer name the group: none is offered.
+		if tg.value == "" || strings.IndexFunc(tg.value, textsafe.Invisible) >= 0 {
 			return "", false
 		}
 		return "--group " + quote(tg.value), true

@@ -349,7 +349,7 @@ func (s *Store) changeAssigned(actor store.Actor, machineID, group string, assig
 	if err := rudolphrules.MachineID(machineID); err != nil {
 		return err
 	}
-	name, err := rudolphrules.GroupName(group)
+	name, err := rudolphrules.RegisteredGroupName(group)
 	if err != nil {
 		return err
 	}

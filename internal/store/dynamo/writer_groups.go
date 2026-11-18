@@ -148,7 +148,7 @@ func (s *Store) changeAssigned(ctx context.Context, actor store.Actor, machineID
 	if err := rudolphrules.MachineID(machineID); err != nil {
 		return err
 	}
-	name, err := rudolphrules.GroupName(group)
+	name, err := rudolphrules.RegisteredGroupName(group)
 	if err != nil {
 		return err
 	}

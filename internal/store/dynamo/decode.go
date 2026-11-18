@@ -7,6 +7,7 @@
 package dynamo
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	rudolphgroups "github.com/airbnb/rudolph/pkg/model/groups"
+	rudolphtypes "github.com/airbnb/rudolph/pkg/types"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 
 	"github.com/turquoise-turtle/rudolph-web/internal/store"
@@ -27,6 +29,20 @@ const (
 	skGroups         = "Groups"
 	skReportedGroups = "ReportedGroups"
 )
+
+// errMachineID is the refusal of a row whose machine ID is not a canonical UUID.
+var errMachineID = errors.New("not a machine UUID")
+
+// checkMachineID refuses a machine ID that Rudolph's API would not accept: only
+// canonical UUIDs (either case) are written by Rudolph, and the view builds
+// links and form actions from the ID, so "..", a path or a script URL must
+// never reach a page however the row was written.
+func checkMachineID(id string) error {
+	if rudolphtypes.ValidateMachineID(id) != nil {
+		return fmt.Errorf("machine ID %q: %w", id, errMachineID)
+	}
+	return nil
+}
 
 // pkGlobalConfig is the partition of the global config, whose one row has
 // SK=Config like a machine config.
@@ -94,7 +110,9 @@ func DecodeMachinePartition(items []map[string]types.AttributeValue) (store.Mach
 			return store.MachineDetail{}, fmt.Errorf("dynamo: decoding %s row %q: %w", r.str("PK"), sk, r.err)
 		}
 	}
-	if !hasCurrent {
+	// A Mac whose ID Rudolph would refuse cannot have synced through it, so
+	// its page is not found rather than built around that ID.
+	if !hasCurrent || checkMachineID(d.Machine.MachineID) != nil {
 		return store.MachineDetail{}, store.ErrNotFound
 	}
 	return d, nil
@@ -184,6 +202,9 @@ func DecodeMachineListItem(item map[string]types.AttributeValue) (store.Machine,
 	}
 	if r.err != nil {
 		return store.Machine{}, fmt.Errorf("dynamo: decoding machine list item %q: %w", r.str("PK"), r.err)
+	}
+	if err := checkMachineID(m.MachineID); err != nil {
+		return store.Machine{}, fmt.Errorf("dynamo: decoding machine list item %q: %w", r.str("PK"), err)
 	}
 	return m, nil
 }

@@ -31,40 +31,40 @@
 <h2>Try an expression</h2>
 <form class="cel-try" method="get" action="/rules/cel">
   <label class="wide">Expression
-    <textarea name="expr" rows="3" cols="80" maxlength="16384" autocomplete="off" spellcheck="false" required>{{.Try.Expr}}</textarea>
+    <textarea name="expr" rows="3" cols="80" maxlength="16384" autocomplete="off" spellcheck="false" required>{{verbatim .Try.Expr}}</textarea>
   </label>
   <label>Arguments <span class="hint">(one per line, the command first)</span>
-    <textarea name="args" rows="4" cols="36" autocomplete="off" spellcheck="false">{{.Try.Args}}</textarea>
+    <textarea name="args" rows="4" cols="36" autocomplete="off" spellcheck="false">{{verbatim .Try.Args}}</textarea>
   </label>
   <label>Environment <span class="hint">(NAME=value, one per line)</span>
-    <textarea name="envs" rows="4" cols="36" autocomplete="off" spellcheck="false">{{.Try.Envs}}</textarea>
+    <textarea name="envs" rows="4" cols="36" autocomplete="off" spellcheck="false">{{verbatim .Try.Envs}}</textarea>
   </label>
   <label>euid <span class="hint">(0 is root)</span>
-    <input name="euid" value="{{.Try.EUID}}" size="6" inputmode="numeric" autocomplete="off">
+    <input name="euid" value="{{verbatim .Try.EUID}}" size="6" inputmode="numeric" autocomplete="off">
   </label>
   <label>path
-    <input name="path" value="{{.Try.Path}}" size="30" autocomplete="off" spellcheck="false">
+    <input name="path" value="{{verbatim .Try.Path}}" size="30" autocomplete="off" spellcheck="false">
   </label>
   <label>cwd
-    <input name="cwd" value="{{.Try.CWD}}" size="20" autocomplete="off" spellcheck="false">
+    <input name="cwd" value="{{verbatim .Try.CWD}}" size="20" autocomplete="off" spellcheck="false">
   </label>
   <label>target.signing_id
-    <input name="signing_id" value="{{.Try.SigningID}}" size="30" autocomplete="off" spellcheck="false">
+    <input name="signing_id" value="{{verbatim .Try.SigningID}}" size="30" autocomplete="off" spellcheck="false">
   </label>
   <label>target.team_id
-    <input name="team_id" value="{{.Try.TeamID}}" size="12" autocomplete="off" spellcheck="false">
+    <input name="team_id" value="{{verbatim .Try.TeamID}}" size="12" autocomplete="off" spellcheck="false">
   </label>
   <label>target.signing_time <span class="hint">(empty for none)</span>
-    <input name="signing_time" value="{{.Try.SigningTime}}" size="20" placeholder="2025-01-31" autocomplete="off">
+    <input name="signing_time" value="{{verbatim .Try.SigningTime}}" size="20" placeholder="2025-01-31" autocomplete="off">
   </label>
   <label>target.secure_signing_time
-    <input name="secure_signing_time" value="{{.Try.SecureSigningTime}}" size="20" placeholder="2025-01-31" autocomplete="off">
+    <input name="secure_signing_time" value="{{verbatim .Try.SecureSigningTime}}" size="20" placeholder="2025-01-31" autocomplete="off">
   </label>
   <label class="check"><input type="checkbox" name="platform" value="1"{{if .Try.Platform}} checked{{end}}> target.is_platform_binary</label>
   <button type="submit">Try</button>
 </form>
 {{if .Try.Tried}}
-<p class="cel-answer">{{if .Try.Error}}Santa would not apply this: <output class="cel-error">{{.Try.Error}}</output>{{else}}Santa would apply <output class="cel-result">{{.Try.Result}}</output>, and the result is <output class="cel-cache">{{if .Try.Cacheable}}cached{{else}}not cached{{end}}</output>.{{end}}</p>
+<p class="cel-answer">{{if .Try.Error}}Santa would not apply this: <output class="cel-error">{{lines .Try.Error}}</output>{{else}}Santa would apply <output class="cel-result">{{.Try.Result}}</output>, and the result is <output class="cel-cache">{{if .Try.Cacheable}}cached{{else}}not cached{{end}}</output>.{{end}}</p>
 {{end}}
 <p class="hint">Nothing is saved: this only runs the expression here, as Santa would. To add a CEL rule, choose the CEL policy on an add-rule form (admins, on the rules page, a Mac's page or a group's page) and put the expression in its CEL expression box.</p>
 
@@ -78,7 +78,7 @@
   <dt>Identifier</dt><dd>{{with .Identifier}}<code>{{.}}</code>{{else}}<span class="muted">the tool's own</span>{{end}}</dd>
   <dt>Expression</dt><dd><code class="cmd" tabindex="0">{{.Expression}}</code></dd>
 </dl>
-<p><a href="/rules/cel?expr={{.Expression}}">Try it</a></p>
+<p><a href="/rules/cel?expr={{verbatim .Expression}}">Try it</a></p>
 </section>
 {{end}}
 {{end}}

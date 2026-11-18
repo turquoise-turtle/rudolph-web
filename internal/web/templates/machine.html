@@ -45,7 +45,7 @@
 <p class="hint">Sent to the Mac instead of its usual mode until the time is up; its own mode is left as it is. The Mac switches at its next sync, and returns to its usual mode at its first sync after the end.</p>
 <form class="edit-form" method="post" action="/admin{{machineURL .MachineID}}/temporary-mode">
   <label>Mode
-    <select name="mode" required>{{range $.Edit.ClientModes}}<option value="{{.}}">{{.}}</option>{{end}}</select>
+    <select name="mode" required>{{range $.Edit.ClientModes}}<option value="{{verbatim .}}">{{.}}</option>{{end}}</select>
   </label>
   <label>For <span class="hint">(1m to 30d, e.g. 2h or 3d)</span>
     <input name="for" required value="2h" size="8" autocomplete="off">
@@ -88,7 +88,7 @@
 {{if .AssignedGroups}}
 <div class="inline-forms">
 {{range .AssignedGroups}}<form class="inline" method="post" action="/admin{{machineURL $.Machine.MachineID}}/groups/remove">
-  <input type="hidden" name="group" value="{{.}}">
+  <input type="hidden" name="group" value="{{verbatim .}}">
   <button type="submit" class="danger">Remove assigned group {{.}}</button>
 </form>
 {{end}}
@@ -98,7 +98,7 @@
 {{with $.Groups.Assignable}}
 <form class="edit-form" method="post" action="/admin{{machineURL $.Machine.MachineID}}/groups">
   <label>Assign a group
-    <select name="group" required>{{range .}}<option value="{{.}}">{{.}}</option>{{end}}</select>
+    <select name="group" required>{{range .}}<option value="{{verbatim .}}">{{.}}</option>{{end}}</select>
   </label>
   <button type="submit">Assign group</button>
 </form>
@@ -107,7 +107,7 @@
 <p>Reported by Santa but not a group in Rudolph:</p>
 <div class="inline-forms">
 {{range .}}<form class="inline" method="post" action="/admin/groups">
-  <input type="hidden" name="name" value="{{.}}">
+  <input type="hidden" name="name" value="{{verbatim .}}">
   <input type="hidden" name="accept_reported" value="on">
   <code>{{.}}</code> <button type="submit">Make this a group</button>
 </form>

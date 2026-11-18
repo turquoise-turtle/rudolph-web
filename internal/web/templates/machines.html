@@ -1,7 +1,7 @@
 {{define "content"}}
 <form class="filters" method="get" action="/machines">
-  <label>Serial prefix <input name="serial" value="{{.Filter.SerialPrefix}}" autocomplete="off"></label>
-  <label>Hostname prefix <input name="hostname" value="{{.Filter.HostnamePrefix}}" autocomplete="off"></label>
+  <label>Serial prefix <input name="serial" value="{{verbatim .Filter.SerialPrefix}}" autocomplete="off"></label>
+  <label>Hostname prefix <input name="hostname" value="{{verbatim .Filter.HostnamePrefix}}" autocomplete="off"></label>
   <button type="submit">Filter</button>
   <a href="/machines">Clear</a>
 </form>

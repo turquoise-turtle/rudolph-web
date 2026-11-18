@@ -209,6 +209,9 @@ func DecodeExecutionEvent(item map[string]types.AttributeValue) (store.Execution
 	if r.err != nil {
 		return store.ExecutionEvent{}, fmt.Errorf("dynamo: decoding execution event %q: %w", r.str("SK"), r.err)
 	}
+	if err := checkMachineID(e.MachineID); err != nil {
+		return store.ExecutionEvent{}, fmt.Errorf("dynamo: decoding execution event %q: %w", r.str("SK"), err)
+	}
 	return e, nil
 }
 

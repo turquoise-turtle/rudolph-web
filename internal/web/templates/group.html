@@ -14,7 +14,7 @@
 {{if .Edit.On}}
 <details class="edit config-edit"><summary>Change settings</summary>
 <form class="config-form" method="post" action="/admin/groups/config">
-<input type="hidden" name="name" value="{{.Group.Name}}">
+<input type="hidden" name="name" value="{{verbatim .Group.Name}}">
 <div class="scroll">
 <table>
 <thead><tr><th>Setting</th><th>Value</th><th>Change to</th></tr></thead>
@@ -22,7 +22,7 @@
 <tr data-edit-setting="ClientMode">
   <td><label for="cfg-ClientMode">Client mode</label></td>
   <td>{{with .Group.ClientMode}}{{.}}{{else}}<span class="muted">not set</span>{{end}}</td>
-  <td><input type="hidden" name="orig_ClientMode" value="{{.Group.ClientMode}}"><select name="ClientMode" id="cfg-ClientMode">{{range .ModeOptions}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select><p class="hint">Every Mac in this group without a temporary or its own client mode gets this one from its next sync, unless another of its groups has a stricter one: LOCKDOWN or STANDALONE here blocks unknown binaries on all of them. Not set, they follow their other groups' modes or the global one. Rudolph caches the groups for up to a minute, so Macs that sync within that minute may still get the old mode.</p></td>
+  <td><input type="hidden" name="orig_ClientMode" value="{{verbatim .Group.ClientMode}}"><select name="ClientMode" id="cfg-ClientMode">{{range .ModeOptions}}<option value="{{verbatim .Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select><p class="hint">Every Mac in this group without a temporary or its own client mode gets this one from its next sync, unless another of its groups has a stricter one: LOCKDOWN or STANDALONE here blocks unknown binaries on all of them. Not set, they follow their other groups' modes or the global one. Rudolph caches the groups for up to a minute, so Macs that sync within that minute may still get the old mode.</p></td>
 </tr>
 </tbody>
 </table>
@@ -39,9 +39,9 @@
 {{if and .Edit.On (ne .Group.Name ungrouped)}}
 <details class="edit"><summary>Change this group</summary>
 <form class="edit-form" method="post" action="/admin/groups/update">
-  <input type="hidden" name="name" value="{{.Group.Name}}">
+  <input type="hidden" name="name" value="{{verbatim .Group.Name}}">
   <label>Description <span class="hint">(for people)</span>
-    <input name="description" value="{{.Group.Description}}" maxlength="1024" size="30">
+    <input name="description" value="{{verbatim .Group.Description}}" maxlength="1024" size="30">
   </label>
   <label class="check"><input type="checkbox" name="accept_reported" value="on"{{if .Group.AcceptReported}} checked{{end}}> Macs that report it are members</label>
   <button type="submit">Save changes</button>
@@ -50,7 +50,7 @@
 </details>
 <details class="edit"><summary>Delete this group</summary>
 <form class="edit-form" method="post" action="/admin/groups/delete">
-  <input type="hidden" name="name" value="{{.Group.Name}}">
+  <input type="hidden" name="name" value="{{verbatim .Group.Name}}">
   <label class="check"><input type="checkbox" name="force" value="on"> also delete its rules</label>
   <button type="submit" class="danger">Delete group {{.Group.Name}}</button>
 </form>
