@@ -135,6 +135,14 @@ func (s *Store) queryEvents(ctx context.Context, q eventQuery, p store.PageReque
 	}
 	if q.index != "" {
 		in.IndexName = aws.String(q.index)
+		// An index partition can also hold the other list's rows: Rudolph
+		// before its path traversal review (2026-11-19) stored a file access
+		// event's Decision as the Mac sent it, so a Mac could file FileAccess#<id> rows under BLOCK_BINARY
+		// for 90 days. The filter keeps them off the page; it applies after
+		// Limit, so the read cost and the page size stay bounded as before, and
+		// a page may come back short, or empty with a cursor.
+		in.FilterExpression = aws.String("begins_with(PK, :prefix)")
+		in.ExpressionAttributeValues[":prefix"] = &types.AttributeValueMemberS{Value: q.prefix}
 	}
 	if p.Cursor != "" {
 		key, err := s.decodeEventCursor(q, p.Cursor)
@@ -156,7 +164,10 @@ func (s *Store) eventCursor(q eventQuery, out *dynamodb.QueryOutput) (string, er
 
 // decodeEventCursor checks, on top of the codec's HMAC, that the position is
 // a key of q's table or index inside q's partition: PK and SK for a machine,
-// and for an index also its hash attribute and TS.
+// and for an index also its hash attribute and TS. An index cursor may stand
+// on a row of the other list, as DynamoDB's LastEvaluatedKey is the last row
+// the Query read, including one the filter left out; it is still bound to q
+// by the fingerprint and the hash attribute.
 func (s *Store) decodeEventCursor(q eventQuery, cursor string) (map[string]types.AttributeValue, error) {
 	plain, err := s.decodePosition(q.fingerprint(), cursor)
 	if err != nil {
@@ -177,10 +188,16 @@ func (s *Store) decodeEventCursor(q eventQuery, cursor string) (map[string]types
 		}
 		key[name] = &types.AttributeValueMemberS{Value: v}
 	}
-	if plain[q.hashAttr] != q.hashValue || !strings.HasPrefix(plain["PK"], q.prefix) {
+	if plain[q.hashAttr] != q.hashValue || !isEventPartition(plain["PK"]) {
 		return nil, store.ErrInvalidCursor
 	}
 	return key, nil
+}
+
+// isEventPartition reports whether pk is a partition of the events table's
+// event rows, the only rows with TS and so the only ones in its indexes.
+func isEventPartition(pk string) bool {
+	return strings.HasPrefix(pk, execPartitionPrefix) || strings.HasPrefix(pk, fileAccessPartitionPrefix)
 }
 
 // DecodeExecutionEvent decodes one event item of Rudolph's events table. The

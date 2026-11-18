@@ -46,8 +46,9 @@ func checkMachineID(id string) error {
 
 // checkRowMachineIDs refuses a row unless both its MachineID attribute (when
 // it has one) and the machine ID in its partition key (when the row was read
-// with its key) are canonical UUIDs: lists link to the one and page through
-// the other.
+// with its key) are canonical UUIDs, and the same one when it has both: lists
+// link to the one and page through the other, and Rudolph writes both from one
+// ID in the case the Mac sent, so only an exact match is the same Mac.
 func checkRowMachineIDs(r *reader, attr, pkPrefix string) error {
 	if attr != "" {
 		if err := checkMachineID(attr); err != nil {
@@ -59,7 +60,13 @@ func checkRowMachineIDs(r *reader, attr, pkPrefix string) error {
 		if !ok {
 			return fmt.Errorf("partition key %q: %w", pk, errMachineID)
 		}
-		return checkMachineID(id)
+		if err := checkMachineID(id); err != nil {
+			return err
+		}
+		if attr != "" && attr != id {
+			return fmt.Errorf("MachineID %q in partition %q: %w", attr, pk, errMachineID)
+		}
+		return nil
 	}
 	if attr == "" {
 		return fmt.Errorf("no machine ID: %w", errMachineID)
@@ -116,7 +123,7 @@ func DecodeMachinePartition(items []map[string]types.AttributeValue) (store.Mach
 		case skCurrent:
 			hasCurrent = true
 			d.Machine = r.machine()
-			currentKeyOK = checkRowMachineIDs(&r, "", "Machine#") == nil
+			currentKeyOK = checkRowMachineIDs(&r, r.str("MachineID"), "Machine#") == nil
 		case skSyncState:
 			st := r.syncState()
 			d.Sync = &st
