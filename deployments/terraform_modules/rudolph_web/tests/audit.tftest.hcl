@@ -68,6 +68,11 @@ run "nothing_without_cloudfront" {
     enable_waf                = true
   }
 
+  # The check is the warning that logging and the WAF do nothing without CloudFront (audit review round 1, item 4).
+  # terraform test fails a run on a failed check, where plan and apply only warn. That the check exists and fires
+  # here is held by TestModule_WarnsWhenAFeatureNeedsCloudFront and TestModule_HasACheckForFeaturesWithoutCloudFront.
+  expect_failures = [check.features_need_cloudfront]
+
   assert {
     condition     = length(aws_s3_bucket.cloudfront_logs) == 0 && length(aws_s3_bucket_policy.cloudfront_logs) == 0 && length(aws_s3_bucket_public_access_block.cloudfront_logs) == 0 && length(aws_s3_bucket_lifecycle_configuration.cloudfront_logs) == 0 && length(aws_s3_bucket_server_side_encryption_configuration.cloudfront_logs) == 0
     error_message = "the log bucket or one of its companions is created with enable_cloudfront off"
