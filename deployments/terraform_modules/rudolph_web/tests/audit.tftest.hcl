@@ -244,3 +244,48 @@ run "waf_rate_limit_default" {
     waf_rate_limit    = 1000
   }
 }
+
+# Retention is whole days, 1 or more: S3 refuses a lifecycle expiration of 0 or of part of a day, at apply.
+run "log_retention_zero" {
+  command = plan
+
+  variables {
+    enable_cloudfront             = true
+    enable_cloudfront_logging     = true
+    cloudfront_log_retention_days = 0
+  }
+
+  expect_failures = [var.cloudfront_log_retention_days]
+}
+
+run "log_retention_fraction" {
+  command = plan
+
+  variables {
+    enable_cloudfront             = true
+    enable_cloudfront_logging     = true
+    cloudfront_log_retention_days = 1.5
+  }
+
+  expect_failures = [var.cloudfront_log_retention_days]
+}
+
+run "log_retention_one_day" {
+  command = plan
+
+  variables {
+    enable_cloudfront             = true
+    enable_cloudfront_logging     = true
+    cloudfront_log_retention_days = 1
+  }
+}
+
+run "log_retention_default" {
+  command = plan
+
+  variables {
+    enable_cloudfront             = true
+    enable_cloudfront_logging     = true
+    cloudfront_log_retention_days = 180
+  }
+}
