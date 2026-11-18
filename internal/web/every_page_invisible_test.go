@@ -11,6 +11,7 @@ import (
 	"github.com/turquoise-turtle/rudolph-web/internal/auth"
 	"github.com/turquoise-turtle/rudolph-web/internal/store"
 	"github.com/turquoise-turtle/rudolph-web/internal/store/fake"
+	"github.com/turquoise-turtle/rudolph-web/internal/web"
 )
 
 // Review of the stored-XSS hardening (2026-11-19). The display rewrite is checked against its own idea of where a
@@ -40,7 +41,10 @@ func rawOnPage(r rune) bool {
 	return unicode.IsControl(r) || defaultIgnorable(r)
 }
 
-func TestEveryPageWritesNoRawInvisibleCharacter(t *testing.T) {
+// everyPage fills every string the store can hold with the sentinel and returns the app with editing on, an admin's
+// cookie and every page to render, each with whether it shows stored text as such.
+func everyPage(t *testing.T) (*app, *http.Cookie, map[string]bool) {
+	t.Helper()
 	// A bidi override, a zero-width space, a text-presentation selector and a stray tag letter.
 	inv := string(rune(0x202e)) + string(rune(0x200b)) + string(rune(0xfe0e)) + string(rune(0xe0041))
 	x := func(s string) string { return s + inv + "x" }
@@ -110,7 +114,7 @@ func TestEveryPageWritesNoRawInvisibleCharacter(t *testing.T) {
 		"cwd": {x("/")}}
 	// false: the page shows no stored text as such (the CEL page posts its query back only in form fields), so the
 	// sentinel need not appear escaped; its raw characters are still looked for.
-	for p, showsData := range map[string]bool{
+	return a, admin, map[string]bool{
 		"/machines":                      true,
 		"/machines/" + editMachine:       true,
 		"/events":                        true,
@@ -129,7 +133,12 @@ func TestEveryPageWritesNoRawInvisibleCharacter(t *testing.T) {
 		"/admin/config":                  true,
 		"/admin/audit":                   true,
 		"/admin/rules/new?team_id=EQHXZ8M8AV&signing_id=EQHXZ8M8AV:com.x": false,
-	} {
+	}
+}
+
+func TestEveryPageWritesNoRawInvisibleCharacter(t *testing.T) {
+	a, admin, pages := everyPage(t)
+	for p, showsData := range pages {
 		t.Run(p, func(t *testing.T) {
 			rec := a.get(t, p, admin)
 			if rec.Code != http.StatusOK {
@@ -147,6 +156,24 @@ func TestEveryPageWritesNoRawInvisibleCharacter(t *testing.T) {
 					}
 					found[r]++
 				}
+			}
+		})
+	}
+}
+
+// render writes invisible characters as character references, which the browser decodes back into the characters
+// themselves, so a value printed without show passes the raw guard above as &#x202e;. Outside a posted form value no
+// page may carry such a reference (web.InvisibleCharRefsOutsideFormValues).
+func TestEveryPageWritesNoInvisibleCharRefOutsideFormValues(t *testing.T) {
+	a, admin, pages := everyPage(t)
+	for p := range pages {
+		t.Run(p, func(t *testing.T) {
+			rec := a.get(t, p, admin)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status %d", rec.Code)
+			}
+			for _, f := range web.InvisibleCharRefsOutsideFormValues(rec.Body.String()) {
+				t.Error(f)
 			}
 		})
 	}
