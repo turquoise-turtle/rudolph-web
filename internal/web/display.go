@@ -102,6 +102,12 @@ func display(v any, escape func(string) string) any {
 		return shownValue{v: js, text: text, escape: escape}
 	}
 	if plainScalar(js) {
+		// A pointer to a number whose String or Error method has a pointer receiver prints that text, which can hold
+		// anything, while a script still gets the number the pointer leads to.
+		switch text.(type) {
+		case fmt.Stringer, error:
+			return shownValue{v: js, text: text, escape: escape}
+		}
 		return v
 	}
 	if _, isErr := text.(error); isErr || composite(js) {
