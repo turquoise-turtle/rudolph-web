@@ -10,6 +10,7 @@ import (
 	"github.com/airbnb/rudolph/pkg/model/machineconfiguration"
 	"github.com/airbnb/rudolph/pkg/types"
 	dynamotypes "github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"golang.org/x/text/unicode/norm"
 
 	"github.com/turquoise-turtle/rudolph-web/internal/store"
 	"github.com/turquoise-turtle/rudolph-web/internal/textsafe"
@@ -34,7 +35,9 @@ func GroupName(name string) (string, error) {
 	if isUngrouped(name) {
 		return "", store.Invalid("the group of Macs in no group is Rudolph's own: a Mac is in it while it is in no other group")
 	}
-	if textsafe.HasHidden(name) {
+	// Rudolph trims the name before refusing what is left, so white space round it ("ops\n" from a Mac) is not a
+	// hidden character in the name.
+	if textsafe.HasHidden(strings.TrimSpace(norm.NFC.String(name))) {
 		return "", store.Invalid("a group name cannot contain invisible or blank-looking characters (such as bidi, zero-width or variation selector characters)")
 	}
 	n, err := groups.Normalise(name)

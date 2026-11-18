@@ -2,6 +2,7 @@ package web
 
 import (
 	"bytes"
+	"encoding"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -73,8 +74,9 @@ var percentEncoders = map[string]bool{
 // display escapes the text of v as html/template would print it. Typed template content (the layout's script) is
 // already trusted markup, and nil is left for html/template to print as before. Plain numbers and booleans cannot hold
 // such characters, so they are passed on as they are: html/template then writes them exactly as it would have, in a
-// script as a number or boolean with its own padding. Slices, maps and structs become a shownValue, so a script still
-// gets them as JSON.
+// script as a number or boolean with its own padding. A value html/template writes into a script as JSON other than
+// its printed text (a json.Marshaler such as time.Time, a slice, map or struct, an error, or a type with MarshalText)
+// becomes a shownValue, so a script still gets that JSON.
 func display(v any, escape func(string) string) any {
 	switch v := v.(type) {
 	case nil, template.HTML, template.HTMLAttr, template.JS, template.JSStr, template.CSS, template.URL, template.Srcset:
@@ -82,21 +84,48 @@ func display(v any, escape func(string) string) any {
 	case string:
 		return escape(v)
 	}
-	p := indirectToStringer(v)
-	if plainScalar(p) {
+	// html/template finds the text and the script form of a value by dereferencing pointers to different methods.
+	text := indirectToStringer(v)
+	js := indirectToJSONMarshaler(v)
+	switch j := js.(type) {
+	case json.Marshaler:
+		return shownValue{v: js, text: text, escape: escape}
+	case fmt.Stringer:
+		// html/template writes the String text into a script, which is the printed text unless Error, preferred by
+		// fmt, says something else.
+		printed := fmt.Sprint(text)
+		if s, ok := stringOf(j); ok && s != printed {
+			return shownValue{v: s, text: text, escape: escape}
+		}
+		return escape(printed)
+	case encoding.TextMarshaler:
+		return shownValue{v: js, text: text, escape: escape}
+	}
+	if plainScalar(js) {
 		return v
 	}
-	if composite(p) {
-		return shownValue{v: v, text: p, escape: escape}
+	if _, isErr := text.(error); isErr || composite(js) {
+		return shownValue{v: js, text: text, escape: escape}
 	}
-	return escape(fmt.Sprint(p))
+	return escape(fmt.Sprint(text))
 }
 
-// shownValue is a slice, map or struct (or a pointer to one) as show prints it. html/template writes such a value into
-// a script as JSON (json.Marshaler) and everywhere else as its fmt.Sprint text (fmt.Stringer), so it answers both: the
-// text with the characters escaped as for any other value, and exactly html/template's JSON, except that each JSON
-// string holding such a character is that string escaped. A script is skipped by render's pass over the page, so
-// nothing else would stop them reaching the browser raw: html/template's JSON writes a bidi override as it is.
+// stringOf returns s.String(), or false if it panics (a nil pointer), which fmt prints rather than failing.
+func stringOf(s fmt.Stringer) (str string, ok bool) {
+	defer func() {
+		if recover() != nil {
+			ok = false
+		}
+	}()
+	return s.String(), true
+}
+
+// shownValue is a value html/template writes into a script as JSON other than its printed text. html/template writes
+// it into a script as JSON (json.Marshaler) and everywhere else as its fmt.Sprint text (fmt.Stringer), so it answers
+// both: the text with the characters escaped as for any other value, and exactly html/template's JSON of v (the value
+// as html/template's script escaper sees it), except that each JSON string holding such a character raw is that
+// string escaped. A script is skipped by render's pass over the page, so nothing else would stop them reaching the
+// browser raw: html/template's JSON writes a bidi override as it is.
 type shownValue struct {
 	v, text any
 	escape  func(string) string
@@ -146,15 +175,9 @@ func jsonStringEnd(b []byte, i int) int {
 	return len(b)
 }
 
-// composite reports whether v, dereferenced by indirectToStringer and with no String or Error method, is a value
-// html/template writes into a script as a JSON array or object (or null, for a nil pointer).
+// composite reports whether v, as html/template's script escaper sees it, is a value it writes into a script as a JSON
+// array or object (or null, for a nil pointer).
 func composite(v any) bool {
-	if _, ok := v.(fmt.Stringer); ok {
-		return false
-	}
-	if _, ok := v.(error); ok {
-		return false
-	}
 	switch reflect.ValueOf(v).Kind() {
 	case reflect.Slice, reflect.Array, reflect.Map, reflect.Struct, reflect.Pointer:
 		return true
@@ -163,12 +186,11 @@ func composite(v any) bool {
 }
 
 // plainScalar reports whether v is a number or boolean without its own String or Error method, whose text can be
-// anything.
+// anything, or its own JSON or text form (json.Marshaler, encoding.TextMarshaler), which html/template writes into a
+// script in place of the number and which can hold anything too.
 func plainScalar(v any) bool {
-	if _, ok := v.(fmt.Stringer); ok {
-		return false
-	}
-	if _, ok := v.(error); ok {
+	switch v.(type) {
+	case fmt.Stringer, error, json.Marshaler, encoding.TextMarshaler:
 		return false
 	}
 	switch reflect.ValueOf(v).Kind() {
@@ -181,8 +203,9 @@ func plainScalar(v any) bool {
 }
 
 var (
-	errorType       = reflect.TypeFor[error]()
-	fmtStringerType = reflect.TypeFor[fmt.Stringer]()
+	errorType         = reflect.TypeFor[error]()
+	fmtStringerType   = reflect.TypeFor[fmt.Stringer]()
+	jsonMarshalerType = reflect.TypeFor[json.Marshaler]()
 )
 
 // indirectToStringer dereferences pointers until a Stringer, an error or a non-pointer, as html/template does before
@@ -190,6 +213,16 @@ var (
 func indirectToStringer(a any) any {
 	v := reflect.ValueOf(a)
 	for !v.Type().Implements(fmtStringerType) && !v.Type().Implements(errorType) && v.Kind() == reflect.Pointer && !v.IsNil() {
+		v = v.Elem()
+	}
+	return v.Interface()
+}
+
+// indirectToJSONMarshaler dereferences pointers until a json.Marshaler or a non-pointer, as html/template does before
+// writing a value into a script, so that show's JSON is what html/template would have written.
+func indirectToJSONMarshaler(a any) any {
+	v := reflect.ValueOf(a)
+	for !v.Type().Implements(jsonMarshalerType) && v.Kind() == reflect.Pointer && !v.IsNil() {
 		v = v.Elem()
 	}
 	return v.Interface()
@@ -513,13 +546,22 @@ func commentEnd(page []byte, i int) int {
 	case bytes.HasPrefix(rest, []byte("->")):
 		return i + 2
 	}
-	end := -1
-	for _, closer := range []string{"-->", "--!>"} {
-		if j := bytes.Index(rest, []byte(closer)); j >= 0 && (end < 0 || i+j+len(closer) < end) {
-			end = i + j + len(closer)
+	// Both endings begin with "--", so the first "--" followed by '>' or "!>" is where the comment ends. Searching for
+	// each ending to the end of the page instead made a page of many comments take time quadratic in its length.
+	for j := 0; ; {
+		k := bytes.Index(rest[j:], []byte("--"))
+		if k < 0 {
+			return -1
 		}
+		j += k
+		switch after := rest[j+2:]; {
+		case bytes.HasPrefix(after, []byte(">")):
+			return i + j + 3
+		case bytes.HasPrefix(after, []byte("!>")):
+			return i + j + 4
+		}
+		j++
 	}
-	return end
 }
 
 // pastByte returns the index just past the first c at or after page[i], or -1 if there is none.
