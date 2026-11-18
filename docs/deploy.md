@@ -186,9 +186,9 @@ terraform providers lock -platform=linux_amd64 -platform=darwin_arm64 -platform=
 
 ### CloudFront access logs
 
-With `enable_cloudfront` on, set `"enable_cloudfront_logging": true` to keep CloudFront's access logs: one line per request through the distribution, with the time, the viewer's IP address, the path, the status and the edge location. They are delivered with CloudFront standard logging v2 to an S3 bucket the module creates for them, `<prefix>-rudolph-web-cf-logs-<account ID>`, in us-east-1 whatever the deployment's region, because CloudFront's log deliveries can only be set up there. A prefix S3 would refuse in a bucket name (capitals, `_` or other characters, more than 30 characters, or starting with `xn--` or `sthree-`), such as `my_org` or `Prod`, gives `<prefix lowercased, other characters as -, cut to 24>-rw-cf-logs-<8 hex characters of the prefix's SHA-1>-<account ID>` instead, for example `my-org-rw-cf-logs-<hash>-<account ID>`; the hash keeps `my_org` and `my-org` apart. The log delivery names are cut short with a hash the same way when the prefix is longer than 29 characters. The bucket:
+With `enable_cloudfront` on, set `"enable_cloudfront_logging": true` to keep CloudFront's access logs: one line per request through the distribution, with the time, the viewer's IP address, the path, the status and the edge location. They are delivered with CloudFront standard logging v2 to an S3 bucket the module creates for them, `<prefix>-rudolph-web-cf-logs-<account ID>`, in us-east-1 whatever the deployment's region, because CloudFront's log deliveries can only be set up there. A prefix S3 would refuse in a bucket name (capitals, `_` or other characters, more than 30 characters, or starting with one of S3's reserved prefixes `xn--`, `sthree-` or `amzn-s3-demo-`), such as `my_org` or `Prod`, gives `<prefix lowercased, other characters as -, cut to 24, with rw- in front if it would still start with a reserved prefix>-rw-cf-logs-<8 hex characters of the prefix's SHA-1>-<account ID>` instead, for example `my-org-rw-cf-logs-<hash>-<account ID>`; the hash keeps `my_org` and `my-org` apart. The log delivery names are cut short with a hash the same way when the prefix is longer than 29 characters. The bucket:
 
-* blocks all public access (all four public access block settings) and keeps ACLs disabled; logging v2 writes through the bucket policy, which admits only the log delivery service (`delivery.logs.amazonaws.com`) acting for this account (`aws:SourceAccount`) and this deployment's delivery source (`aws:SourceArn`), and denies every request not made over TLS;
+* blocks all public access (all four public access block settings) and keeps ACLs disabled, explicitly (`aws_s3_bucket_ownership_controls` with `BucketOwnerEnforced`, rather than relying on S3's default); logging v2 writes through the bucket policy, which admits only the log delivery service (`delivery.logs.amazonaws.com`) acting for this account (`aws:SourceAccount`) and this deployment's delivery source (`aws:SourceArn`), and denies every request not made over TLS;
 * is encrypted with SSE-S3 (`AES256`);
 * is not versioned, and its lifecycle rule deletes each log `cloudfront_log_retention_days` after it is written (default `180`; it must be 1 or more) and aborts multipart uploads left incomplete for a day.
 
@@ -202,13 +202,13 @@ Turning logging off again removes the deliveries, but Terraform cannot delete a 
 
 ### The WAF
 
-With `enable_cloudfront` on, set `"enable_waf": true` to attach an AWS WAF web ACL, `<prefix>-rudolph-web`, to the distribution. It is created in us-east-1 through the `aws.us_east_1` provider, as CloudFront requires, allows everything by default (the app does its own sign-in) and has two rules, both blocking. Without `enable_cloudfront` it creates nothing, and the plan warns, as for the access logs.
+With `enable_cloudfront` on, set `"enable_waf": true` to attach an AWS WAF web ACL, `<prefix>-rudolph-web`, to the distribution. It is created in us-east-1 through the `aws.us_east_1` provider, as CloudFront requires, allows everything by default (the app does its own sign-in) and has two rules. Without `enable_cloudfront` it creates nothing, and the plan warns, as for the access logs.
 
 The rules:
 
 | Rule | Blocks |
 |---|---|
-| `aws-ip-reputation` | addresses on AWS's managed IP reputation list (`AWSManagedRulesAmazonIpReputationList`): sources AWS has seen in bots, scanning and DDoS. The group's own actions apply (`override_action { none {} }`). |
+| `aws-ip-reputation` | addresses on AWS's managed IP reputation rule group (`AWSManagedRulesAmazonIpReputationList`) that AWS's threat intelligence lists as malicious, such as bots and scanners. The group's own actions apply (`override_action { none {} }`), and AWS ships its `AWSManagedIPDDoSList` rule, addresses seen in DDoS attacks, with action count: those addresses are only counted in the metrics and sampled requests, not blocked. Blocking them as well would need a `rule_action_override`, which this module does not set. |
 | `rate-limit-per-ip` | one IP address making more than `waf_rate_limit` requests in any 5 minutes, until its rate falls back under the limit. |
 
 `waf_rate_limit` defaults to `1000`, about 3 requests a second sustained. Every request through CloudFront counts, including the cached static files, so a page view is a few requests; an admin clicking quickly makes perhaps 50 to 100 in 5 minutes, and a small team signed in from behind one office NAT, which shares one address, stays well under the limit, while a scripted flood or a crawler goes over it within a minute. Lower it if nobody shares an address; raise it if a larger team shares one. AWS WAF accepts 10 to 2,000,000,000. A blocked request is answered `403` by CloudFront. Both rules and the web ACL send CloudWatch metrics (namespace `AWS/WAFV2`, in us-east-1) and keep sampled requests, visible in the WAF console. The limit counts per IP address: an IPv4 client behind NAT shares it with everyone at that address, while an IPv6 client usually has a whole prefix (a /64 or more) and can rotate addresses within it, getting a fresh allowance with each, so the rate limit slows a casual flood from IPv6 rather than stopping a determined one.
@@ -217,7 +217,7 @@ The rules:
 
 The deploying role also needs, approximately (worked out by hand; add what an apply is refused), `wafv2:CreateWebACL`, `wafv2:GetWebACL`, `wafv2:UpdateWebACL`, `wafv2:DeleteWebACL`, `wafv2:ListTagsForResource` and `wafv2:TagResource` in us-east-1, and `cloudfront:UpdateDistribution` (which it has already) to attach it.
 
-Cost: about 7 US dollars a month (5 for the web ACL and 1 for each rule) plus 0.60 US dollars per million requests; the IP reputation list carries no charge of its own.
+Cost: at AWS's list prices when this was written, about 7 US dollars a month (5 for the web ACL and 1 for each rule) plus 0.60 US dollars per million requests, and the IP reputation group carries no charge of its own. Prices change; check the [AWS WAF pricing page](https://aws.amazon.com/waf/pricing/) for current ones.
 
 #### Upgrading: CloudFront access logs, WAF and state locking
 
@@ -225,7 +225,7 @@ This release adds `enable_cloudfront_logging`, `cloudfront_log_retention_days`, 
 
 1. `make plan`, `make deploy` and `make justdeploy` refuse an existing environment until it has the four new settings (see [Upgrading an existing environment](#upgrading-an-existing-environment)): add the four variables to its `_variables.tf`, the four `<name> = var.<name>` arguments to its `module "rudolph_web"` block, and `"enable_cloudfront_logging": false`, `"cloudfront_log_retention_days": 180`, `"enable_waf": false` and `"waf_rate_limit": 1000` to its `config.auto.tfvars.json`. The plan then changes nothing. Set `enable_cloudfront_logging` or `enable_waf` to `true` to add the log bucket and deliveries or the web ACL; both need `enable_cloudfront`.
 2. Add `use_lockfile = true` to the `backend "s3"` block of the environment's `_backend.tf`, give the deploying role the lock object permissions under [State locking](#state-locking), and run `terraform -chdir=deployments/environments/$ENV init -reconfigure` once: Terraform treats a changed backend block as a new backend configuration, and the plain `terraform init` that `make deploy` runs stops until it is reinitialised. The state stays where it is.
-3. Copy the example's `.terraform.lock.hcl` into the environment (`cp deployments/environments/example/.terraform.lock.hcl deployments/environments/$ENV/`), replacing the one `terraform init` wrote there, and run `make tf-init`. It installs the locked `hashicorp/aws` release if the environment had another.
+3. If the environment does not already lock a newer `hashicorp/aws` 6.x release than the example (compare the `version` lines: `grep -A1 hashicorp/aws deployments/environments/example/.terraform.lock.hcl deployments/environments/$ENV/.terraform.lock.hcl`), copy the example's `.terraform.lock.hcl` into it (`cp deployments/environments/example/.terraform.lock.hcl deployments/environments/$ENV/`), replacing the one `terraform init` wrote there, and run `make tf-init`, which installs the locked release; copy it only if the environment's is not newer, because copying over a newer lock downgrades the provider, which can fail on state written by the newer release. If the environment's is newer, keep it and run `terraform -chdir=deployments/environments/$ENV providers lock -platform=linux_amd64 -platform=darwin_arm64 -platform=darwin_amd64` there to add the other platforms' hashes.
 
 ---
 
@@ -352,7 +352,7 @@ Then check the top lists. **Top blocked** and **Top allowed** should show a list
 | `aws_route53_record` | validation record and the A/AAAA aliases |
 | `aws_budgets_budget` | `<prefix>_rudolph_web_monthly`, only with `monthly_budget_usd` above 0 |
 | `aws_cloudwatch_metric_alarm` ×3 | `<prefix>_rudolph_web_errors`, `_throttles` and `_duration` on the function; see [Alarms](#alarms) |
-| `aws_s3_bucket` (+ public access block, encryption, lifecycle, policy) | `<prefix>-rudolph-web-cf-logs-<account ID>` in us-east-1 for CloudFront's access logs, only with `enable_cloudfront` and `enable_cloudfront_logging`; see [CloudFront access logs](#cloudfront-access-logs) |
+| `aws_s3_bucket` (+ ownership controls, public access block, encryption, lifecycle, policy) | `<prefix>-rudolph-web-cf-logs-<account ID>` in us-east-1 for CloudFront's access logs, only with `enable_cloudfront` and `enable_cloudfront_logging`; see [CloudFront access logs](#cloudfront-access-logs) |
 | `aws_cloudwatch_log_delivery_source`, `aws_cloudwatch_log_delivery_destination`, `aws_cloudwatch_log_delivery` | CloudFront standard logging v2 from the distribution to that bucket, in us-east-1, with the bucket |
 | `aws_wafv2_web_acl` | `<prefix>-rudolph-web`, CLOUDFRONT scope in us-east-1, attached to the distribution, only with `enable_cloudfront` and `enable_waf`; see [The WAF](#the-waf) |
 
@@ -593,7 +593,7 @@ new sign-ins, not existing sessions.
 make plan                  # terraform plan for $ENV
 make deploy                # test, build, init, apply
 make destroy               # tear the environment down
-make tf-check              # fmt -check, init -backend=false, validate; touches no AWS account
+make tf-check              # fmt -check, init -backend=false, validate, then the module's terraform tests (mock providers); touches no AWS account, needs the network the first time
 make test                  # go vet + go test, including the Terraform static checks
 make deps-check            # govulncheck (fails on a vulnerability), then outdated or deprecated modules
 ```

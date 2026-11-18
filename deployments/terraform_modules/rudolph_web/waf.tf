@@ -24,8 +24,10 @@ resource "aws_wafv2_web_acl" "web" {
     allow {}
   }
 
-  # Addresses AWS has seen take part in bots, scanning and DDoS. override_action none keeps the group's
-  # own block actions; count would only record matches.
+  # AWS's IP reputation group. override_action none keeps the group's own actions; count would turn them all
+  # into count. Those actions block addresses AWS's threat intelligence lists as malicious, but AWS ships the
+  # group's AWSManagedIPDDoSList rule (addresses seen in DDoS attacks) with action count, so those addresses are
+  # only counted, not blocked. Blocking them too would need a rule_action_override, which was not reviewed.
   rule {
     name     = "aws-ip-reputation"
     priority = 0

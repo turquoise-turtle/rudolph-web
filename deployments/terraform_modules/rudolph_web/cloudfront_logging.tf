@@ -14,16 +14,23 @@ locals {
   cloudfront_logging = var.enable_cloudfront && var.enable_cloudfront_logging
 
   # var.prefix is free-form, and existing deployments use prefixes such as my_org or Prod, which S3 refuses
-  # in a bucket name (lowercase letters, digits, dots and hyphens, 3 to 63 characters). A prefix that is
-  # already valid, short enough and not reserved by S3 (xn--, sthree-) is used as it is; any other is lowercased,
-  # made S3-safe and cut short, and an 8-character hash of the original keeps two prefixes that come out the
-  # same (my_org and my-org) apart.
-  # The account ID keeps the name globally unique, as S3 bucket names must be.
-  log_bucket_prefix_as_is = can(regex("^[a-z0-9][a-z0-9-]{0,29}$", var.prefix)) && !endswith(var.prefix, "-") && !startswith(var.prefix, "xn--") && !startswith(var.prefix, "sthree-")
+  # in a bucket name (lowercase letters, digits, dots and hyphens, 3 to 63 characters, none of S3's reserved
+  # prefixes). A prefix that is already valid, at most 30 characters and not reserved is used as it is; any
+  # other is lowercased, made S3-safe and cut to 24 characters, gets rw- in front if it is empty or reserved,
+  # and is followed by an 8-character hash of the original, which keeps two prefixes that come out the same
+  # (my_org and my-org) apart. The name always ends in the account ID, which keeps it globally unique, as S3
+  # bucket names must be, and so never ends in a reserved suffix (-s3alias, --ol-s3, .mrap, --x-s3) or looks
+  # like an IP address.
+  s3_reserved_prefixes    = ["xn--", "sthree-", "amzn-s3-demo-"]
+  log_bucket_prefix_as_is = can(regex("^[a-z0-9][a-z0-9-]{0,29}$", var.prefix)) && !endswith(var.prefix, "-") && !anytrue([for r in local.s3_reserved_prefixes : startswith(var.prefix, r)])
   log_bucket_safe_prefix  = trim(substr(trim(replace(lower(var.prefix), "/[^a-z0-9]+/", "-"), "-"), 0, 24), "-")
+  log_bucket_safe_start = (local.log_bucket_safe_prefix == "" || anytrue([for r in local.s3_reserved_prefixes : startswith("${local.log_bucket_safe_prefix}-", r)])
+    ? trimsuffix("rw-${local.log_bucket_safe_prefix}", "-")
+    : local.log_bucket_safe_prefix
+  )
   log_bucket_name = (local.log_bucket_prefix_as_is
     ? "${var.prefix}-rudolph-web-cf-logs-${var.aws_account_id}"
-    : "${local.log_bucket_safe_prefix == "" || startswith(local.log_bucket_safe_prefix, "sthree-") ? trimsuffix("rw-${local.log_bucket_safe_prefix}", "-") : local.log_bucket_safe_prefix}-rw-cf-logs-${substr(sha1(var.prefix), 0, 8)}-${var.aws_account_id}"
+    : "${local.log_bucket_safe_start}-rw-cf-logs-${substr(sha1(var.prefix), 0, 8)}-${var.aws_account_id}"
   )
 
   # Log delivery source and destination names are letters, digits, _ and -, at most 60 characters.
@@ -41,6 +48,19 @@ resource "aws_s3_bucket" "cloudfront_logs" {
   bucket = local.log_bucket_name
 
   tags = local.tags
+}
+
+# ACLs disabled because the module says so, not because S3's default for new buckets happens to agree: log
+# delivery writes through the bucket policy, and no object can carry an ACL of its own.
+resource "aws_s3_bucket_ownership_controls" "cloudfront_logs" {
+  count    = local.cloudfront_logging ? 1 : 0
+  provider = aws.us_east_1
+
+  bucket = aws_s3_bucket.cloudfront_logs[0].id
+
+  rule {
+    object_ownership = "BucketOwnerEnforced"
+  }
 }
 
 resource "aws_s3_bucket_public_access_block" "cloudfront_logs" {
@@ -138,8 +158,8 @@ resource "aws_s3_bucket_policy" "cloudfront_logs" {
     ]
   })
 
-  # S3 can answer OperationAborted when a bucket's policy and public access block are set at once.
-  depends_on = [aws_s3_bucket_public_access_block.cloudfront_logs]
+  # S3 can answer OperationAborted when a bucket's policy, public access block and ownership are set at once.
+  depends_on = [aws_s3_bucket_public_access_block.cloudfront_logs, aws_s3_bucket_ownership_controls.cloudfront_logs]
 }
 
 resource "aws_cloudwatch_log_delivery_source" "cloudfront" {

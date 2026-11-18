@@ -245,7 +245,7 @@ variable "cloudfront_log_retention_days" {
 
 variable "enable_waf" {
   type        = bool
-  description = "With enable_cloudfront, attach an AWS WAF web ACL to the distribution: a per-IP rate limit (waf_rate_limit) and AWS's IP reputation list, both blocking. It only sees traffic through CloudFront; the Function URL stays directly reachable. Without enable_cloudfront it creates nothing, and the plan warns."
+  description = "With enable_cloudfront, attach an AWS WAF web ACL to the distribution: a blocking per-IP rate limit (waf_rate_limit) and AWS's IP reputation rule group with its own actions, which block most listed addresses and only count some (see docs/deploy.md). It only sees traffic through CloudFront; the Function URL stays directly reachable. Without enable_cloudfront it creates nothing, and the plan warns."
   default     = false
 }
 
