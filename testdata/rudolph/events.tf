@@ -1,5 +1,5 @@
 #
-# DynamoDB table of execution events, read by the separate web view (rudolph-web's docs/data-layer-design.md, "D+ in
+# DynamoDB table of execution and file access events, read by the separate web view (rudolph-web's docs/data-layer-design.md, "D+ in
 # detail"). The eventupload Lambda writes it; the scheduled ranker (../../ranker.tf) reads its day counters and machine
 # markers and writes the top lists. Layout and costs: docs/events-table.md.
 #
@@ -11,9 +11,10 @@ resource "aws_dynamodb_table" "events" {
   name         = local.events_table_name
   billing_mode = "PAY_PER_REQUEST"
 
-  # Event items: PK Exec#<machine ID>, SK <20-digit µs execution time>#<file SHA-256>#<pid>. Day counters
-  # (BinaryDay#<UTC date> / <file SHA-256>) and machine markers (BinarySeen#<file SHA-256> / <machine ID>) share the
-  # table; they carry no TS, so they stay out of every index.
+  # Execution items: PK Exec#<machine ID>, SK <20-digit µs execution time>#<file SHA-256>#<pid>. File access items:
+  # PK FileAccess#<machine ID>, SK <20-digit µs access time>#<pid>#<16 hex digits>; they carry no TeamID, so they
+  # stay out of TeamID_TS. Day counters (BinaryDay#<UTC date> / <file SHA-256>) and machine markers
+  # (BinarySeen#<file SHA-256> / <machine ID>) share the table; they carry no TS, so they stay out of every index.
   hash_key  = "PK"
   range_key = "SK"
 
@@ -52,8 +53,9 @@ resource "aws_dynamodb_table" "events" {
     enabled        = true
   }
 
-  # Every event of the fleet, newest first. Fleet is the same on every event, so this index has one partition; at
-  # the event rates in docs/events-table.md that is far below a partition's write limit.
+  # Every event of the fleet, newest first. Fleet is Exec on every execution and FileAccess on every file access
+  # event, so this index has two partitions; at the event rates in docs/events-table.md that is far below a
+  # partition's write limit.
   global_secondary_index {
     name = "Fleet_TS"
     key_schema {
@@ -80,7 +82,7 @@ resource "aws_dynamodb_table" "events" {
     projection_type = "ALL"
   }
 
-  # Sparse: unsigned binaries have no team ID, and the writer leaves the attribute out.
+  # Sparse: unsigned binaries have no team ID, and the writer leaves the attribute out. Executions only.
   global_secondary_index {
     name = "TeamID_TS"
     key_schema {
@@ -107,13 +109,17 @@ resource "aws_dynamodb_table" "events" {
 }
 
 #
-# Writes from the eventupload Lambda: items only, on this table only, plus reading the index of flagged rules and the
-# rule rows it names in the store table, and taking stale entries out of that index. Kept apart from
-# lambda_permissions, which is scoped to the store table and its machine partitions.
+# Writes from the eventupload Lambda: items of its own partitions of this table only, plus reading the index of
+# flagged rules and the rule rows it names in the store table, and taking stale entries out of that index. Kept apart
+# from lambda_permissions, which is scoped to the store table and its machine partitions.
 # TransactWriteItems (an event with its day counter) has no IAM action of its own: it needs PutItem and UpdateItem on
-# the table.
+# the table. Every ForAllValues condition on dynamodb:LeadingKeys has a Null check beside it: ForAllValues is also
+# true when the request names no partition at all.
 #
 data "aws_iam_policy_document" "events_write" {
+  # Execution events (Exec#, in a transaction with their day counter's UpdateItem), file access events (FileAccess#),
+  # day counters (BinaryDay#) and machine markers (BinarySeen#). The ranker's TopSnapshot# and Top# rows are not
+  # eventupload's to write.
   statement {
     actions = [
       "dynamodb:PutItem",
@@ -123,6 +129,18 @@ data "aws_iam_policy_document" "events_write" {
     resources = [
       aws_dynamodb_table.events.arn,
     ]
+
+    condition {
+      test     = "ForAllValues:StringLike"
+      variable = "dynamodb:LeadingKeys"
+      values   = ["Exec#*", "FileAccess#*", "BinaryDay#*", "BinarySeen#*"]
+    }
+
+    condition {
+      test     = "Null"
+      variable = "dynamodb:LeadingKeys"
+      values   = ["false"]
+    }
   }
 
   # Which rules have their allowed executions stored is read from one item of the store table (PK "EventCollection",
@@ -140,6 +158,12 @@ data "aws_iam_policy_document" "events_write" {
       test     = "ForAllValues:StringLike"
       variable = "dynamodb:LeadingKeys"
       values   = ["EventCollection", "GlobalRules", "MachineRules#*"]
+    }
+
+    condition {
+      test     = "Null"
+      variable = "dynamodb:LeadingKeys"
+      values   = ["false"]
     }
   }
 
@@ -159,6 +183,12 @@ data "aws_iam_policy_document" "events_write" {
       variable = "dynamodb:LeadingKeys"
       values   = ["EventCollection"]
     }
+
+    condition {
+      test     = "Null"
+      variable = "dynamodb:LeadingKeys"
+      values   = ["false"]
+    }
   }
 
   statement {
@@ -174,6 +204,12 @@ data "aws_iam_policy_document" "events_write" {
       test     = "ForAllValues:StringLike"
       variable = "dynamodb:LeadingKeys"
       values   = ["GlobalRules", "MachineRules#*"]
+    }
+
+    condition {
+      test     = "Null"
+      variable = "dynamodb:LeadingKeys"
+      values   = ["false"]
     }
   }
 }
