@@ -94,8 +94,11 @@ func TestListExecutionEvents_DecisionPagesPastFileAccessRows(t *testing.T) {
 func TestListExecutionEvents_CursorPastFileAccessRowsStaysBound(t *testing.T) {
 	s := newStore(t)
 	putEvent(t, machineA, 1, "BLOCK_BINARY", "")
-	putFileAccess(t, machineB, 10, "BLOCK_BINARY", "/bin/rm")
-	putFileAccess(t, machineB, 11, "BLOCK_BINARY", "/bin/rm")
+	// More foreign rows than a page's whole budget of Queries can read, so the Next cursor still stands on one of
+	// them once the page has tried to fill from older rows.
+	for i := 10; i < 10+maxQueriesPerPage*2+2; i++ {
+		putFileAccess(t, machineB, i, "BLOCK_BINARY", "/bin/rm")
+	}
 	page, err := s.ListExecutionEvents(ctx, store.EventFilter{Decision: store.DecisionBlockBinary}, store.PageRequest{Limit: 2})
 	if err != nil || page.NextCursor == "" {
 		t.Fatalf("precondition: a page of foreign rows with a Next cursor, got %v %+v", err, page)
