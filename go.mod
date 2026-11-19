@@ -6,7 +6,7 @@ toolchain go1.27.3
 
 require (
 	cel.dev/cel-go v0.33.2
-	github.com/airbnb/rudolph v0.0.0-20261111050951-6a20ffe6b638
+	github.com/airbnb/rudolph v0.0.0-20261119031223-e0a8626b13cf
 	github.com/antlr4-go/antlr/v4 v4.13.1
 	github.com/aws/aws-lambda-go v1.55.1
 	github.com/aws/aws-sdk-go-v2 v1.47.8
@@ -17,6 +17,7 @@ require (
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/dlclark/regexp2 v1.12.0
 	github.com/hashicorp/hcl/v2 v2.25.0
+	github.com/zclconf/go-cty v1.20.0
 	golang.org/x/oauth2 v0.37.0
 	golang.org/x/text v0.43.0
 	google.golang.org/protobuf v1.36.12
@@ -45,7 +46,6 @@ require (
 	github.com/go-jose/go-jose/v4 v4.1.9 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mitchellh/go-wordwrap v1.0.1 // indirect
-	github.com/zclconf/go-cty v1.20.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.6 // indirect
 	golang.org/x/exp v0.0.0-20240823005443-9b4947da3948 // indirect
 	golang.org/x/mod v0.42.0 // indirect
@@ -57,4 +57,4 @@ require (
 
 // Rudolph's module path is github.com/airbnb/rudolph; the web view uses the fork's commit with the audit trail and
 // web contract (docs/deploy.md, "Updating the Rudolph pin").
-replace github.com/airbnb/rudolph => github.com/turquoise-turtle/rudolph v0.0.0-20261111050951-6a20ffe6b638
+replace github.com/airbnb/rudolph => github.com/turquoise-turtle/rudolph v0.0.0-20261119031223-e0a8626b13cf

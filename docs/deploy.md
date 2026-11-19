@@ -514,8 +514,8 @@ The page is read-only and exists whether or not editing is on, so with `enable_e
 The writer imports Rudolph's packages under their module path, `github.com/airbnb/rudolph`, from the owner's fork, which has the audit trail and the web contract. `go get` cannot resolve a fork under another module path, so `go.mod` pins it with a `replace` to a pseudo-version of a pushed commit:
 
 ```
-require github.com/airbnb/rudolph v0.0.0-20261111050951-6a20ffe6b638
-replace github.com/airbnb/rudolph => github.com/turquoise-turtle/rudolph v0.0.0-20261111050951-6a20ffe6b638
+require github.com/airbnb/rudolph v0.0.0-20261119031223-e0a8626b13cf
+replace github.com/airbnb/rudolph => github.com/turquoise-turtle/rudolph v0.0.0-20261119031223-e0a8626b13cf
 ```
 
 To move to a newer Rudolph commit, push it, then:
