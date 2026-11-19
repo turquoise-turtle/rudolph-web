@@ -734,15 +734,27 @@ func runConversion(g *tryGuard, orig *functions.Overload, args []ref.Val) ref.Va
 // Australia/Sydney, 8.5 KiB for Europe/London.
 const zoneLoadBytes = 8 << 10
 
-// checkZone charges a call with a named time zone for loading the zone, which
-// cel-go does on every call. UTC and Local are not loaded, and an offset such
-// as +10:00 is not a name.
+// checkZone charges a call with a time zone for what cel-go builds from it on
+// every call. UTC and Local are not loaded. A name is loaded afresh, and
+// time.LoadLocation joins it to each directory it searches and copies it into
+// its error: about 9 times the name's length for one it cannot find, so it is
+// charged 10 times its length on top of the load. A zone with a colon is read
+// as an offset such as +10:00 with strconv.Atoi on each side, and a failure's
+// error copies and quotes the side, as an out-of-range offset's copies the
+// whole zone: about 5 times the length.
 func checkZone(g *tryGuard, args []ref.Val) error {
 	name, ok := strArg(args, 1)
-	if !ok || name == "" || name == "UTC" || name == "Local" || strings.Contains(name, ":") {
+	if !ok || name == "" || name == "UTC" || name == "Local" {
 		return nil
 	}
-	return g.charge(zoneLoadBytes)
+	n := uint64(len(name))
+	if hours, minutes, offset := strings.Cut(name, ":"); offset {
+		if len(hours) <= 3 && len(minutes) <= 3 {
+			return nil
+		}
+		return g.charge(5 * n)
+	}
+	return g.charge(zoneLoadBytes + 10*n)
 }
 
 // negativeNumbers counts the minus signs directly before a number, with
@@ -836,8 +848,10 @@ func init() {
 }
 
 // declaredIdent reports whether the checker can resolve name as a variable,
-// a constant, an enum value or a type.
+// a constant, an enum value or a type. A leading dot names the root
+// namespace, which is where the checker looks the rest up.
 func declaredIdent(name string) bool {
+	name = strings.TrimPrefix(name, ".")
 	if declaredVariables[name] {
 		return true
 	}
@@ -849,8 +863,9 @@ func declaredIdent(name string) bool {
 }
 
 // qualifiedName is the dotted name a chain of field selections on an
-// identifier spells, such as santa.cel.v1.ReturnValue.ALLOWLIST, or false
-// for any other expression.
+// identifier spells, such as santa.cel.v1.ReturnValue.ALLOWLIST, without the
+// leading dot that names the root namespace, or false for any other
+// expression.
 func qualifiedName(e ast.Expr) (string, bool) {
 	var fields []string
 	for e.Kind() == ast.SelectKind && !e.AsSelect().IsTestOnly() {
@@ -906,8 +921,12 @@ func checkParsed(root ast.Expr) error {
 			if !ok {
 				return visit(e.AsSelect().Operand(), bound, nesting)
 			}
+			// A leading dot resolves in the root namespace only, never
+			// against a comprehension variable.
+			rooted := strings.HasPrefix(name, ".")
+			name = strings.TrimPrefix(name, ".")
 			root, _, _ := strings.Cut(name, ".")
-			if slices.Contains(bound, root) {
+			if !rooted && slices.Contains(bound, root) {
 				return nil
 			}
 			for i := len(name); i > len(root); i = strings.LastIndexByte(name[:i], '.') {
@@ -916,6 +935,9 @@ func checkParsed(root ast.Expr) error {
 				}
 			}
 			if !declaredIdent(root) {
+				if rooted {
+					return refer("." + name)
+				}
 				return refer(root)
 			}
 		case ast.CallKind:
@@ -923,8 +945,17 @@ func checkParsed(root ast.Expr) error {
 			fn := call.FunctionName()
 			if call.IsMemberFunction() {
 				target := call.Target()
-				if prefix, ok := qualifiedName(target); ok && env.HasFunction(prefix+"."+fn) {
+				prefix, qualified := qualifiedName(target)
+				rooted := strings.HasPrefix(prefix, ".")
+				root, _, _ := strings.Cut(strings.TrimPrefix(prefix, "."), ".")
+				if qualified && env.HasFunction(strings.TrimPrefix(prefix, ".")+"."+fn) {
 					target = nil
+				} else if qualified && (rooted || !slices.Contains(bound, root)) && !declaredIdent(root) {
+					// The checker looks the whole name up as a qualified
+					// function first, comparing it with every declared name.
+					if err := refer(prefix + "." + fn); err != nil {
+						return err
+					}
 				} else if !env.HasFunction(fn) {
 					if err := refer(fn); err != nil {
 						return err
@@ -977,6 +1008,11 @@ func checkParsed(root ast.Expr) error {
 				}
 			}
 		case ast.StructKind:
+			if !declaredIdent(e.AsStruct().TypeName()) {
+				if err := refer(strings.TrimPrefix(e.AsStruct().TypeName(), ".")); err != nil {
+					return err
+				}
+			}
 			for _, f := range e.AsStruct().Fields() {
 				if err := visit(f.AsStructField().Value(), bound, nesting); err != nil {
 					return err
