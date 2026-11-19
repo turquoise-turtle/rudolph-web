@@ -15,8 +15,9 @@ import (
 // Rudolph's file access events (Rudolph 85eee68 and later) share the events
 // table with executions: items in FileAccess#<machine ID> partitions sorted
 // by "<TS>#<pid>#<hash>", under Fleet "FileAccess" in Fleet_TS and Santa's
-// prefixed decision names in Decision_TS, so neither list's partitions hold
-// the other's items.
+// prefixed decision names in Decision_TS. Rudolph's own rows keep the lists
+// apart, but an index partition can still hold the other list's rows (see
+// queryEvents), so index queries filter on the list's partition prefix.
 const (
 	listFileAccessEventsMethod = "ListFileAccessEvents"
 	fileAccessPartitionPrefix  = "FileAccess#"
@@ -25,7 +26,8 @@ const (
 )
 
 // newFileAccessQuery picks the one key condition a filter maps to; as for
-// executions, a combination would need a FilterExpression and short pages.
+// executions, a combination would need a FilterExpression that routinely
+// gives short or empty pages.
 func newFileAccessQuery(f store.FileAccessEventFilter) (eventQuery, error) {
 	machine := strings.TrimSpace(f.MachineID)
 	decision := store.FileAccessDecision(strings.TrimSpace(string(f.Decision)))
@@ -47,10 +49,12 @@ func newFileAccessQuery(f store.FileAccessEventFilter) (eventQuery, error) {
 	return q, nil
 }
 
-// ListFileAccessEvents implements store.EventReader with one Query per page,
-// newest first: a machine filter reads the Mac's FileAccess#<id> partition, a
-// decision Decision_TS and no filter Fleet_TS. Rows it cannot decode are
-// logged and skipped, so a page may hold fewer items than the limit.
+// ListFileAccessEvents implements store.EventReader, newest first: a machine
+// filter reads the Mac's FileAccess#<id> partition, a decision Decision_TS and
+// no filter Fleet_TS. Rows it cannot decode are logged and skipped, so a page
+// may hold fewer items than the limit; so may one after a run of execution
+// rows in the index partition longer than the refill budget reads, which can
+// come back short or empty with a Next cursor.
 func (s *Store) ListFileAccessEvents(ctx context.Context, f store.FileAccessEventFilter, p store.PageRequest) (store.Page[store.FileAccessEvent], error) {
 	if s.eventsTable == "" {
 		return store.Page[store.FileAccessEvent]{}, fmt.Errorf("%w: no events table configured", store.ErrUnavailable)
@@ -62,12 +66,12 @@ func (s *Store) ListFileAccessEvents(ctx context.Context, f store.FileAccessEven
 	if err != nil {
 		return store.Page[store.FileAccessEvent]{}, err
 	}
-	out, err := s.queryEvents(ctx, q, p)
+	rows, err := s.queryEvents(ctx, q, p)
 	if err != nil {
 		return store.Page[store.FileAccessEvent]{}, fmt.Errorf("dynamo: reading file access events: %w", err)
 	}
-	page := store.Page[store.FileAccessEvent]{Items: make([]store.FileAccessEvent, 0, len(out.Items))}
-	for _, it := range out.Items {
+	page := store.Page[store.FileAccessEvent]{Items: make([]store.FileAccessEvent, 0, len(rows.items))}
+	for _, it := range rows.items {
 		e, err := DecodeFileAccessEvent(it)
 		if err != nil {
 			// As for executions: one bad row must not hide every older event
@@ -77,7 +81,7 @@ func (s *Store) ListFileAccessEvents(ctx context.Context, f store.FileAccessEven
 		}
 		page.Items = append(page.Items, e)
 	}
-	if page.NextCursor, err = s.eventCursor(q, out); err != nil {
+	if page.NextCursor, err = s.eventCursor(q, rows); err != nil {
 		return store.Page[store.FileAccessEvent]{}, err
 	}
 	return page, nil

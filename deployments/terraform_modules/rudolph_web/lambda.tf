@@ -23,7 +23,7 @@ resource "aws_lambda_function" "web" {
   filename         = var.lambda_zip
   source_code_hash = filebase64sha256(var.lambda_zip)
 
-  # Pages are rendered from one bounded query, so the function stays small and fails fast.
+  # Pages are rendered from a few bounded queries (one per list, up to five for the event lists), so the function stays small and fails fast.
   memory_size = var.lambda_memory_size
   timeout     = var.lambda_timeout_seconds
 

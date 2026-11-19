@@ -150,7 +150,7 @@ variable "enable_editing" {
 #
 variable "lambda_memory_size" {
   type        = number
-  description = "Function memory in MB. The app renders small HTML pages from one bounded query."
+  description = "Function memory in MB. The app renders small HTML pages from a few bounded queries (one per list, up to five for the event lists)."
   default     = 256
 
   validation {
