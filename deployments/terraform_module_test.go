@@ -42,6 +42,10 @@ var bucketNamePrefixes = []string{
 	"sthree-x",
 	strings.Repeat("abcdefghij", 3) + "a",
 	strings.Repeat("abcdefghi_", 5) + "ab",
+	// Valid as they stand, but reserved once the name adds its hyphen: sthree-, amzn-s3-demo-, xn--.
+	"sthree",
+	"amzn-s3-demo",
+	"xn-",
 }
 
 type featureCase struct {
