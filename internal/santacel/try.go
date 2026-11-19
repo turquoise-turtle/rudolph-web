@@ -875,7 +875,7 @@ func qualifiedName(e ast.Expr) (string, bool) {
 	if e.Kind() != ast.IdentKind {
 		return "", false
 	}
-	fields = append(fields, strings.TrimPrefix(e.AsIdent(), "."))
+	fields = append(fields, e.AsIdent())
 	slices.Reverse(fields)
 	return strings.Join(fields, "."), true
 }
@@ -921,8 +921,12 @@ func checkParsed(root ast.Expr) error {
 			if !ok {
 				return visit(e.AsSelect().Operand(), bound, nesting)
 			}
+			// A leading dot resolves in the root namespace only, never
+			// against a comprehension variable.
+			rooted := strings.HasPrefix(name, ".")
+			name = strings.TrimPrefix(name, ".")
 			root, _, _ := strings.Cut(name, ".")
-			if slices.Contains(bound, root) {
+			if !rooted && slices.Contains(bound, root) {
 				return nil
 			}
 			for i := len(name); i > len(root); i = strings.LastIndexByte(name[:i], '.') {
@@ -931,6 +935,9 @@ func checkParsed(root ast.Expr) error {
 				}
 			}
 			if !declaredIdent(root) {
+				if rooted {
+					return refer("." + name)
+				}
 				return refer(root)
 			}
 		case ast.CallKind:
@@ -939,10 +946,11 @@ func checkParsed(root ast.Expr) error {
 			if call.IsMemberFunction() {
 				target := call.Target()
 				prefix, qualified := qualifiedName(target)
-				root, _, _ := strings.Cut(prefix, ".")
-				if qualified && env.HasFunction(prefix+"."+fn) {
+				rooted := strings.HasPrefix(prefix, ".")
+				root, _, _ := strings.Cut(strings.TrimPrefix(prefix, "."), ".")
+				if qualified && env.HasFunction(strings.TrimPrefix(prefix, ".")+"."+fn) {
 					target = nil
-				} else if qualified && !slices.Contains(bound, root) && !declaredIdent(root) {
+				} else if qualified && (rooted || !slices.Contains(bound, root)) && !declaredIdent(root) {
 					// The checker looks the whole name up as a qualified
 					// function first, comparing it with every declared name.
 					if err := refer(prefix + "." + fn); err != nil {
