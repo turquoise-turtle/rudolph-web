@@ -14,6 +14,8 @@ go.work.sum
 # Terraform working directories and state. Environments other than the example are local.
 .terraform/
 .terraform.lock.hcl
+# Except the example's, which pins the hashicorp/aws build and its hashes; new_env.sh copies it into new environments.
+!/deployments/environments/example/.terraform.lock.hcl
 *.tfstate
 *.tfstate.*
 crash.log

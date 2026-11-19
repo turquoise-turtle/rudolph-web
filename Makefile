@@ -48,13 +48,15 @@ tf-init: .check-args
 destroy: tf-init
 	terraform -chdir=$(TERRAFORM_DEPLOYMENTS_ENV_DIR) destroy $(TF_DEFAULT_FLAGS)
 
-# Formats and statically checks the Terraform without touching any AWS account.
-#
+# Formats and statically checks the Terraform without touching any AWS account, then runs the module's terraform
+# tests against mock providers. Those are opt-in rather than part of make test, because their first run downloads
+# hashicorp/aws (about 700 MB) and make deploy, which runs make test, must work offline.
 #
 tf-check:
 	terraform fmt -recursive -check deployments
 	terraform -chdir=deployments/environments/example init -backend=false
 	terraform -chdir=deployments/environments/example validate
+	RUDOLPH_WEB_TERRAFORM_TESTS=1 go test ./deployments -run TestModule -count=1 -timeout 30m
 
 # Install dependencies
 #

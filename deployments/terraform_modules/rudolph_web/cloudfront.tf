@@ -67,6 +67,9 @@ resource "aws_cloudfront_distribution" "web" {
   price_class     = var.cloudfront_price_class
   aliases         = local.custom_domain ? [var.domain_name] : []
 
+  # CloudFront takes a WAFv2 web ACL by its ARN; see waf.tf.
+  web_acl_id = local.waf_enabled ? aws_wafv2_web_acl.web[0].arn : null
+
   origin {
     origin_id   = local.origin_id
     domain_name = replace(replace(aws_lambda_function_url.web.function_url, "https://", ""), "/", "")

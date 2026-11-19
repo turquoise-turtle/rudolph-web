@@ -1,6 +1,6 @@
 # Setting up a new environment
 
-An environment is one deployment of rudolph-web, described by six files in
+An environment is one deployment of rudolph-web, described by six files and the provider lock file in
 `deployments/environments/<ENV>/`. This directory is the example they are copied from.
 
 ```sh
@@ -43,7 +43,11 @@ Pins Terraform and the AWS provider, with the same constraint as the module
 ### `_backend.tf`
 
 Where the Terraform state lives, and the two providers. The S3 bucket must already exist, and the
-`key` must be unique within it.
+`key` must be unique within it. `use_lockfile = true` locks the state with a `<key>.tflock` object in the same bucket while a plan or apply runs; the deploying role needs `s3:GetObject`, `s3:PutObject` and `s3:DeleteObject` on it (see [docs/deploy.md](../../../docs/deploy.md#state-locking)).
+
+### `.terraform.lock.hcl`
+
+Pins the `hashicorp/aws` release and its package hashes for `linux_amd64`, `darwin_arm64` and `darwin_amd64`, so every `terraform init` installs the same, checked build. This example's copy is committed; refresh it as [docs/deploy.md](../../../docs/deploy.md#the-provider-lock-file) describes.
 
 ### `config.auto.tfvars.json`
 
@@ -79,6 +83,10 @@ committed and ends up in the state.
 | `route53_zone_name` | `""` | Hosted zone for the alias record and certificate validation. |
 | `use_existing_route53_zone` | `true` | Look the zone up instead of creating it. |
 | `cloudfront_price_class` | `"PriceClass_100"` | Cheapest class covering North America and Europe. |
+| `enable_cloudfront_logging` | `false` | With `enable_cloudfront`, keep CloudFront's access logs in an S3 bucket the module creates in us-east-1 (private, encrypted, TLS-only). Requests made straight to the Function URL are not logged there. See [docs/deploy.md](../../../docs/deploy.md#cloudfront-access-logs). |
+| `cloudfront_log_retention_days` | `180` | Days the access logs are kept before S3 deletes them; 1 or more. |
+| `enable_waf` | `false` | With `enable_cloudfront`, attach an AWS WAF web ACL with a per-IP rate limit and AWS's IP reputation rule group, about 7 US dollars a month at AWS's list prices when written (see the AWS WAF pricing page). It covers only traffic through CloudFront: the Function URL stays directly reachable. See [docs/deploy.md](../../../docs/deploy.md#the-waf). |
+| `waf_rate_limit` | `1000` | Requests one IP address may make through CloudFront in any 5 minutes before the WAF blocks it; the default leaves room for a small team behind one office NAT. |
 | `monthly_budget_usd` | `0` | Monthly AWS Budgets cost budget in USD for resources tagged `Name = rudolph-web`. `0` creates no budget. It alerts and never caps spending; see [docs/deploy.md](../../../docs/deploy.md#the-monthly-cost-budget). |
 | `budget_alert_emails` | `[]` | Where the budget emails at 80% and 100% of actual spend and 100% of forecast spend. Required when `monthly_budget_usd` is above `0`. |
 | `tags` | `{}` | Extra tags merged into every taggable resource. |

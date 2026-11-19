@@ -38,5 +38,8 @@ cp "$EXAMPLE_ENV_DIR/_backend.tf" ./
 cp "$EXAMPLE_ENV_DIR/_outputs.tf" ./
 cp "$EXAMPLE_ENV_DIR/config.auto.tfvars.json" ./
 cp "$EXAMPLE_ENV_DIR/versions.tf" ./
+# The provider lock file, so the first terraform init installs the hashicorp/aws build the example was
+# tested with, checked against its hashes.
+cp "$EXAMPLE_ENV_DIR/.terraform.lock.hcl" ./
 
 echo "created $NEW_ENV_DIR; edit _backend.tf and config.auto.tfvars.json before deploying"

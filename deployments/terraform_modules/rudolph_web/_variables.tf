@@ -226,6 +226,40 @@ variable "cloudfront_price_class" {
   }
 }
 
+variable "enable_cloudfront_logging" {
+  type        = bool
+  description = "With enable_cloudfront, deliver CloudFront access logs (CloudFront standard logging v2) to an S3 bucket the module creates in us-east-1, <prefix>-rudolph-web-cf-logs-<account ID> (or a lowercased, shortened prefix with a hash, when the prefix is not valid in a bucket name): private, SSE-S3 encrypted, TLS-only, with ACLs disabled, and expiring logs after cloudfront_log_retention_days. Without enable_cloudfront it creates nothing, and the plan warns."
+  default     = false
+}
+
+variable "cloudfront_log_retention_days" {
+  type        = number
+  description = "Days CloudFront access logs are kept in the log bucket before S3 deletes them. Only used with enable_cloudfront_logging."
+  default     = 180
+
+  validation {
+    condition     = var.cloudfront_log_retention_days > 0 && floor(var.cloudfront_log_retention_days) == var.cloudfront_log_retention_days
+    error_message = "cloudfront_log_retention_days must be a whole number of days, 1 or more."
+  }
+}
+
+variable "enable_waf" {
+  type        = bool
+  description = "With enable_cloudfront, attach an AWS WAF web ACL to the distribution: a blocking per-IP rate limit (waf_rate_limit) and AWS's IP reputation rule group with its own actions, which block most listed addresses and only count some (see docs/deploy.md). It only sees traffic through CloudFront; the Function URL stays directly reachable. Without enable_cloudfront it creates nothing, and the plan warns."
+  default     = false
+}
+
+variable "waf_rate_limit" {
+  type        = number
+  description = "Requests one IP address may make through CloudFront in any 5 minutes before the WAF blocks it, until its rate falls back under the limit. Only used with enable_waf. The default, 1000, is about 3 a second sustained: far more than a small admin team behind one office NAT clicks through, and far less than a scripted flood."
+  default     = 1000
+
+  validation {
+    condition     = var.waf_rate_limit >= 10 && var.waf_rate_limit <= 2000000000 && floor(var.waf_rate_limit) == var.waf_rate_limit
+    error_message = "waf_rate_limit must be a whole number from 10 to 2,000,000,000, the range AWS WAF accepts."
+  }
+}
+
 variable "tags" {
   type        = map(string)
   description = "Extra tags merged into the tags of every taggable resource."
