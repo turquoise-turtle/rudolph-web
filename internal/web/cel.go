@@ -120,14 +120,12 @@ func (t *celTry) evaluate() string {
 		return "the secure signing time must be a date such as 2025-01-31 or a time such as 2025-01-31T09:00:00Z"
 	}
 
-	result, err := santacel.Evaluate(t.Expr, c)
+	result, cacheable, err := santacel.Try(t.Expr, c)
 	if err != nil {
 		t.Error = err.Error()
 		return ""
 	}
-	t.Result = result
-	// Evaluate has checked the expression already, so this cannot fail.
-	t.Cacheable, _ = santacel.Cacheable(t.Expr)
+	t.Result, t.Cacheable = result, cacheable
 	return ""
 }
 

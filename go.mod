@@ -7,6 +7,7 @@ toolchain go1.27.3
 require (
 	cel.dev/cel-go v0.33.2
 	github.com/airbnb/rudolph v0.0.0-20261111050951-6a20ffe6b638
+	github.com/antlr4-go/antlr/v4 v4.13.1
 	github.com/aws/aws-lambda-go v1.55.1
 	github.com/aws/aws-sdk-go-v2 v1.47.8
 	github.com/aws/aws-sdk-go-v2/config v1.33.16
@@ -23,7 +24,6 @@ require (
 require (
 	cel.dev/expr v0.25.1 // indirect
 	github.com/agext/levenshtein v1.2.3 // indirect
-	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/apparentlymart/go-textseg/v15 v15.0.0 // indirect
 	github.com/apparentlymart/go-textseg/v17 v17.0.1 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.16 // indirect
