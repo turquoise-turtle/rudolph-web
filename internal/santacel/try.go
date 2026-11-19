@@ -13,10 +13,13 @@ import (
 	"unicode/utf8"
 
 	"cel.dev/cel-go/cel"
+	"cel.dev/cel-go/common/ast"
 	"cel.dev/cel-go/common/functions"
 	"cel.dev/cel-go/common/types"
 	"cel.dev/cel-go/common/types/ref"
 	"cel.dev/cel-go/common/types/traits"
+	"cel.dev/cel-go/parser/gen"
+	"github.com/antlr4-go/antlr/v4"
 )
 
 // The try form evaluates an expression for anyone signed in, in a Lambda of a
@@ -111,9 +114,9 @@ type guardedFunction struct {
 	name  string
 	ids   []string
 	check func(g *tryGuard, args []ref.Val) error
-	// run, when set, replaces cel-go's implementation for arguments check
-	// passes.
-	run func(g *tryGuard, args []ref.Val) ref.Val
+	// run, when set, replaces cel-go's implementation, orig, for arguments
+	// check passes, or returns nil to leave them to it.
+	run func(g *tryGuard, orig *functions.Overload, args []ref.Val) ref.Val
 }
 
 var guardedFunctions = []guardedFunction{
@@ -134,6 +137,24 @@ var guardedFunctions = []guardedFunction{
 	{name: "bytes", ids: []string{"string_to_bytes"}, check: checkConversion},
 	{name: "string", ids: []string{"bytes_to_string"}, check: checkConversion},
 	{name: "matches", ids: []string{"matches", "matches_string"}, check: checkMatches, run: runMatches},
+	// A failed conversion's error quotes the string it could not convert.
+	{name: "int", ids: []string{"string_to_int64"}, check: checkBuilt, run: runConversion},
+	{name: "uint", ids: []string{"string_to_uint64"}, check: checkBuilt, run: runConversion},
+	{name: "double", ids: []string{"string_to_double"}, check: checkBuilt, run: runConversion},
+	{name: "timestamp", ids: []string{"string_to_timestamp"}, check: checkBuilt, run: runConversion},
+	{name: "duration", ids: []string{"string_to_duration"}, check: checkBuilt, run: runConversion},
+	// cel-go loads a named time zone from the zone files on every call, and
+	// charges the call as one.
+	{name: "getFullYear", ids: []string{"timestamp_to_year_with_tz"}, check: checkZone},
+	{name: "getMonth", ids: []string{"timestamp_to_month_with_tz"}, check: checkZone},
+	{name: "getDayOfYear", ids: []string{"timestamp_to_day_of_year_with_tz"}, check: checkZone},
+	{name: "getDayOfMonth", ids: []string{"timestamp_to_day_of_month_with_tz"}, check: checkZone},
+	{name: "getDate", ids: []string{"timestamp_to_day_of_month_1_based_with_tz"}, check: checkZone},
+	{name: "getDayOfWeek", ids: []string{"timestamp_to_day_of_week_with_tz"}, check: checkZone},
+	{name: "getHours", ids: []string{"timestamp_to_hours_with_tz"}, check: checkZone},
+	{name: "getMinutes", ids: []string{"timestamp_to_minutes_with_tz"}, check: checkZone},
+	{name: "getSeconds", ids: []string{"timestamp_to_seconds_tz"}, check: checkZone},
+	{name: "getMilliseconds", ids: []string{"timestamp_to_milliseconds_with_tz"}, check: checkZone},
 }
 
 // originalBindings are cel-go's implementations of the guarded functions, by
@@ -190,11 +211,13 @@ func (g *tryGuard) programOption() cel.ProgramOption {
 				OperandTrait: orig.OperandTrait,
 				NonStrict:    orig.NonStrict,
 				Function: func(args ...ref.Val) ref.Val {
-					if err := f.check(g, args); err != nil {
-						return types.WrapErr(err)
+					if f.check != nil {
+						if err := f.check(g, args); err != nil {
+							return types.WrapErr(err)
+						}
 					}
 					if f.run != nil {
-						if v := f.run(g, args); v != nil {
+						if v := f.run(g, orig, args); v != nil {
 							return v
 						}
 					}
@@ -358,14 +381,14 @@ func checkFormat(g *tryGuard, args []ref.Val) error {
 	if !ok {
 		return nil
 	}
-	size, err := formatSize(f, list)
+	size, copied, err := formatSize(f, list)
 	if err != nil {
 		return err
 	}
 	if err := g.buildString(size); err != nil {
 		return err
 	}
-	return g.charge((formatOverhead - 1) * size)
+	return g.charge((formatOverhead - 1) * (size + copied))
 }
 
 // formatOverhead is about how many bytes format allocates per byte it writes:
@@ -374,12 +397,14 @@ func checkFormat(g *tryGuard, args []ref.Val) error {
 const formatOverhead = 4
 
 // formatSize is the length of f.format(list) as the strings extension (v4 and
-// later) writes it, worked out without writing it. Where the clauses stop
-// making sense, it stops counting: format then refuses them itself, having
-// written no more than counted.
-func formatSize(f string, list traits.Lister) (uint64, error) {
+// later) writes it, worked out without writing it, and how much of that it
+// writes more than once: each key and value of a map is written to a string
+// of its own and then copied into the map's, so a value nested in maps is
+// written again at every level. Where the clauses stop making sense, it stops
+// counting: format then refuses them itself, having written no more than
+// counted.
+func formatSize(f string, list traits.Lister) (n, copied uint64, err error) {
 	var (
-		n       uint64
 		clauses int
 		arg     int64
 		scratch = make([]byte, 0, 512)
@@ -397,7 +422,7 @@ func formatSize(f string, list traits.Lister) (uint64, error) {
 			continue
 		}
 		if clauses++; clauses > maxTryFormatClauses {
-			return n, errTryClauses
+			return n, copied, errTryClauses
 		}
 		i++
 		precision := 6
@@ -408,27 +433,30 @@ func formatSize(f string, list traits.Lister) (uint64, error) {
 			}
 			p, err := strconv.Atoi(f[i+1 : j])
 			if err != nil || p > 100 {
-				return n, nil
+				return n, copied, nil
 			}
 			precision, i = p, j
 		}
 		if i >= len(f) || arg >= count {
-			return n, nil
+			return n, copied, nil
 		}
-		m, ok := clauseSize(f[i], precision, list.Get(types.Int(arg)), maxTryString-n, &scratch)
+		m, ok := clauseSize(f[i], precision, list.Get(types.Int(arg)), maxTryString-n, &scratch, &copied)
 		if !ok {
-			return n, nil
+			return n, copied, nil
 		}
 		if n += m; n > maxTryString {
-			return n, errTryString
+			return n, copied, errTryString
+		}
+		if copied > maxTryBuilt {
+			return n, copied, errTryBuilt
 		}
 		arg++
 		i++
 	}
-	return n, nil
+	return n, copied, nil
 }
 
-func clauseSize(verb byte, precision int, v ref.Val, room uint64, scratch *[]byte) (uint64, bool) {
+func clauseSize(verb byte, precision int, v ref.Val, room uint64, scratch *[]byte, copied *uint64) (uint64, bool) {
 	appended := func(b []byte) (uint64, bool) {
 		*scratch = b[:0]
 		return uint64(len(b)), true
@@ -446,11 +474,11 @@ func clauseSize(verb byte, precision int, v ref.Val, room uint64, scratch *[]byt
 	}
 	switch verb {
 	case 's':
-		return valueSize(v, room, scratch)
+		return valueSize(v, room, scratch, copied)
 	case 'd':
 		switch v.(type) {
 		case types.Int, types.Uint, types.Double:
-			return valueSize(v, room, scratch)
+			return valueSize(v, room, scratch, copied)
 		}
 	case 'f', 'e':
 		x, ok := float(v)
@@ -485,8 +513,9 @@ func clauseSize(verb byte, precision int, v ref.Val, room uint64, scratch *[]byt
 	return 0, false
 }
 
-// valueSize is the length of v written by %s, counting no further than room.
-func valueSize(v ref.Val, room uint64, scratch *[]byte) (uint64, bool) {
+// valueSize is the length of v written by %s, counting no further than room,
+// and adds to copied what it writes twice: the keys and values of maps.
+func valueSize(v ref.Val, room uint64, scratch *[]byte, copied *uint64) (uint64, bool) {
 	appended := func(b []byte) uint64 {
 		*scratch = b[:0]
 		return uint64(len(b))
@@ -539,7 +568,7 @@ func valueSize(v ref.Val, room uint64, scratch *[]byte) (uint64, bool) {
 			if i > 0 {
 				n += 2
 			}
-			m, ok := valueSize(it.Next(), room-min(n, room), scratch)
+			m, ok := valueSize(it.Next(), room-min(n, room), scratch, copied)
 			if !ok {
 				return n, false
 			}
@@ -561,12 +590,13 @@ func valueSize(v ref.Val, room uint64, scratch *[]byte) (uint64, bool) {
 			if !found {
 				return n, false
 			}
-			k, ok1 := valueSize(key, room-min(n, room), scratch)
-			e, ok2 := valueSize(val, room-min(n+k, room), scratch)
+			k, ok1 := valueSize(key, room-min(n, room), scratch, copied)
+			e, ok2 := valueSize(val, room-min(n+k, room), scratch, copied)
 			if !ok1 || !ok2 {
 				return n, false
 			}
 			n += k + 2 + e
+			*copied += k + e
 		}
 		return n, true
 	}
@@ -598,7 +628,7 @@ func checkMatches(g *tryGuard, args []ref.Val) error {
 // runMatches matches with the program checkMatches compiled, as the standard
 // library's matches does with regexp.MatchString, so that a pattern is
 // compiled once in a try however often it is matched.
-func runMatches(g *tryGuard, args []ref.Val) ref.Val {
+func runMatches(g *tryGuard, _ *functions.Overload, args []ref.Val) ref.Val {
 	s, _ := strArg(args, 0)
 	pattern, _ := strArg(args, 1)
 	r := g.regexps[pattern]
@@ -676,53 +706,284 @@ func programSize(re *syntax.Regexp) uint64 {
 	return 1
 }
 
-// negativeNumbers counts the minus signs written on a number, rather than
-// between two operands, outside string literals and comments.
-func negativeNumbers(expr string) int {
-	n := 0
-	var prev byte // the last byte of the last token, or 0 at the start
-	for i := 0; i < len(expr); i++ {
-		c := expr[i]
-		switch {
-		case c == '/' && strings.HasPrefix(expr[i:], "//"):
-			for i < len(expr) && expr[i] != '\n' {
-				i++
-			}
-		case c == '\'' || c == '"':
-			raw := false
-			for j := i - 1; j >= 0 && j >= i-2 && strings.IndexByte("rRbB", expr[j]) >= 0; j-- {
-				raw = raw || expr[j] == 'r' || expr[j] == 'R'
-			}
-			quote := expr[i : i+1]
-			if strings.HasPrefix(expr[i:], strings.Repeat(quote, 3)) {
-				quote = expr[i : i+3]
-			}
-			i += len(quote)
-			for i < len(expr) && !strings.HasPrefix(expr[i:], quote) {
-				if expr[i] == '\\' && !raw {
-					i++
-				}
-				i++
-			}
-			i += len(quote) - 1
-			prev = c
-		case c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f':
-		case c == '-':
-			if prev == 0 || strings.IndexByte("([{,?:!=<>&|+-*/%", prev) >= 0 {
-				j := i + 1
-				for j < len(expr) && strings.IndexByte(" \t\n\r\f", expr[j]) >= 0 {
-					j++
-				}
-				if j < len(expr) && (isDigit(expr[j]) || expr[j] == '.' && j+1 < len(expr) && isDigit(expr[j+1])) {
-					n++
-				}
-			}
-			prev = c
-		default:
-			prev = c
-		}
+// checkBuilt refuses any call once the try has built more than it allows,
+// for calls that charge only after they have run.
+func checkBuilt(g *tryGuard, _ []ref.Val) error {
+	if g.built > maxTryBuilt {
+		return errTryBuilt
 	}
-	return n
+	return nil
 }
 
-func isDigit(c byte) bool { return c >= '0' && c <= '9' }
+// runConversion charges a failed conversion of a string for what it built:
+// the error the parser gave, which copies or quotes the string (quoting takes
+// at most four bytes a byte), and cel-go's error. A conversion that succeeds
+// builds nothing in proportion to the string.
+func runConversion(g *tryGuard, orig *functions.Overload, args []ref.Val) ref.Val {
+	v := callOriginal(orig, args)
+	if e, ok := v.(*types.Err); ok {
+		s, _ := strArg(args, 0)
+		if err := g.charge(4*uint64(len(s)) + uint64(len(e.String()))); err != nil {
+			return types.WrapErr(err)
+		}
+	}
+	return v
+}
+
+// zoneLoadBytes is about what loading a named time zone allocates: 5 KiB for
+// Australia/Sydney, 8.5 KiB for Europe/London.
+const zoneLoadBytes = 8 << 10
+
+// checkZone charges a call with a named time zone for loading the zone, which
+// cel-go does on every call. UTC and Local are not loaded, and an offset such
+// as +10:00 is not a name.
+func checkZone(g *tryGuard, args []ref.Val) error {
+	name, ok := strArg(args, 1)
+	if !ok || name == "" || name == "UTC" || name == "Local" || strings.Contains(name, ":") {
+		return nil
+	}
+	return g.charge(zoneLoadBytes)
+}
+
+// negativeNumbers counts the minus signs directly before a number, with
+// cel-go's own lexer, so that comments, keywords and unclosed quotes are read
+// as the parser will read them. A minus between two operands is counted too:
+// the lexer cannot tell it apart, and real expressions have few of either.
+func negativeNumbers(expr string) int {
+	lexer := &tokenTypes{CELLexer: gen.NewCELLexer(antlr.NewInputStream(expr))}
+	lexer.RemoveErrorListeners()
+	lexer.Virt = lexer
+	n := 0
+	minus := false
+	for {
+		switch lexer.NextToken().GetTokenType() {
+		case antlr.TokenEOF:
+			return n
+		case gen.CELLexerWHITESPACE, gen.CELLexerCOMMENT:
+			// The parser does not see them, so they do not part a sign from
+			// its number.
+		case gen.CELLexerNUM_INT, gen.CELLexerNUM_UINT, gen.CELLexerNUM_FLOAT:
+			if minus {
+				n++
+			}
+			minus = false
+		case gen.CELLexerMINUS:
+			minus = true
+		default:
+			minus = false
+		}
+	}
+}
+
+// tokenTypes is cel-go's lexer handing out the same token each time, keeping
+// only its type: a token of its own each would allocate about 1.5 MiB for
+// 16 KiB of short tokens, on top of what parsing them costs.
+type tokenTypes struct {
+	*gen.CELLexer
+	token reusedToken
+}
+
+func (l *tokenTypes) Emit() antlr.Token {
+	l.token.tokenType = l.GetType()
+	l.EmitToken(&l.token)
+	return &l.token
+}
+
+type reusedToken struct {
+	antlr.Token
+	tokenType int
+}
+
+func (t *reusedToken) GetTokenType() int { return t.tokenType }
+
+// cel-go's checker costs far more than parsing for two kinds of expression,
+// which the try form refuses before checking. An expression with either
+// fails the check or is nothing a rule would be, so this changes only why it
+// is refused.
+//
+// The checker suggests a declared name for each name it cannot find, comparing
+// it with every declared name by edit distance, so a long undeclared name, or
+// many of them, cost far more to check than to parse.
+//
+// It works out a type for each list and map, nested as deeply as they are, and
+// the work grows with about the fourth power of the depth: lists and maps 64
+// deep cost 12 MiB to check, and 140 deep over 200 MiB.
+const (
+	// maxTryUndeclaredName bounds an undeclared name's length. Every name the
+	// environment declares is far shorter.
+	maxTryUndeclaredName = 64
+	// maxTryUndeclared bounds how many references to undeclared names a try
+	// checks.
+	maxTryUndeclared = 32
+	// maxTryNesting bounds how deeply lists and maps, including those the map
+	// and filter macros build, are nested in a try. 16 deep check in about
+	// 1 MiB; real expressions nest two or three.
+	maxTryNesting = 16
+)
+
+var (
+	errTryUndeclaredName = fmt.Errorf("the expression uses an undeclared name longer than %d bytes, more than the try form checks", maxTryUndeclaredName)
+	errTryUndeclared     = fmt.Errorf("the expression uses undeclared names more than %d times, more than the try form checks", maxTryUndeclared)
+	errTryNesting        = fmt.Errorf("the expression nests lists and maps more than %d deep, more than the try form checks", maxTryNesting)
+)
+
+var declaredVariables = map[string]bool{}
+
+func init() {
+	for _, v := range env.Variables() {
+		declaredVariables[v.Name()] = true
+	}
+}
+
+// declaredIdent reports whether the checker can resolve name as a variable,
+// a constant, an enum value or a type.
+func declaredIdent(name string) bool {
+	if declaredVariables[name] {
+		return true
+	}
+	if _, ok := env.CELTypeProvider().FindIdent(name); ok {
+		return true
+	}
+	_, ok := env.CELTypeProvider().FindStructType(name)
+	return ok
+}
+
+// qualifiedName is the dotted name a chain of field selections on an
+// identifier spells, such as santa.cel.v1.ReturnValue.ALLOWLIST, or false
+// for any other expression.
+func qualifiedName(e ast.Expr) (string, bool) {
+	var fields []string
+	for e.Kind() == ast.SelectKind && !e.AsSelect().IsTestOnly() {
+		fields = append(fields, e.AsSelect().FieldName())
+		e = e.AsSelect().Operand()
+	}
+	if e.Kind() != ast.IdentKind {
+		return "", false
+	}
+	fields = append(fields, e.AsIdent())
+	slices.Reverse(fields)
+	return strings.Join(fields, "."), true
+}
+
+// maxQualifiedName is longer than any qualified name the environment declares,
+// so that a long chain of selections is not looked up at every length.
+const maxQualifiedName = 256
+
+// checkParsed refuses a parsed expression with an undeclared name longer than
+// maxTryUndeclaredName, more than maxTryUndeclared references to undeclared
+// names, or lists and maps nested more than maxTryNesting deep. It resolves
+// names as the checker does: a chain of selections may name a qualified
+// identifier, and a method call on one a qualified function. Where it is
+// unsure, it takes the name as declared.
+func checkParsed(root ast.Expr) error {
+	undeclared := 0
+	refer := func(name string) error {
+		if len(name) > maxTryUndeclaredName {
+			return errTryUndeclaredName
+		}
+		if undeclared++; undeclared > maxTryUndeclared {
+			return errTryUndeclared
+		}
+		return nil
+	}
+	var visit func(e ast.Expr, bound []string, nesting int) error
+	visit = func(e ast.Expr, bound []string, nesting int) error {
+		if e == nil {
+			return nil
+		}
+		if k := e.Kind(); k == ast.ListKind || k == ast.MapKind {
+			if nesting++; nesting > maxTryNesting {
+				return errTryNesting
+			}
+		}
+		switch e.Kind() {
+		case ast.IdentKind:
+			if name := e.AsIdent(); !slices.Contains(bound, name) && !declaredIdent(name) {
+				return refer(name)
+			}
+		case ast.SelectKind:
+			name, ok := qualifiedName(e)
+			if !ok {
+				return visit(e.AsSelect().Operand(), bound, nesting)
+			}
+			root, _, _ := strings.Cut(name, ".")
+			if slices.Contains(bound, root) {
+				return nil
+			}
+			for i := len(name); i > len(root); i = strings.LastIndexByte(name[:i], '.') {
+				if i <= maxQualifiedName && declaredIdent(name[:i]) {
+					return nil
+				}
+			}
+			if !declaredIdent(root) {
+				return refer(root)
+			}
+		case ast.CallKind:
+			call := e.AsCall()
+			fn := call.FunctionName()
+			if call.IsMemberFunction() {
+				target := call.Target()
+				if prefix, ok := qualifiedName(target); ok && env.HasFunction(prefix+"."+fn) {
+					target = nil
+				} else if !env.HasFunction(fn) {
+					if err := refer(fn); err != nil {
+						return err
+					}
+				}
+				if err := visit(target, bound, nesting); err != nil {
+					return err
+				}
+			} else if !env.HasFunction(fn) {
+				if err := refer(fn); err != nil {
+					return err
+				}
+			}
+			for _, a := range call.Args() {
+				if err := visit(a, bound, nesting); err != nil {
+					return err
+				}
+			}
+		case ast.ComprehensionKind:
+			c := e.AsComprehension()
+			inner := append(slices.Clone(bound), c.IterVar(), c.AccuVar())
+			if c.HasIterVar2() {
+				inner = append(inner, c.IterVar2())
+			}
+			for _, sub := range []struct {
+				e     ast.Expr
+				bound []string
+			}{
+				{c.IterRange(), bound}, {c.AccuInit(), bound},
+				{c.LoopCondition(), inner}, {c.LoopStep(), inner},
+				{c.Result(), append(slices.Clone(bound), c.AccuVar())},
+			} {
+				if err := visit(sub.e, sub.bound, nesting); err != nil {
+					return err
+				}
+			}
+		case ast.ListKind:
+			for _, el := range e.AsList().Elements() {
+				if err := visit(el, bound, nesting); err != nil {
+					return err
+				}
+			}
+		case ast.MapKind:
+			for _, entry := range e.AsMap().Entries() {
+				if err := visit(entry.AsMapEntry().Key(), bound, nesting); err != nil {
+					return err
+				}
+				if err := visit(entry.AsMapEntry().Value(), bound, nesting); err != nil {
+					return err
+				}
+			}
+		case ast.StructKind:
+			for _, f := range e.AsStruct().Fields() {
+				if err := visit(f.AsStructField().Value(), bound, nesting); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+	return visit(root, nil, 0)
+}

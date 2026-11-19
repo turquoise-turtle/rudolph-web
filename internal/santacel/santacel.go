@@ -9,6 +9,7 @@
 package santacel
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"maps"
@@ -19,6 +20,7 @@ import (
 	"cel.dev/cel-go/cel"
 	"cel.dev/cel-go/common/ast"
 	"cel.dev/cel-go/common/types"
+	"cel.dev/cel-go/common/types/ref"
 	"cel.dev/cel-go/ext"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protodesc"
@@ -224,6 +226,14 @@ func Check(expr string) error {
 }
 
 func compile(expr string) (*cel.Ast, error) {
+	parsed, err := parse(expr)
+	if err != nil {
+		return nil, err
+	}
+	return check(parsed)
+}
+
+func parse(expr string) (*cel.Ast, error) {
 	if strings.TrimSpace(expr) == "" {
 		return nil, errors.New("the expression is empty")
 	}
@@ -231,6 +241,10 @@ func compile(expr string) (*cel.Ast, error) {
 	if iss.Err() != nil {
 		return nil, issuesError(iss)
 	}
+	return parsed, nil
+}
+
+func check(parsed *cel.Ast) (*cel.Ast, error) {
 	checked, iss := env.Check(parsed)
 	if iss.Err() != nil {
 		if names := workshopOnly(parsed.NativeRep().Expr()); len(names) > 0 {
@@ -372,18 +386,33 @@ func Cacheable(expr string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	return cacheable(checked), nil
+}
+
+func cacheable(checked *cel.Ast) bool {
 	cacheable := true
 	walk(checked.NativeRep().Expr(), nil, func(e ast.Expr, bound []string) {
 		if e.Kind() == ast.IdentKind && contextVariables[e.AsIdent()] && !slices.Contains(bound, e.AsIdent()) {
 			cacheable = false
 		}
 	})
-	return cacheable, nil
+	return cacheable
 }
 
 // costLimit bounds an evaluation from the try form, which anyone signed in
 // can use; Santa's own rules are nowhere near it.
 const costLimit = 1_000_000
+
+// tryDeadline stops a try that takes too long however little it builds, as
+// calls cel-go charges as one can each take far longer than that suggests.
+// Real expressions evaluate in well under a millisecond.
+const tryDeadline = time.Second
+
+// interruptEvery is how many iterations of a loop cel-go runs between looks
+// at the deadline.
+const interruptEvery = 100
+
+var errTryDeadline = fmt.Errorf("the expression took longer than the %d second the try form allows", int(tryDeadline/time.Second))
 
 // Evaluate runs an expression against a sample execution and returns the
 // policy Santa would apply: true is ALLOWLIST, false BLOCKLIST, and an int
@@ -391,28 +420,58 @@ const costLimit = 1_000_000
 // runtime errors are errors, as Santa then applies no rule.
 //
 // It is the try form's, open to anyone signed in, so it refuses an expression
-// that builds or compiles more than the bounds in try.go allow, as it does so.
+// that builds or compiles more than the bounds in try.go allow, as it does so,
+// or that takes longer than tryDeadline.
 func Evaluate(expr string, c Context) (string, error) {
+	result, _, err := Try(expr, c)
+	return result, err
+}
+
+// Try is Evaluate that also reports whether Santa may cache the result, as
+// Cacheable does, from the expression it has checked already: parsing and
+// checking are most of what a long expression costs, so the try form does
+// them once.
+func Try(expr string, c Context) (result string, cacheableResult bool, err error) {
 	if negativeNumbers(expr) > maxTryNegativeNumbers {
-		return "", errTryNegativeCount
+		return "", false, errTryNegativeCount
 	}
-	checked, err := compile(expr)
+	parsed, err := parse(expr)
 	if err != nil {
-		return "", err
+		return "", false, err
+	}
+	if err := checkParsed(parsed.NativeRep().Expr()); err != nil {
+		return "", false, err
+	}
+	checked, err := check(parsed)
+	if err != nil {
+		return "", false, err
 	}
 	var guard tryGuard
-	prg, err := env.Program(checked, cel.CostLimit(costLimit), guard.programOption())
+	prg, err := env.Program(checked, cel.CostLimit(costLimit), cel.InterruptCheckFrequency(interruptEvery), guard.programOption())
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
 	vars, err := cel.ContextProtoVars(c.message())
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
-	out, _, err := prg.Eval(vars)
+	ctx, cancel := context.WithTimeout(context.Background(), tryDeadline)
+	defer cancel()
+	out, _, err := prg.ContextEval(ctx, vars)
 	if err != nil {
-		return "", err
+		if ctx.Err() != nil {
+			return "", false, errTryDeadline
+		}
+		return "", false, err
 	}
+	result, err = policy(out)
+	if err != nil {
+		return "", false, err
+	}
+	return result, cacheable(checked), nil
+}
+
+func policy(out ref.Val) (string, error) {
 	switch v := out.(type) {
 	case types.Bool:
 		if v {
