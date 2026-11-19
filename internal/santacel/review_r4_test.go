@@ -109,9 +109,10 @@ func TestEvaluate_ReviewR4_LeadingDotNamesAreDeclared(t *testing.T) {
 // Pins: each pre-check and the deadline is the only thing that stops its case, so removing it fails the test.
 // Without the nesting check, 17 deep checks in about 1 MiB and runs; without the name checks, the checker reports
 // the names as undeclared. cel-go charges a conversion as one however long its string, and a conversion that
-// succeeds builds nothing the guards charge, so converting an 8 KiB int (leading zeros, then 1) four times in each of
-// 819,200 iterations takes about 40 microseconds an iteration, and passes the 1 second deadline well before the
-// cost limit. Four conversions an iteration rather than one keep the loop's own allocations within the bound.
+// succeeds builds nothing the guards charge. Parsing an 8 KiB duration (4,096 of 1s) twice an iteration, for a cost
+// of about three, takes long enough that without the deadline the cost limit stops the loop only after about 12 s on
+// the machine the test was written on, so the deadline stays the only thing that stops it within the bound on
+// machines several times faster. A comparison that holds keeps all going, and its iterations build little.
 func TestEvaluate_ReviewR4_EachPreCheckAndTheDeadlineAreNeeded(t *testing.T) {
 	for _, tc := range []struct {
 		name, expr string
@@ -122,8 +123,8 @@ func TestEvaluate_ReviewR4_EachPreCheckAndTheDeadlineAreNeeded(t *testing.T) {
 		{"one undeclared name of 65 bytes", strings.Repeat("u", 65) + " == 1", santacel.Context{}, refusedUndeclaredName},
 		{"33 undeclared references", "[" + strings.Repeat("u,", 32) + "u] == []", santacel.Context{}, refusedUndeclared},
 		{"a long loop of conversions that succeed",
-			"[cwd.split('')].all(l, path.split('').all(c, l.all(d, int(path) + int(path) + int(path) + int(path) == 4)))",
-			santacel.Context{Path: strings.Repeat("0", 8191) + "1", CWD: strings.Repeat("c", 100)}, refusedDeadline},
+			"[cwd.split('')].all(l, path.split('').all(c, l.all(d, duration(path) == duration(path))))",
+			santacel.Context{Path: strings.Repeat("1s", 4096), CWD: strings.Repeat("c", 100)}, refusedDeadline},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			assertRefusedWith(t, tc.expr, tc.c, tc.want)
