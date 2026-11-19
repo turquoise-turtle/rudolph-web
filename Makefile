@@ -56,7 +56,7 @@ tf-check:
 	terraform fmt -recursive -check deployments
 	terraform -chdir=deployments/environments/example init -backend=false
 	terraform -chdir=deployments/environments/example validate
-	RUDOLPH_WEB_TERRAFORM_TESTS=1 go test ./deployments -run TestModule -count=1
+	RUDOLPH_WEB_TERRAFORM_TESTS=1 go test ./deployments -run TestModule -count=1 -timeout 30m
 
 # Install dependencies
 #

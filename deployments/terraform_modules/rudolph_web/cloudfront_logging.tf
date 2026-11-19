@@ -22,7 +22,7 @@ locals {
   # bucket names must be, and so never ends in a reserved suffix (-s3alias, --ol-s3, .mrap, --x-s3) or looks
   # like an IP address.
   s3_reserved_prefixes    = ["xn--", "sthree-", "amzn-s3-demo-"]
-  log_bucket_prefix_as_is = can(regex("^[a-z0-9][a-z0-9-]{0,29}$", var.prefix)) && !endswith(var.prefix, "-") && !anytrue([for r in local.s3_reserved_prefixes : startswith(var.prefix, r)])
+  log_bucket_prefix_as_is = can(regex("^[a-z0-9][a-z0-9-]{0,29}$", var.prefix)) && !endswith(var.prefix, "-") && !anytrue([for r in local.s3_reserved_prefixes : startswith("${var.prefix}-", r)])
   log_bucket_safe_prefix  = trim(substr(trim(replace(lower(var.prefix), "/[^a-z0-9]+/", "-"), "-"), 0, 24), "-")
   log_bucket_safe_start = (local.log_bucket_safe_prefix == "" || anytrue([for r in local.s3_reserved_prefixes : startswith("${local.log_bucket_safe_prefix}-", r)])
     ? trimsuffix("rw-${local.log_bucket_safe_prefix}", "-")
