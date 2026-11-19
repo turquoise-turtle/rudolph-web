@@ -5,7 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
+	"encoding/binary"
 	"errors"
 	"fmt"
 
@@ -16,7 +16,16 @@ import (
 // same secret (the session cookie key).
 const cursorInfo = "rudolph-web/cursor/v1"
 
+// cursorMACInfo separates cursors of this form from those of the first one
+// (JSON holding the query and the position), which are refused like any other
+// cursor that does not verify.
+const cursorMACInfo = "rudolph-web/cursor-mac/v2"
+
 const cursorMACLen = 16
+
+// cursorForm follows the MAC in every cursor, so a later form can be told
+// from this one before anything is parsed.
+const cursorForm = 2
 
 // DeriveCursorKey derives the cursor signing key from an application secret,
 // typically the session cookie key, with HKDF-SHA256 and a cursor-specific
@@ -57,19 +66,16 @@ func NewCursorCodec(key []byte) (*CursorCodec, error) {
 	return &CursorCodec{key: key}, nil
 }
 
-type cursorPayload struct {
-	Query    string `json:"q"`
-	Position string `json:"k"`
-}
-
 // Encode returns an opaque cursor resuming query at position.
+//
+// The cursor is the truncated MAC, the form's number and the position's own
+// bytes, in base64url. The query is signed but not carried, and nothing is escaped, so
+// a cursor is about a third longer than its position however odd the
+// position's bytes are: part of a DynamoDB key comes from what a Mac uploaded,
+// and a cursor that grew with it could outgrow a URL.
 func (c *CursorCodec) Encode(query, position string) (string, error) {
-	payload, err := json.Marshal(cursorPayload{Query: query, Position: position})
-	if err != nil {
-		return "", err
-	}
-	mac := c.mac(payload)
-	return base64.RawURLEncoding.EncodeToString(append(mac[:cursorMACLen], payload...)), nil
+	mac := c.mac(query, position)
+	return base64.RawURLEncoding.EncodeToString(append(append(mac[:cursorMACLen], cursorForm), position...)), nil
 }
 
 // Decode verifies cursor and returns the position to resume from. It returns
@@ -79,25 +85,25 @@ func (c *CursorCodec) Decode(query, cursor string) (string, error) {
 	// Strict decoding rejects non-canonical trailing bits, so no edit of the
 	// encoded string can leave the decoded bytes unchanged.
 	raw, err := base64.RawURLEncoding.Strict().DecodeString(cursor)
-	if err != nil || len(raw) <= cursorMACLen {
+	if err != nil || len(raw) <= cursorMACLen || raw[cursorMACLen] != cursorForm {
 		return "", ErrInvalidCursor
 	}
-	mac, payload := raw[:cursorMACLen], raw[cursorMACLen:]
-	want := c.mac(payload)
+	mac, position := raw[:cursorMACLen], string(raw[cursorMACLen+1:])
+	want := c.mac(query, position)
 	if !hmac.Equal(mac, want[:cursorMACLen]) {
 		return "", ErrInvalidCursor
 	}
-	var p cursorPayload
-	if err := json.Unmarshal(payload, &p); err != nil || p.Query != query {
-		return "", ErrInvalidCursor
-	}
-	return p.Position, nil
+	return position, nil
 }
 
-func (c *CursorCodec) mac(payload []byte) []byte {
+// mac signs the query and the position. The query's length comes first, so
+// no other split of the same bytes into a query and a position signs alike.
+func (c *CursorCodec) mac(query, position string) []byte {
 	h := hmac.New(sha256.New, c.key)
-	h.Write([]byte(cursorInfo))
+	h.Write([]byte(cursorMACInfo))
 	h.Write([]byte{0})
-	h.Write(payload)
+	h.Write(binary.AppendUvarint(nil, uint64(len(query))))
+	h.Write([]byte(query))
+	h.Write([]byte(position))
 	return h.Sum(nil)
 }

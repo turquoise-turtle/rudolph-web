@@ -160,18 +160,31 @@ func (a *Authenticator) RequireOr(role string, next http.Handler, forbidden Forb
 // login page with the request URI as return_to, other methods get 401. A session cookie that is present, and so
 // invalid or expired, is cleared. Require uses it, and a caller answering for paths outside Require (such as unknown
 // ones) should too, so a signed-out visitor gets the same response everywhere and cannot tell which paths exist. The
-// login handler filters return_to, so whatever the request URI it cannot lead off the site.
+// login handler filters return_to, so whatever the request URI it cannot lead off the site. return_to is left out
+// rather than sent when the login handler would not keep it, or when the redirect carrying it, escaped for a query,
+// would be longer than maxSignInRedirectBytes: escaping can make it three times as long as the flow cookie holds it,
+// a redirect past what browsers and front ends follow.
 func (a *Authenticator) Unauthenticated(w http.ResponseWriter, r *http.Request) {
 	if _, err := r.Cookie(SessionCookieName); err == nil {
 		clearCookie(w, SessionCookieName)
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	if r.Method == http.MethodGet || r.Method == http.MethodHead {
-		http.Redirect(w, r, LoginPath+"?return_to="+url.QueryEscape(r.URL.RequestURI()), http.StatusFound)
+		target := LoginPath
+		if uri := r.URL.RequestURI(); a.keepsReturnTo(uri) {
+			if withReturn := target + "?return_to=" + url.QueryEscape(uri); len(withReturn) <= maxSignInRedirectBytes {
+				target = withReturn
+			}
+		}
+		http.Redirect(w, r, target, http.StatusFound)
 		return
 	}
 	http.Error(w, "Authentication required.", http.StatusUnauthorized)
 }
+
+// maxSignInRedirectBytes bounds the Location of the redirect to sign-in: half the 8 KB browsers and front ends
+// follow, leaving room for the scheme and host a front end may add.
+const maxSignInRedirectBytes = 4096
 
 // ForbiddenMessage is the explanation shown to a signed-in user without role.
 func ForbiddenMessage(role string) string {

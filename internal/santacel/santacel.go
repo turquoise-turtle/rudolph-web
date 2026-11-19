@@ -389,12 +389,19 @@ const costLimit = 1_000_000
 // policy Santa would apply: true is ALLOWLIST, false BLOCKLIST, and an int
 // the policy with that number. UNSPECIFIED, the values reserved for v2 and
 // runtime errors are errors, as Santa then applies no rule.
+//
+// It is the try form's, open to anyone signed in, so it refuses an expression
+// that builds or compiles more than the bounds in try.go allow, as it does so.
 func Evaluate(expr string, c Context) (string, error) {
+	if negativeNumbers(expr) > maxTryNegativeNumbers {
+		return "", errTryNegativeCount
+	}
 	checked, err := compile(expr)
 	if err != nil {
 		return "", err
 	}
-	prg, err := env.Program(checked, cel.CostLimit(costLimit))
+	var guard tryGuard
+	prg, err := env.Program(checked, cel.CostLimit(costLimit), guard.programOption())
 	if err != nil {
 		return "", err
 	}

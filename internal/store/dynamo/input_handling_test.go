@@ -9,6 +9,7 @@ package dynamo_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -101,4 +102,73 @@ type startKeyAPI struct {
 func (a startKeyAPI) Query(_ context.Context, in *dynamodb.QueryInput, _ ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error) {
 	*a.started = in.ExclusiveStartKey
 	return &dynamodb.QueryOutput{}, nil
+}
+
+// noQueryAPI fails the test when the reader asks DynamoDB for anything.
+type noQueryAPI struct {
+	dynamo.ReadAPI
+	t *testing.T
+}
+
+func (a noQueryAPI) Query(_ context.Context, in *dynamodb.QueryInput, _ ...func(*dynamodb.Options)) (*dynamodb.QueryOutput, error) {
+	a.t.Errorf("Query with %d-byte partition key", len(in.ExpressionAttributeValues[":pk"].(*types.AttributeValueMemberS).Value))
+	return &dynamodb.QueryOutput{}, nil
+}
+
+// Only a canonical UUID names a Mac, so any other ID from an address is not found without a read: DynamoDB allows
+// a partition key 2048 bytes and refuses a longer one, which the page would report as a failure of the data store.
+func TestGetMachine_NonUUIDIsNotFoundWithoutARead(t *testing.T) {
+	codec, err := store.NewCursorCodec([]byte(strings.Repeat("k", 32)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := dynamo.New(dynamo.Options{Client: noQueryAPI{t: t}, Table: "rudolph", Cursors: codec})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range append([]string{"", strings.Repeat("A", 3000)}, badMachineIDs...) {
+		if _, err := s.GetMachine(context.Background(), id); !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("GetMachine(%.40q): %v, want not found", id, err)
+		}
+	}
+}
+
+// A position signed for a list whose cursors are not DynamoDB keys (the audit trail's is Rudolph's own) never
+// reaches a key decoder with a matching fingerprint; one that did, or a truncated one, is refused, not a panic.
+func TestEventCursor_MalformedPositionsAreRefused(t *testing.T) {
+	codec, err := store.NewCursorCodec([]byte(strings.Repeat("k", 32)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err := dynamo.New(dynamo.Options{Client: lastKeyAPI{}, Table: "rudolph", EventsTable: "events", Cursors: codec})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const fleet = `["ListExecutionEvents","Fleet_TS","Fleet","Exec"]`
+	// The fingerprint is the fleet list's own: a well-formed key signed with it resumes the list.
+	good := "\x05Fleet\x04Exec\x02PK\x29Exec#" + machineA + "\x02SK\x01a\x02TS\x01b"
+	cursor, err := codec.Encode(fleet, good)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ListExecutionEvents(context.Background(), store.EventFilter{}, store.PageRequest{Limit: 50, Cursor: cursor}); err != nil {
+		t.Fatalf("a well-formed position: %v", err)
+	}
+	for name, position := range map[string]string{
+		"text":               "2026-11-18#0001",
+		"length past end":    "\x02PK\xff\xff\x03",
+		"name without value": "\x02PK",
+		"a name twice":       "\x02PK\x01a\x02PK\x01b",
+		"huge length":        "\xff\xff\xff\xff\xff\xff\xff\xff\xff\x01",
+		"unending length":    "\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff",
+	} {
+		cursor, err := codec.Encode(fleet, position)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = s.ListExecutionEvents(context.Background(), store.EventFilter{}, store.PageRequest{Limit: 50, Cursor: cursor})
+		if !errors.Is(err, store.ErrInvalidCursor) {
+			t.Errorf("%s: %v, want an invalid cursor", name, err)
+		}
+	}
 }
