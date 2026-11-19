@@ -226,6 +226,31 @@ func safeReturnTo(s string) string {
 	return s
 }
 
+// maxFlowCookieBytes is the longest name and value the flow cookie is sent
+// with. Browsers keep 4096 bytes; some count the attributes too, which this
+// leaves room for.
+const maxFlowCookieBytes = 3840
+
+// flowCookieFits reports whether fs seals to a flow cookie of at most
+// maxFlowCookieBytes, name and value together.
+func (a *Authenticator) flowCookieFits(fs flowState) bool {
+	n, err := a.sealer.sealedLen(fs)
+	return err == nil && len(FlowCookieName)+n <= maxFlowCookieBytes
+}
+
+// keepsReturnTo reports whether the login handler would keep returnTo rather
+// than fall back to /: it is safe, and fits the flow cookie. The flow's tokens
+// are random but always as long as randomToken and oauth2.GenerateVerifier
+// make them, 32 bytes in base64, so placeholders of that length seal to a
+// cookie of the same length.
+func (a *Authenticator) keepsReturnTo(returnTo string) bool {
+	if safeReturnTo(returnTo) != returnTo {
+		return false
+	}
+	token := strings.Repeat("x", base64.RawURLEncoding.EncodedLen(32))
+	return a.flowCookieFits(flowState{State: token, Nonce: token, Verifier: token, ReturnTo: returnTo, Created: a.now().Unix()})
+}
+
 func (a *Authenticator) login(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	p, err := a.getProvider()
@@ -246,6 +271,12 @@ func (a *Authenticator) login(w http.ResponseWriter, r *http.Request) {
 		Verifier: oauth2.GenerateVerifier(),
 		ReturnTo: safeReturnTo(r.URL.Query().Get("return_to")),
 		Created:  a.now().Unix(),
+	}
+	// Browsers drop a cookie they find too long without saying so, and the
+	// callback would then fail however often the person tried. Signing in
+	// and landing on the home page is better than not signing in.
+	if !a.flowCookieFits(fs) {
+		fs.ReturnTo = "/"
 	}
 	value, err := a.sealer.seal(FlowCookieName, fs)
 	if err != nil {

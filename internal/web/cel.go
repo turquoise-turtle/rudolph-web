@@ -35,6 +35,13 @@ type celTry struct {
 // open to every viewer.
 const maxTryLines = 256
 
+// maxTrySampleBytes bounds the sample execution as a whole. cel-go charges
+// for a regex match only once it has run, so the cost limit does not stop an
+// expression matching a long pattern against a long value: the time grows
+// with both lengths, and only the expression's is bounded otherwise. A real
+// execution's path, working directory and identifiers are far shorter.
+const maxTrySampleBytes = 8 << 10
+
 // celRules explains CEL rules, lists examples and, given an expression,
 // evaluates it against the sample execution in the query. It only reads, so
 // it is a GET open to viewers, and a bookmark keeps the example tried.
@@ -73,6 +80,9 @@ func (s *server) celRules(w http.ResponseWriter, r *http.Request) {
 func (t *celTry) evaluate() string {
 	if len(t.Expr) > rules.MaxCELExprBytes {
 		return "the expression is longer than the " + strconv.Itoa(rules.MaxCELExprBytes) + " bytes Rudolph stores"
+	}
+	if len(t.Args)+len(t.Envs)+len(t.Path)+len(t.CWD)+len(t.SigningID)+len(t.TeamID) > maxTrySampleBytes {
+		return "the sample execution is longer than the " + strconv.Itoa(maxTrySampleBytes) + " bytes the try form takes"
 	}
 	c := santacel.Context{
 		SigningID: t.SigningID, TeamID: t.TeamID, PlatformBinary: t.Platform,

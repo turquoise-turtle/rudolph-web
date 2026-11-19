@@ -1,6 +1,7 @@
 package web
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/turquoise-turtle/rudolph-web/internal/store"
 	"github.com/turquoise-turtle/rudolph-web/internal/store/rudolphrules"
@@ -27,10 +29,21 @@ func cloneValues(v url.Values) url.Values {
 	return out
 }
 
-// textFilter returns a trimmed query value, or ok=false if it is too long.
-func textFilter(q url.Values, key string) (string, bool) {
+// textFilter returns a trimmed query value, or the reason it is refused. Filters are upper- or lower-cased before
+// they reach the store, and case mapping writes each byte of invalid UTF-8 as a three-byte U+FFFD and lengthens some
+// letters, so the bound must hold for each casing: otherwise a 256-byte filter could reach the store, its cursors and
+// its page links three times as long. No serial number, hostname, machine ID or team ID is invalid UTF-8.
+func textFilter(q url.Values, key string) (string, string) {
 	v := strings.TrimSpace(q.Get(key))
-	return v, len(v) <= maxFilterLen
+	switch {
+	case len(v) > maxFilterLen:
+		return v, "Filter value is too long."
+	case !utf8.ValidString(v):
+		return v, "Filter value is not valid text."
+	case len(strings.ToUpper(v)) > maxFilterLen || len(strings.ToLower(v)) > maxFilterLen:
+		return v, "Filter value is too long."
+	}
+	return v, ""
 }
 
 // ---------------------------------------------------------------------------
@@ -38,10 +51,10 @@ func textFilter(q url.Values, key string) (string, bool) {
 
 func (s *server) machines(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	serial, ok1 := textFilter(q, "serial")
-	hostname, ok2 := textFilter(q, "hostname")
-	if !ok1 || !ok2 {
-		s.renderError(w, r, http.StatusBadRequest, "Filter value is too long.")
+	serial, bad1 := textFilter(q, "serial")
+	hostname, bad2 := textFilter(q, "hostname")
+	if bad := cmp.Or(bad1, bad2); bad != "" {
+		s.renderError(w, r, http.StatusBadRequest, bad)
 		return
 	}
 	if serial != "" && hostname != "" {
@@ -411,10 +424,10 @@ func (s *server) storedMachine(ctx context.Context, id string) (store.Machine, e
 
 func (s *server) events(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	machine, ok1 := textFilter(q, "machine")
-	teamID, ok2 := textFilter(q, "team_id")
-	if !ok1 || !ok2 {
-		s.renderError(w, r, http.StatusBadRequest, "Filter value is too long.")
+	machine, bad1 := textFilter(q, "machine")
+	teamID, bad2 := textFilter(q, "team_id")
+	if bad := cmp.Or(bad1, bad2); bad != "" {
+		s.renderError(w, r, http.StatusBadRequest, bad)
 		return
 	}
 	// The events table's keys are exact, so a value typed in the wrong case would find nothing. Team IDs are always
@@ -472,9 +485,9 @@ func (s *server) events(w http.ResponseWriter, r *http.Request) {
 // fileAccessEvents lists Santa's file access authorisation events, as the events page lists executions.
 func (s *server) fileAccessEvents(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	machine, ok := textFilter(q, "machine")
-	if !ok {
-		s.renderError(w, r, http.StatusBadRequest, "Filter value is too long.")
+	machine, bad := textFilter(q, "machine")
+	if bad != "" {
+		s.renderError(w, r, http.StatusBadRequest, bad)
 		return
 	}
 	decision := store.FileAccessDecision(q.Get("decision"))

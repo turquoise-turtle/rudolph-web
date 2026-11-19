@@ -2,10 +2,12 @@ package dynamo
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -110,7 +112,10 @@ const machineDetailLimit = 8
 // GetMachine implements store.MachineReader with one Query on the
 // Machine#<id> partition.
 func (s *Store) GetMachine(ctx context.Context, machineID string) (store.MachineDetail, error) {
-	if machineID == "" {
+	// Only a canonical UUID names a Mac (the decoders refuse any other ID),
+	// so anything else from an address or a form is not found without a
+	// read: DynamoDB refuses a partition key over 2048 bytes outright.
+	if checkMachineID(machineID) != nil {
 		return store.MachineDetail{}, store.ErrNotFound
 	}
 	// The SK range runs from Config to SyncState so that rows sorting outside
@@ -463,25 +468,33 @@ func (s *Store) queryRules(ctx context.Context, q ruleQuery, p store.PageRequest
 	return page, nil
 }
 
-// encodeCursor serialises a LastEvaluatedKey as a JSON object of its string
-// and number attributes (numbers as their decimal text); encoding/json sorts
-// map keys, so the form is canonical. Decoders know which attributes are
-// numbers.
+// encodeCursor serialises a LastEvaluatedKey's string and number attributes
+// (numbers as their decimal text; decoders know which attributes are numbers)
+// as each name and value in name order, every one behind its length. The
+// form is canonical, and it adds a few bytes to the key whatever the key
+// holds: an event's sort key carries the file_sha256 a Mac uploaded, and JSON
+// would write each control character or angle bracket of it as six bytes.
 func (s *Store) encodeCursor(fingerprint string, key map[string]types.AttributeValue) (string, error) {
-	plain := make(map[string]string, len(key))
-	for name, v := range key {
-		switch v := v.(type) {
+	names := make([]string, 0, len(key))
+	for name := range key {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	var position []byte
+	for _, name := range names {
+		var value string
+		switch v := key[name].(type) {
 		case *types.AttributeValueMemberS:
-			plain[name] = v.Value
+			value = v.Value
 		case *types.AttributeValueMemberN:
-			plain[name] = v.Value
+			value = v.Value
 		default:
 			return "", fmt.Errorf("dynamo: key attribute %s is %T, want a string or number", name, v)
 		}
-	}
-	position, err := json.Marshal(plain)
-	if err != nil {
-		return "", err
+		position = binary.AppendUvarint(position, uint64(len(name)))
+		position = append(position, name...)
+		position = binary.AppendUvarint(position, uint64(len(value)))
+		position = append(position, value...)
 	}
 	return s.cursors.Encode(fingerprint, string(position))
 }
@@ -494,9 +507,27 @@ func (s *Store) decodePosition(fingerprint, cursor string) (map[string]string, e
 	if err != nil {
 		return nil, err
 	}
-	var plain map[string]string
-	if err := json.Unmarshal([]byte(position), &plain); err != nil {
-		return nil, store.ErrInvalidCursor
+	// The signature already vouches for the bytes; a position that does not
+	// parse is one signed for another kind of list (the audit trail's), not
+	// something to index out of range on.
+	rest := []byte(position)
+	next := func() (string, bool) {
+		n, size := binary.Uvarint(rest)
+		if size <= 0 || n > uint64(len(rest)-size) {
+			return "", false
+		}
+		v := string(rest[size : size+int(n)])
+		rest = rest[size+int(n):]
+		return v, true
+	}
+	plain := map[string]string{}
+	for len(rest) > 0 {
+		name, ok1 := next()
+		value, ok2 := next()
+		if _, twice := plain[name]; !ok1 || !ok2 || twice {
+			return nil, store.ErrInvalidCursor
+		}
+		plain[name] = value
 	}
 	return plain, nil
 }

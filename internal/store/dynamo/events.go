@@ -181,7 +181,10 @@ func (s *Store) queryEvents(ctx context.Context, q eventQuery, p store.PageReque
 		}
 		rows.items = append(rows.items, out.Items...)
 		rows.lastKey = out.LastEvaluatedKey
-		if len(rows.items) >= p.Limit || len(out.LastEvaluatedKey) == 0 {
+		// A Query that evaluated no rows made no progress, so querying again
+		// from its key would read nothing new; the page ends there with its
+		// cursor.
+		if len(rows.items) >= p.Limit || len(out.LastEvaluatedKey) == 0 || out.ScannedCount == 0 {
 			break
 		}
 		in.ExclusiveStartKey = out.LastEvaluatedKey

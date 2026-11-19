@@ -17,10 +17,15 @@ const (
 	// maxBackPages bounds how many earlier pages keep a link, so URLs stay short. Older pages collapse to an
 	// ellipsis after page 1.
 	maxBackPages = 4
-	// maxCursorLen bounds each cursor in `back`; store cursors are far shorter. A longer one is dropped from the
-	// trail rather than producing a link that would be refused.
-	maxCursorLen = 1024
-	backSep      = "."
+	// maxCursorLen bounds each cursor in `back`. A store cursor is its DynamoDB key and a third again; the longest
+	// is an event's, whose sort key can fill DynamoDB's 1024 bytes with a file_sha256 a Mac uploaded before Rudolph
+	// refused such values, beside a partition key and an index key a filter can name (256 bytes): under 2000 in
+	// all. A longer one is dropped from the trail rather than producing a link that would be refused.
+	maxCursorLen = 2048
+	// maxLinkLen bounds a whole page link, so that a trail of long cursors cannot make one longer than a front end
+	// passes on: CloudFront allows a URL 8192 bytes, host included.
+	maxLinkLen = 7680
+	backSep    = "."
 	// maxPageNumber keeps an edited `page` from overflowing when the next page is numbered.
 	maxPageNumber = 1 << 20
 )
@@ -136,6 +141,11 @@ func links(path string, filters url.Values, nav pageNav, next string) pager {
 		}
 		back = trimTrail(back)
 		p.Next = pageURL(nav.Number+1, next, back)
+		// The oldest pages go first, as when the trail is full; the next page itself keeps its link.
+		for len(p.Next) > maxLinkLen && len(back) > 0 {
+			back = back[1:]
+			p.Next = pageURL(nav.Number+1, next, back)
+		}
 		p.Items = append(p.Items, pagerItem{Number: nav.Number + 1, URL: p.Next})
 	}
 	return p
