@@ -570,7 +570,9 @@ func parseTemplates(extra ...template.FuncMap) (map[string]*template.Template, e
 		if err != nil {
 			return nil, err
 		}
-		escapeOutput(t)
+		if err := escapeOutput(t); err != nil {
+			return nil, fmt.Errorf("%s: %w", name, err)
+		}
 		pages[short] = t
 	}
 	return pages, nil
@@ -589,7 +591,7 @@ func (s *server) render(w http.ResponseWriter, r *http.Request, status int, page
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
-	_, _ = buf.WriteTo(w)
+	_, _ = w.Write(invisibleAsCharRefs(buf.Bytes()))
 }
 
 func (s *server) renderError(w http.ResponseWriter, r *http.Request, status int, msg string) {

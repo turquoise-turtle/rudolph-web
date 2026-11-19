@@ -34,3 +34,13 @@ locals {
     Prefix      = var.prefix
   }, var.tags)
 }
+
+# enable_cloudfront_logging and enable_waf only act on the CloudFront distribution. Without it they create
+# nothing, so warn rather than let someone believe they have access logs or a WAF. A warning, not an error, so
+# no existing plan stops.
+check "features_need_cloudfront" {
+  assert {
+    condition     = var.enable_cloudfront || !(var.enable_cloudfront_logging || var.enable_waf)
+    error_message = "enable_cloudfront_logging and enable_waf do nothing without enable_cloudfront: no access logs are kept and no WAF is attached. Turn enable_cloudfront on, or turn them off."
+  }
+}

@@ -31,14 +31,29 @@ func TestShow_PipelinesEndingInPredefinedEscapers(t *testing.T) {
 	}
 }
 
-// In a script, numbers and booleans keep their JavaScript types.
+// html/template pads a number or boolean it writes into a script with spaces, so "5-{{.}}" with -1 stays "5- -1 "
+// rather than the decrement "5--1". The rewrite must leave such values exactly as html/template writes them.
 func TestShow_KeepsNumbersAndBooleansInScripts(t *testing.T) {
-	got := render(t, `<script>var n = {{.N}}; var b = {{.B}};</script>`, struct {
-		N int
-		B bool
-	}{3, true})
-	if !strings.Contains(got, "var n = 3;") || !strings.Contains(got, "var b = true;") {
-		t.Errorf("got %q", got)
+	for name, v := range map[string]any{
+		"negative int":   -1,
+		"positive int":   3,
+		"negative int8":  int8(-7),
+		"uint":           uint(9),
+		"negative float": -2.5,
+		"true":           true,
+		"false":          false,
+	} {
+		t.Run(name, func(t *testing.T) {
+			src := `<script>var a = 5-{{.}}; var b = [{{.}}];</script>`
+			plain := renderPlain(t, src, v)
+			got, err := renderRewritten(src, v)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != plain {
+				t.Errorf("rewritten script differs from html/template's\nplain     %q\nrewritten %q", plain, got)
+			}
+		})
 	}
 }
 

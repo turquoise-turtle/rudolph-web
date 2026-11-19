@@ -10,6 +10,11 @@ terraform {
     region  = "us-east-1"
     encrypt = true
 
+    # Locks the state with a <key>.tflock object next to it while a plan or apply runs, so two at once
+    # cannot both write it. Needs Terraform 1.10 or later, and s3:GetObject, s3:PutObject and
+    # s3:DeleteObject on that object (see docs/deploy.md).
+    use_lockfile = true
+
     # The KMS key used for server-side encryption of the state, where applicable.
     kms_key_id = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
   }
