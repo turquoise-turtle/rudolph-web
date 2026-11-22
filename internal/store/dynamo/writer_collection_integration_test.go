@@ -8,8 +8,8 @@ package dynamo_test
 // (Rudolph's eventcollection.SetCollectAllowedEvents), recording the CLI's audit entry (rule.update, summary ending
 // "collect allowed events true|false"). Reads return the flag as Rule.CollectAllowedEvents.
 //   - Setting it to what it already is changes nothing and records nothing: store.ErrNothingToChange.
-//   - A missing rule (or an expired machine rule) is store.ErrNotFound; group rules can't be collected (Rudolph's
-//     index has no group scope): store.ErrInvalidArgument.
+//   - A missing rule (or an expired machine rule) is store.ErrNotFound. Group rules are collected too since Rudolph
+//     019bf42 (group_settings_integration_test.go); a group rule that does not exist is store.ErrNotFound.
 
 import (
 	"errors"
@@ -133,8 +133,8 @@ func TestWriter_SetRuleCollectionRefusals(t *testing.T) {
 	if err := st.SetRuleCollection(ctx, writerActor, store.RuleTarget{Kind: store.TargetGlobal}, store.RuleTypeBinary, other, true); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("missing global rule: %v, want ErrNotFound", err)
 	}
-	if err := st.SetRuleCollection(ctx, writerActor, store.RuleTarget{Kind: store.TargetGroup, Group: "eng"}, store.RuleTypeBinary, other, true); !errors.Is(err, store.ErrInvalidArgument) {
-		t.Errorf("group rule: %v, want ErrInvalidArgument", err)
+	if err := st.SetRuleCollection(ctx, writerActor, store.RuleTarget{Kind: store.TargetGroup, Group: "eng"}, store.RuleTypeBinary, other, true); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("missing group rule: %v, want ErrNotFound", err)
 	}
 	if entries, _ := st.ListAudit(ctx, time.Now().Add(-time.Hour), 5); len(entries) != 0 {
 		t.Errorf("refusals were audited: %+v", entries)

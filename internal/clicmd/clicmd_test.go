@@ -65,6 +65,10 @@ func TestBuilderRendersExactlyTheContractExamples(t *testing.T) {
 		must(t)(b.Rule("deny", store.RuleTypeCDHash, "ffeeddccbbaa99887766554433221100ffeeddcc", clicmd.Global())),
 		must(t)(b.CollectAllowedEvents(store.RuleTypeTeamID, "EQHXZ8M8AV", clicmd.Global(), true)),
 		must(t)(b.CollectAllowedEvents(store.RuleTypeTeamID, "EQHXZ8M8AV", clicmd.Global(), false)),
+		// A group rule's collection (Rudolph 019bf42, cli-examples.txt lines 16 to 18).
+		must(t)(b.CollectAllowedEvents(store.RuleTypeTeamID, "ABCDE12345", clicmd.Group("eng"), true)),
+		must(t)(b.CollectAllowedEvents(store.RuleTypeTeamID, "ABCDE12345", clicmd.Group("eng"), false)),
+		must(t)(b.CollectAllowedEvents(store.RuleTypeTeamID, "ABCDE12345", clicmd.Group("rudolph:ungrouped"), true)),
 		must(t)(b.Remove(store.RuleTypeBinary, sha("1"), clicmd.Global())),
 		must(t)(b.Remove(store.RuleTypeBinary, sha("b"), clicmd.Machine(machine, ""))),
 		must(t)(b.MachineRules(machine)),
