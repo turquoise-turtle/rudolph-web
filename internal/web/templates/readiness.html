@@ -1,0 +1,26 @@
+{{define "content"}}
+{{template "fleetnav" "readiness"}}
+<p class="hint">A Mac in Lockdown blocks every binary no rule allows. For each Mac, Rudolph's fleet job counts the unknown binaries it ran in the last 30 days that no global rule covers yet (pending), and puts the Mac in one bucket:{{range .Buckets}} <strong>{{.Title}}</strong>: {{.About}}.{{end}} A Mac is counted for the fleet and for each of its groups.</p>
+{{if .Age.Computed}}
+<p class="hint">Generated {{template "time" .Age.GeneratedAt}} by Rudolph's fleet job. The buckets fill 30 days after the Rudolph that counts unknown binaries was deployed; until then every Mac that is not locked is unmeasured.</p>
+{{template "fleetstale" .Age}}
+<div class="scroll">
+<table>
+<thead><tr><th scope="col">Group</th><th scope="col">Macs</th>{{range .Buckets}}<th scope="col">{{.Title}}</th>{{end}}</tr></thead>
+<tbody>
+{{range .Scopes}}
+<tr data-row>
+  <td>{{if .Group}}<a href="{{groupURL .Group}}">{{groupLabel .Group}}</a>{{else}}All Macs{{end}}</td>
+  <td class="num">{{.Macs}}</td>
+  {{range .Cells}}<td class="num"><a href="{{.URL}}">{{.Count}}</a></td>{{end}}
+</tr>
+{{end}}
+</tbody>
+</table>
+</div>
+{{if .Capped}}<p>{{.Capped}} {{if eq .Capped 1}}Mac has{{else}}Macs have{{end}} more than 1,000 unknown binaries, more than the fleet job reads, and {{if eq .Capped 1}}is{{else}}are{{end}} counted under Many.</p>{{end}}
+<p class="hint">To move a group to Lockdown, set its client mode on its page. To move chosen Macs, open a list of Ready Macs: admins can add them to a group that has a LOCKDOWN or STANDALONE client mode.</p>
+{{else}}
+{{template "fleetnotcomputed"}}
+{{end}}
+{{end}}

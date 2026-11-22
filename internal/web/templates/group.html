@@ -27,6 +27,7 @@
 </tbody>
 </table>
 </div>
+{{with .Readiness}}{{if .Known}}<p class="hint">Lockdown readiness of this group, by the fleet job's run of {{template "time" .GeneratedAt}}: {{.Pending}} of {{.Counts.Macs}} Macs still have pending unknown binaries, {{.Counts.Unmeasured}} are unmeasured; {{.Counts.Ready}} are ready and {{.Counts.Locked}} are already locked. <a href="{{.URL}}">List them</a></p>{{end}}{{end}}
 <div class="form-actions">
   <label>To change the client mode to LOCKDOWN or STANDALONE, type the new mode's name
     <input name="confirm_mode" size="12" autocomplete="off" spellcheck="false">

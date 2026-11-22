@@ -105,14 +105,18 @@ type Options struct {
 	// TopListStaleAfter is how old a top list may be before its page warns
 	// that the ranker may have stopped; 0 means DefaultTopListStaleAfter.
 	TopListStaleAfter time.Duration
-	// Writer lets Rudolph.Admin add and remove rules and set temporary client
-	// modes. Nil keeps the view read-only: no forms are shown and the write
+	// Writer lets Rudolph.Admin add and remove rules, set temporary client
+	// modes and the fleet's holiday mode, and add Macs to a Lockdown group. Nil keeps the view read-only: no forms are shown and the write
 	// routes do not exist. The audit trail is read through Store either way.
 	Writer store.Writer
 	// MinSantaVersion is the Santa version below which the machine list and
 	// page mark a Mac "update needed", such as 2026.9; empty turns the marker
 	// off. It must be a version of at least two numeric parts.
 	MinSantaVersion string
+	// FleetStaleAfter is how old the fleet job's snapshot may be before the
+	// fleet pages warn that the job may have stopped; 0 means
+	// DefaultFleetStaleAfter.
+	FleetStaleAfter time.Duration
 }
 
 type server struct {
@@ -124,7 +128,11 @@ type server struct {
 	pages    map[string]*template.Template
 
 	topListStaleAfter time.Duration
-	writer            store.Writer
+	fleetStaleAfter   time.Duration
+	// minSantaVersion is Options.MinSantaVersion, which the fleet page
+	// compares with the fleet job's own minimum.
+	minSantaVersion string
+	writer          store.Writer
 }
 
 // New returns the complete application handler: auth routes, static assets
@@ -148,6 +156,12 @@ func New(opts Options) (http.Handler, error) {
 	}
 	if opts.TopListStaleAfter < 0 {
 		return nil, errors.New("web: TopListStaleAfter must not be negative")
+	}
+	if opts.FleetStaleAfter == 0 {
+		opts.FleetStaleAfter = DefaultFleetStaleAfter
+	}
+	if opts.FleetStaleAfter < 0 {
+		return nil, errors.New("web: FleetStaleAfter must not be negative")
 	}
 	if opts.Now == nil {
 		opts.Now = time.Now
@@ -173,6 +187,8 @@ func New(opts Options) (http.Handler, error) {
 		pages:    pages,
 
 		topListStaleAfter: opts.TopListStaleAfter,
+		fleetStaleAfter:   opts.FleetStaleAfter,
+		minSantaVersion:   opts.MinSantaVersion,
 		writer:            opts.Writer,
 	}
 
@@ -209,6 +225,7 @@ func New(opts Options) (http.Handler, error) {
 	}))
 	mux.Handle("GET /machines", viewer(s.machines))
 	mux.Handle("GET /machines/{id}", viewer(s.machineDetail))
+	mux.Handle("GET /machines/{id}/unknown", viewer(s.machineUnknown))
 	mux.Handle("GET /rules", viewer(s.rules))
 	mux.Handle("GET /rules/cel", viewer(s.celRules))
 	mux.Handle("GET /groups", viewer(s.groups))
@@ -219,6 +236,10 @@ func New(opts Options) (http.Handler, error) {
 	mux.Handle("GET /events/top-blocked", viewer(s.topBlocked))
 	mux.Handle("GET /events/top-allowed", viewer(s.topAllowed))
 	mux.Handle("GET /events/top-unknown", viewer(s.topUnknown))
+	mux.Handle("GET /fleet", viewer(s.fleet))
+	mux.Handle("GET /fleet/health/{category}", viewer(s.fleetHealthList))
+	mux.Handle("GET /fleet/readiness", viewer(s.readiness))
+	mux.Handle("GET /fleet/readiness/macs", viewer(s.readinessMacs))
 	admin := func(h http.HandlerFunc) http.Handler { return opts.Auth.RequireOr(auth.RoleAdmin, h, s.forbidden) }
 	mux.Handle("GET /admin", admin(s.admin))
 	// The audit trail is read-only and also lists the CLI's changes, so admins
@@ -248,6 +269,9 @@ func New(opts Options) (http.Handler, error) {
 		mux.Handle("POST /admin/config", admin(s.updateGlobalConfig))
 		mux.Handle("POST /admin/machines/{id}/config", admin(s.updateMachineConfig))
 		mux.Handle("POST /admin/machines/{id}/clean-sync", admin(s.cleanSync))
+		mux.Handle("POST /admin/fleet/holiday", admin(s.setFleetHoliday))
+		mux.Handle("POST /admin/fleet/holiday/end", admin(s.endFleetHoliday))
+		mux.Handle("POST /admin/fleet/cohort", admin(s.assignCohort))
 	}
 
 	csp := strings.Join([]string{

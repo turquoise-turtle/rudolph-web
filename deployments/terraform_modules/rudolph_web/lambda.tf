@@ -52,6 +52,9 @@ resource "aws_lambda_function" "web" {
       # How old a top list may be before its page warns; depends on the ranker's schedule.
       RUDOLPH_WEB_TOP_LIST_STALE_AFTER = var.top_list_stale_after
 
+      # How old the fleet job's snapshot may be before the fleet pages warn; depends on the fleet job's schedule.
+      RUDOLPH_WEB_FLEET_STALE_AFTER = var.fleet_stale_after
+
       # The pages mark Macs below this Santa version "update needed". The app reads empty as its default (2026.9), so an
       # empty variable is passed as off.
       RUDOLPH_WEB_MIN_SANTA_VERSION = var.min_santa_version == "" ? "off" : var.min_santa_version

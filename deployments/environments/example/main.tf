@@ -25,6 +25,9 @@ module "rudolph_web" {
   # How old a top list may be before its page warns; fit it to the ranker's schedule.
   top_list_stale_after = var.top_list_stale_after
 
+  # How old the fleet job's snapshot may be before the fleet pages warn; fit it to the fleet job's schedule.
+  fleet_stale_after = var.fleet_stale_after
+
   # Macs below this Santa version are marked "update needed"; empty turns the marker off.
   min_santa_version = var.min_santa_version
 

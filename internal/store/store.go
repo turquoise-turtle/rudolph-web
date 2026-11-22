@@ -29,6 +29,9 @@
 //
 //	PK=Top#<kind>#<days>                      SK=Current   pointer to the latest snapshot
 //	PK=TopSnapshot#<kind>#<days>#<snapshot>   SK=<rank>    -> TopBinary
+//
+// The fleet job's health and readiness lists, read the same way, are in
+// fleet.go.
 package store
 
 import (
@@ -667,6 +670,7 @@ type Reader interface {
 	GroupReader
 	EventReader
 	AuditReader
+	FleetReader
 }
 
 // ErrUnavailable is returned by Unavailable. The web layer renders it as 503.

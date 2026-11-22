@@ -74,6 +74,12 @@ variable "top_list_stale_after" {
   default     = "3h"
 }
 
+variable "fleet_stale_after" {
+  type        = string
+  description = "How old the snapshot of Rudolph's fleet job may be before the fleet pages warn that the job may have stopped, in whole hours from 1h to 336h. The default suits a job that runs once a day."
+  default     = "26h"
+}
+
 variable "min_santa_version" {
   type        = string
   description = "Santa version below which the machine list and page mark a Mac \"update needed\", such as 2026.9 (which fixed ways for a local user to pause enforcement). Empty turns the marker off."
@@ -82,7 +88,7 @@ variable "min_santa_version" {
 
 variable "enable_editing" {
   type        = bool
-  description = "Let Rudolph.Admin add and remove rules and set temporary client modes from the web view, each recorded in Rudolph's audit trail. On by default; only Rudolph.Admin holders see the forms. Grants the role writes to Rudolph's rule, rules feed, machine, group, event collection and audit partitions only. Set false to keep the view read-only."
+  description = "Let Rudolph.Admin add and remove rules and set temporary client modes from the web view, each recorded in Rudolph's audit trail. On by default; only Rudolph.Admin holders see the forms. Grants the role writes to Rudolph's rule, rules feed, machine, group, event collection, fleet health and audit partitions only. Set false to keep the view read-only."
   default     = true
 }
 

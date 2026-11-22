@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/turquoise-turtle/rudolph-web/internal/store"
+	"github.com/turquoise-turtle/rudolph-web/internal/store/rudolphrules"
 )
 
 // NewDemo returns a store seeded with plausible demo data for local development.
@@ -76,7 +77,184 @@ func NewDemo(now time.Time) *Store {
 			Identifier: fmt.Sprintf("%064x", 5000+i), CustomMessage: "Contact IT", State: store.RuleStateInForce})
 	}
 	seedDemoTopLists(s, now)
+	seedDemoFleet(s, now)
 	return s
+}
+
+// demoCohortGroup is the demo's Lockdown cohort: a group with a LOCKDOWN
+// client mode that counts assigned Macs only.
+const demoCohortGroup = "lockdown-1"
+
+// seedDemoFleet gives the demo what Rudolph's fleet job and eventupload
+// would have written for the demo's Macs: groups, a snapshot of this
+// morning with every health list and the readiness lists, and each Mac's
+// unknown markers, made from its unknown executions.
+func seedDemoFleet(s *Store, now time.Time) {
+	s.AddGroup(store.Group{Name: "eng", Description: "Engineering", AcceptReported: true})
+	s.AddGroup(store.Group{Name: "ops", Description: "Operations", AcceptReported: true})
+	s.AddGroup(store.Group{Name: demoCohortGroup, Description: "First Lockdown cohort", ClientMode: store.ClientModeLockdown})
+
+	generated := now.UTC().Truncate(time.Hour).Add(-3 * time.Hour)
+	today := now.UTC().Truncate(24 * time.Hour)
+	markers := map[string]map[string]store.UnknownBinary{}
+	for _, e := range s.execEvents {
+		if e.Decision != store.DecisionBlockUnknown && e.Decision != store.DecisionAllowUnknown {
+			continue
+		}
+		if markers[e.MachineID] == nil {
+			markers[e.MachineID] = map[string]store.UnknownBinary{}
+		}
+		day := e.ExecutionTime.UTC().Truncate(24 * time.Hour)
+		if m, ok := markers[e.MachineID][e.FileSHA256]; !ok || day.After(m.LastDay) {
+			markers[e.MachineID][e.FileSHA256] = store.UnknownBinary{FileSHA256: e.FileSHA256, FileName: e.FileName, SigningID: e.SigningID, TeamID: e.TeamID, LastDay: day}
+		}
+	}
+
+	snap := FleetSnapshot{
+		Summary: store.FleetSummary{
+			Snapshot: generated.Format("20060102T150405.000000000Z") + "-0a1b2c3d", GeneratedAt: generated, MinSantaVersion: "2026.9",
+			StaleDays: rudolphrules.DefaultStaleDays, Health: map[store.FleetCategory]int{}, ReadinessGroups: map[string]store.ReadinessCounts{},
+		},
+		Health:    map[store.FleetCategory][]store.FleetHealthRow{},
+		Readiness: map[string][]store.ReadinessRow{},
+	}
+	ids := make([]string, 0, len(s.machines))
+	for id := range s.machines {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for n, id := range ids {
+		i := n + 1
+		m := s.machines[id]
+		team := "eng"
+		if i%3 == 0 {
+			team = "ops"
+		}
+		var assigned []string
+		if i%8 == 0 {
+			assigned = []string{demoCohortGroup}
+		}
+		s.SetMachineGroups(id, assigned, []string{team}, []string{team})
+
+		var counts store.UnknownCounts
+		for _, b := range markers[id] {
+			s.AddUnknownBinary(id, b)
+			if !b.LastDay.Before(today.AddDate(0, 0, -29)) {
+				counts.Last30++
+			}
+			if !b.LastDay.Before(today.AddDate(0, 0, -6)) {
+				counts.Last7++
+			}
+		}
+		s.SetMachineUnknown(id, counts)
+
+		base := store.FleetHealthRow{MachineID: id, Hostname: m.Hostname, SerialNum: m.SerialNum, LastSeen: m.LastSeen, LastCompleted: m.LastSeen.Add(20 * time.Second)}
+		attention := false
+		list := func(c store.FleetCategory, row store.FleetHealthRow) {
+			snap.Health[c] = append(snap.Health[c], row)
+			snap.Summary.Health[c]++
+			attention = true
+		}
+		stale, incomplete := i%17 == 0, i%9 == 0 && i%17 != 0
+		locked := len(assigned) > 0 || i%20 == 0
+		if stale {
+			row := base
+			row.LastSeen = now.Add(-time.Duration(11+i%20) * 24 * time.Hour)
+			row.LastCompleted, row.Never = row.LastSeen, i%34 == 0
+			if row.Never {
+				row.LastCompleted = time.Time{}
+			}
+			list(store.FleetCategoryStale, row)
+		}
+		if incomplete {
+			row := base
+			row.LastCompleted, row.SyncsWithoutPostflight = m.LastSeen.Add(-6*time.Hour), 2+i%4
+			list(store.FleetCategoryIncomplete, row)
+		}
+		if locked && m.ClientMode != store.ClientModeLockdown && !stale {
+			row := base
+			row.Reported, row.Intended, row.Source = m.ClientMode, store.ClientModeLockdown, "own"
+			if len(assigned) > 0 {
+				row.Source = "group:" + demoCohortGroup
+			}
+			list(store.FleetCategoryMode, row)
+		}
+		if i%40 == 7 {
+			row := base
+			row.Reason, row.RulesReceived, row.RulesProcessed = "NotApplied", 12, 9
+			list(store.FleetCategoryRules, row)
+		}
+		if i%50 == 0 {
+			row := base
+			row.Flags = "0x7f"
+			list(store.FleetCategorySIP, row)
+		}
+		if store.SantaVersionBelow(m.SantaVersion, snap.Summary.MinSantaVersion) {
+			row := base
+			row.SantaVersion = m.SantaVersion
+			list(store.FleetCategoryVersion, row)
+		}
+		snap.Summary.Macs++
+		if attention {
+			snap.Summary.Attention++
+		}
+
+		intended := store.ClientModeMonitor
+		if locked {
+			intended = store.ClientModeLockdown
+		}
+		ready := store.ReadinessRow{MachineID: id, Hostname: m.Hostname, SerialNum: m.SerialNum, ReportedMode: m.ClientMode, IntendedMode: intended,
+			ObservedDays: 30 + i%60, Counted: !locked, Unknown30: counts.Last30, Unknown7: counts.Last7}
+		switch {
+		case locked:
+			ready.Bucket, ready.Unknown30, ready.Unknown7 = store.ReadinessLocked, 0, 0
+		case stale:
+			ready.Bucket, ready.Why = store.ReadinessUnmeasured, "stale"
+		case incomplete:
+			ready.Bucket, ready.Why = store.ReadinessUnmeasured, "incomplete"
+		case i%11 == 0:
+			ready.Bucket, ready.Why, ready.ObservedDays = store.ReadinessUnmeasured, "observed", 5+i%20
+		case i%7 == 0:
+			ready.Bucket, ready.Pending30, ready.Pending7 = store.ReadinessMany, 10+i%30, 3+i%5
+			ready.Unknown30, ready.Unknown7 = ready.Unknown30+ready.Pending30, ready.Unknown7+ready.Pending7
+		case i%4 == 1:
+			ready.Bucket, ready.Pending30, ready.Pending7 = store.ReadinessFew, 1+i%9, i%2
+			ready.Unknown30, ready.Unknown7 = ready.Unknown30+ready.Pending30, ready.Unknown7+ready.Pending7
+		default:
+			ready.Bucket = store.ReadinessReady
+		}
+		for _, scope := range append([]string{"", team}, assigned...) {
+			snap.Readiness[scope] = append(snap.Readiness[scope], ready)
+			c := snap.Summary.ReadinessAll
+			if scope != "" {
+				c = snap.Summary.ReadinessGroups[scope]
+			}
+			c.Macs++
+			switch ready.Bucket {
+			case store.ReadinessReady:
+				c.Ready++
+			case store.ReadinessFew:
+				c.Few++
+			case store.ReadinessMany:
+				c.Many++
+			case store.ReadinessUnmeasured:
+				c.Unmeasured++
+			case store.ReadinessLocked:
+				c.Locked++
+			}
+			if scope == "" {
+				snap.Summary.ReadinessAll = c
+			} else {
+				snap.Summary.ReadinessGroups[scope] = c
+			}
+		}
+	}
+	// The job counts every registered group and the Macs in none, also when
+	// they have no Macs.
+	if _, ok := snap.Summary.ReadinessGroups[store.UngroupedGroup]; !ok {
+		snap.Summary.ReadinessGroups[store.UngroupedGroup] = store.ReadinessCounts{}
+	}
+	s.SetFleetSnapshot(snap)
 }
 
 // demoTopKindMatches says which decisions count towards each list, as the

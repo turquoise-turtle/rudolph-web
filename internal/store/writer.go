@@ -184,7 +184,7 @@ const MaxMovedRules = 50
 // ClientModes lists every valid ClientMode.
 var ClientModes = []ClientMode{ClientModeMonitor, ClientModeLockdown, ClientModeStandalone}
 
-// Writer changes rules, temporary client modes and device groups the way Rudolph's CLI does,
+// Writer changes rules, temporary client modes, device groups and the fleet's holiday mode the way Rudolph's CLI does,
 // and records every change in Rudolph's audit trail with the actor. Invalid
 // input is refused with ErrInvalidArgument before anything is written, and
 // nothing is audited unless something was written.
@@ -263,6 +263,29 @@ type Writer interface {
 	// the group is not registered; ErrNothingToChange when it already has the
 	// mode (or none, when removing).
 	SetGroupClientMode(ctx context.Context, actor Actor, group string, mode ClientMode) error
+	// SetFleetHoliday raises the fleet job's stale threshold to staleDays
+	// through until (a UTC date, YYYY-MM-DD, inclusive), replacing any
+	// holiday stored, as rudolph fleet holiday does, recording
+	// fleet.holiday. The normal threshold is left as it is. Rudolph's
+	// refusals are ErrInvalidArgument with its message: days outside 1 to
+	// 365 or below the normal threshold, or a last day that is not a date,
+	// is in the past or is more than 366 days ahead.
+	SetFleetHoliday(ctx context.Context, actor Actor, staleDays int, until string) error
+	// EndFleetHoliday removes the stored holiday, in force or lapsed, as
+	// rudolph fleet holiday --end does. ErrNothingToChange, with nothing
+	// written or recorded, when none is stored.
+	EndFleetHoliday(ctx context.Context, actor Actor) error
+	// AssignCohort assigns group to each of the Macs, which must be Ready in
+	// the fleet's readiness list of snapshot, recording group.add for each as
+	// AssignGroup does, and returns how many it assigned. Everything is
+	// checked before anything is written: no Macs or more than MaxCohortMacs,
+	// a snapshot ID that is not one, the reserved group, a group without a
+	// LOCKDOWN or STANDALONE client mode, or a Mac that is not Ready in that
+	// snapshot is ErrInvalidArgument (naming the Mac); a group that is not
+	// registered is ErrNotFound; a snapshot older than MaxCohortSnapshotAge
+	// is ErrSnapshotTooOld. A failure after a Mac was assigned is a
+	// *PartialCohortError.
+	AssignCohort(ctx context.Context, actor Actor, snapshot, group string, machineIDs []string) (int, error)
 }
 
 // ConfigChange is a change to a global or machine configuration. A nil

@@ -32,6 +32,7 @@
 </section>
 <p class="hint">Client mode (reported) is what the Mac reported at its last preflight, before applying that sync. Client mode (configured) is what Rudolph sends: the machine config's mode; when the machine config sets none, the strictest mode of the Mac's groups (LOCKDOWN, then STANDALONE, then MONITOR), or the global config's when none of its groups has one; a temporary mode takes their place while it lasts.</p>
 <p><a href="{{eventsForMachineURL .MachineID}}">Events for this machine</a> · <a href="{{fileAccessEventsForMachineURL .MachineID}}">File access events for this machine</a></p>
+<p>Unknown binaries: {{if $.Unknown.Unread}}the figure could not be read. <a href="{{$.Unknown.URL}}">List them</a>{{else}}<a href="{{$.Unknown.URL}}">{{$.Unknown.Last30}}{{if $.Unknown.More}}+{{end}} in the last 30 days, {{$.Unknown.Last7}}{{if $.Unknown.More}}+{{end}} in the last 7</a>{{end}} <span class="muted">(binaries no rule decided, by the day the Mac last uploaded an execution of them; counted now, not by the fleet job)</span></p>
 {{with cliConfigGet .MachineID}}
 <details class="cmds"><summary>Rudolph CLI commands for this Mac</summary><ul>
   {{template "cmd" (cmd "Show its configuration" .)}}
