@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/turquoise-turtle/rudolph-web/internal/auth"
+	"github.com/turquoise-turtle/rudolph-web/internal/store"
 )
 
 // Environment variable names.
@@ -51,6 +52,10 @@ const (
 	// commands start with (ENV=<name> rudolph ...). Unset, they start with
 	// plain rudolph and the operator's shell supplies ENV.
 	EnvCLIEnv = "RUDOLPH_WEB_CLI_ENV"
+	// EnvMinSantaVersion is the Santa version below which the pages mark a
+	// Mac "update needed". Unset or empty means DefaultMinSantaVersion, and
+	// "off" turns the marker off.
+	EnvMinSantaVersion = "RUDOLPH_WEB_MIN_SANTA_VERSION"
 
 	// Names of SSM Parameter Store parameters holding the secrets. When one of
 	// these is set the matching plain variable must be unset, and the value is
@@ -70,6 +75,10 @@ const (
 	maxTopListStaleAfter     = 168 * time.Hour
 	entraAuthority           = "https://login.microsoftonline.com"
 )
+
+// DefaultMinSantaVersion is the default minimum Santa version: 2026.9 fixed
+// ways for a local user to pause enforcement (owner, 2026-11-22).
+const DefaultMinSantaVersion = "2026.9"
 
 // cliEnvRe matches environment names that can follow ENV= in a shell command
 // without quoting.
@@ -91,7 +100,8 @@ type Config struct {
 	EventsTableName       string // empty: no execution events
 	CLIEnv                string // empty: CLI commands without ENV=
 	TopListStaleAfter     time.Duration
-	Editing               bool // admins may write; needs TableName
+	Editing               bool   // admins may write; needs TableName
+	MinSantaVersion       string // empty: no update needed marker
 }
 
 // FromEnv reads and validates configuration. Error messages name variables
@@ -183,6 +193,17 @@ func FromEnv(getenv func(string) string) (Config, error) {
 	}
 	if c.CLIEnv != "" && !cliEnvRe.MatchString(c.CLIEnv) {
 		errs = append(errs, fmt.Errorf("%s must be letters, digits, '.', '_' or '-' (at most 64)", EnvCLIEnv))
+	}
+	switch v := get(EnvMinSantaVersion); v {
+	case "":
+		c.MinSantaVersion = DefaultMinSantaVersion
+	case "off":
+	default:
+		if _, ok := store.ParseVersion(v); !ok {
+			errs = append(errs, fmt.Errorf("%s must be a version such as 2026.9, or off", EnvMinSantaVersion))
+		} else {
+			c.MinSantaVersion = v
+		}
 	}
 	if c.Addr == "" {
 		c.Addr = defaultAddr

@@ -50,6 +50,8 @@ The pages offer Rudolph CLI commands to copy (block or allow a file from an even
 
 Each top list page shows when the list was generated and warns when it is older than `top_list_stale_after` (the module sets `RUDOLPH_WEB_TOP_LIST_STALE_AFTER` from it; whole hours from `1h` to `168h`, default `3h`). The default suits a ranker that runs every hour around the clock: the warning means about three runs were missed. If Rudolph's ranker runs on a schedule, fit the threshold to it. For example, with the ranker running hourly on weekdays from 7am to 5pm, a list is normally up to 14 hours old overnight and about 62 hours old over a weekend. `15h` warns about missed weekday runs but also warns every weekend; `63h` never warns on a healthy schedule, at the cost of noticing a stopped ranker only after days.
 
+The machine list and each machine page mark a Mac "update needed" when the Santa version it reports is below `min_santa_version` (the module sets `RUDOLPH_WEB_MIN_SANTA_VERSION` from it; default `"2026.9"`), and the machine page names the minimum. Santa 2026.9 fixed ways for a local user to pause enforcement, so a Mac on an older release should be updated. Versions are compared part by part as numbers, so `2026.10` is above `2026.9`, and a version may have more parts, such as `2026.10.1`. A Mac whose reported version is empty or cannot be read gets no marker. Set `min_santa_version` to `""` to turn the marker off (the module passes `off` to the function, as the app reads an unset or empty variable as the default). The "legacy client" marker below 2026.8 is unchanged and independent of this setting.
+
 Pages show each time in the viewer's own time zone, converted in the browser, followed by UTC in brackets: a viewer in Asia/Tokyo sees `2026-09-17 20:55 JST (2026-09-17 11:55:00 UTC)`, one in America/New_York sees `2026-09-17 07:55 EDT (2026-09-17 11:55:00 UTC)`, and one whose browser is in UTC sees UTC only. There is nothing to configure. The server renders UTC only; one small inline script, the only script the pages run, rewrites the text of each time and does nothing else, and the CSP allows it by its SHA-256 hash alone (`script-src 'sha256-…'`). If the script does not run, the pages still work and show UTC only. The short zone name (`JST`, or `GMT+9` in some locales) comes from the browser's language settings. Dates that are UTC days, such as the machine list's last seen and the top lists' windows, stay in UTC.
 
 #### Upgrading: local time now comes first
@@ -59,6 +61,10 @@ Earlier releases showed UTC first with the viewer's time in brackets; times now 
 #### Upgrading from a release with `display_time_zone`
 
 `display_time_zone` is removed. Before planning, remove `display_time_zone = var.display_time_zone` from your environment's `main.tf`, or Terraform fails with "Unsupported argument"; also delete the variable from `_variables.tf` and `config.auto.tfvars.json`. The old function keeps showing the configured zone until you apply; the apply deploys the new build and removes `RUDOLPH_WEB_DISPLAY_TIME_ZONE` from the function.
+
+#### Upgrading: minimum Santa version
+
+This release adds the `min_santa_version` variable. `make plan`, `make deploy` and `make justdeploy` refuse an existing environment until it has the new setting, as `envcheck` requires (see [Upgrading an existing environment](#upgrading-an-existing-environment)): add the `min_santa_version` variable to its `_variables.tf`, the `min_santa_version = var.min_santa_version` argument to its `module "rudolph_web"` block, and `"min_santa_version": "2026.9"` to its `config.auto.tfvars.json`, or `""` to turn the marker off. This is a code and configuration change only, with no IAM change: the plan updates the function's code and adds `RUDOLPH_WEB_MIN_SANTA_VERSION` to its environment, and changes nothing else.
 
 ### A domain (optional)
 

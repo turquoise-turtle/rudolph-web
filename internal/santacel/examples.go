@@ -28,6 +28,17 @@ var Examples = []Example{
 		Expression: "args.exists(a, a in ['remove', '-R', '-D']) ? BLOCKLIST : ALLOWLIST",
 	},
 	{
+		Name: "Stop the spctl command turning Gatekeeper off",
+		Explanation: "On a SIGNINGID rule for /usr/sbin/spctl (signing ID com.apple.spctl, a platform binary with no team ID), " +
+			"this blocks spctl when it is asked to turn Gatekeeper off or loosen it from the command line: --global-disable, the older --master-disable and --disable spellings, the deprecated --add and --remove rule edits, and developer-mode enable-terminal, which lets Terminal run unnotarised code. " +
+			"Reading the status (--status, --disable-status, developer-mode status) and assessing apps (--assess, -a) still work. " +
+			"It does not stop the Gatekeeper setting in System Settings (Privacy & Security), which does not run spctl: an admin user can still turn Gatekeeper off there unless an MDM profile enforces it, such as Jamf's Security & Privacy payload. " +
+			"IT can still use spctl on one Mac by adding a machine rule for the same signing ID (for example ALLOWLIST, for an hour), which takes precedence over this global or group rule there.",
+		RuleType:   "SIGNINGID",
+		Identifier: "platform:com.apple.spctl",
+		Expression: "args.exists(a, a in ['--global-disable', '--master-disable', '--disable', '--add', '--remove', 'enable-terminal']) ? BLOCKLIST : ALLOWLIST",
+	},
+	{
 		Name: "Allow a team's binaries only when signed recently",
 		Explanation: "On a TEAMID rule, this allows the team's binaries only when Apple's timestamp server vouches that they were signed on or after the date, " +
 			"and blocks older builds, such as an outdated browser with known vulnerabilities. " +

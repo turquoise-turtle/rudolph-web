@@ -67,6 +67,7 @@ committed and ends up in the state.
 | `session_ttl` | `"1h"` | Session cookie lifetime, 5m to 12h. |
 | `cli_env` | `""` | Rudolph environment name (e.g. `prod`) the pages' copy-and-paste CLI commands start with, as `ENV=<name> rudolph …`. Empty leaves `ENV` to the operator's shell. |
 | `top_list_stale_after` | `"3h"` | How old a top blocked or allowed list may be before its page warns that Rudolph's ranker may have stopped, in whole hours from `1h` to `168h`. Raise it if the ranker runs only on a schedule such as weekday working hours; see [docs/deploy.md](../../../docs/deploy.md). |
+| `min_santa_version` | `"2026.9"` | Santa version below which the machine list and page mark a Mac "update needed", such as `2026.9` or `2026.10.1`. Santa 2026.9 fixed ways for a local user to pause enforcement. Empty turns the marker off. See [docs/deploy.md](../../../docs/deploy.md#upgrading-minimum-santa-version). |
 | `create_ssm_parameters` | `false` | Create the two SecureString parameters with a placeholder instead of creating them yourself. |
 | `ssm_kms_key_arn` | `""` | KMS key for those parameters. Empty uses the AWS managed `alias/aws/ssm` key. |
 | `dynamodb_table_name` | (required) | Rudolph's table, typically `<rudolph prefix>_rudolph_store`. |

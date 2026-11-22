@@ -52,6 +52,10 @@ resource "aws_lambda_function" "web" {
       # How old a top list may be before its page warns; depends on the ranker's schedule.
       RUDOLPH_WEB_TOP_LIST_STALE_AFTER = var.top_list_stale_after
 
+      # The pages mark Macs below this Santa version "update needed". The app reads empty as its default (2026.9), so an
+      # empty variable is passed as off.
+      RUDOLPH_WEB_MIN_SANTA_VERSION = var.min_santa_version == "" ? "off" : var.min_santa_version
+
       # Admin writes; the role is only granted them when this is true (iam.tf).
       RUDOLPH_WEB_EDITING = var.enable_editing
     }

@@ -25,6 +25,9 @@ module "rudolph_web" {
   # How old a top list may be before its page warns; fit it to the ranker's schedule.
   top_list_stale_after = var.top_list_stale_after
 
+  # Macs below this Santa version are marked "update needed"; empty turns the marker off.
+  min_santa_version = var.min_santa_version
+
   create_ssm_parameters = var.create_ssm_parameters
   ssm_kms_key_arn       = var.ssm_kms_key_arn
 
