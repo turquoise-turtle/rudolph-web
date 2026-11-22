@@ -20,6 +20,7 @@
     <a href="/events/top-blocked"{{if eq .Nav "top-blocked"}} aria-current="page"{{end}}>Top blocked</a>
     <a href="/events/top-allowed"{{if eq .Nav "top-allowed"}} aria-current="page"{{end}}>Top allowed</a>
     <a href="/events/top-unknown"{{if eq .Nav "top-unknown"}} aria-current="page"{{end}}>Top unknown</a>
+    <a href="/fleet"{{if eq .Nav "fleet"}} aria-current="page"{{end}}>Fleet</a>
     {{if .IsAdmin}}<a href="/admin"{{if eq .Nav "admin"}} aria-current="page"{{end}}>Admin</a>{{end}}
     {{if .IsAdmin}}<a href="/admin/config"{{if eq .Nav "config"}} aria-current="page"{{end}}>Settings</a>{{end}}
     {{if .IsAdmin}}<a href="/admin/audit"{{if eq .Nav "audit"}} aria-current="page"{{end}}>Audit</a>{{end}}
@@ -41,6 +42,13 @@
 {{/* A time: UTC from the server, which is what the page shows without the script;
 the script adds the viewer's own zone in the browser. Zero shows a dash. */}}
 {{define "time"}}{{if .IsZero}}—{{else}}<time datetime="{{.UTC.Format "2006-01-02T15:04:05Z"}}">{{.UTC.Format "2006-01-02 15:04:05"}} UTC</time>{{end}}{{end}}
+{{/* What every fleet page says about its snapshot's age, and the links between the fleet pages. */}}
+{{define "fleetnav"}}<nav class="choices" aria-label="Fleet pages">
+  <a href="/fleet"{{if eq . "health"}} aria-current="page"{{end}}>Health</a>
+  <a href="/fleet/readiness"{{if eq . "readiness"}} aria-current="page"{{end}}>Lockdown readiness</a>
+</nav>{{end}}
+{{define "fleetstale"}}{{if .Stale}}<p class="error" role="status"><strong>Warning:</strong> this was generated {{template "time" .GeneratedAt}}, more than {{.StaleHours}} {{if eq .StaleHours "1"}}hour{{else}}hours{{end}} ago. Rudolph's fleet job runs once a day; check that it is still running on its schedule.</p>{{end}}{{end}}
+{{define "fleetnotcomputed"}}<p>The fleet lists have not been computed yet. Rudolph's fleet job builds them once a day; check again after its first run.</p>{{end}}
 {{define "pager"}}
 {{if .Items}}<nav class="pager" aria-label="Pages">
   {{with .Prev}}<a rel="prev" href="{{.}}">Prev</a>{{end}}

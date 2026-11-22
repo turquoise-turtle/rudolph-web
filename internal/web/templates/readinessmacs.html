@@ -1,0 +1,60 @@
+{{define "content"}}
+{{template "fleetnav" ""}}
+<div class="filters">
+  <nav class="choices" aria-label="Bucket">
+    <span class="muted">Show</span>
+    {{range .Choices}}<a href="{{.URL}}">{{.Title}}</a>{{end}}
+  </nav>
+  {{with .Filter.Group}}<a href="{{groupURL .}}">Group {{groupLabel .}}</a>{{end}}
+</div>
+{{if .Age.Computed}}
+<p class="hint">Generated {{template "time" .Age.GeneratedAt}} by Rudolph's fleet job, fewest pending first. Pending counts the unknown binaries the Mac ran that no global rule covers yet; unknown counts all of them. Why says what keeps a Mac unmeasured: <code>stale</code> or <code>incomplete</code> (it is in that health list), <code>upload-off</code> (it is told not to upload unknown executions), <code>no-rules</code> (it reports no rules, so every sync is a clean sync, which uploads nothing) or <code>observed</code> (first seen fewer than 30 days ago).</p>
+{{template "fleetstale" .Age}}
+{{if .Rows}}
+{{if .Cohort.On}}{{if .Cohort.Groups}}<form method="post" action="/admin/fleet/cohort">
+<input type="hidden" name="snapshot" value="{{verbatim .Snapshot}}">
+{{end}}{{end}}
+<div class="scroll">
+<table>
+<thead><tr>{{if .Cohort.Groups}}<th scope="col">Add</th>{{end}}<th scope="col">Hostname</th><th scope="col">Serial</th><th scope="col">Bucket</th><th scope="col">Pending, 30 days</th><th scope="col">Unknown, 30 days</th><th scope="col">Pending, 7 days</th><th scope="col">Unknown, 7 days</th><th scope="col">Reported mode</th><th scope="col">Intended mode</th><th scope="col">Days observed</th><th scope="col">Why</th></tr></thead>
+<tbody>
+{{range .Rows}}
+<tr data-row>
+  {{if $.Cohort.Groups}}<td><input type="checkbox" name="machine" value="{{verbatim .MachineID}}" aria-label="Add this Mac"></td>{{end}}
+  <td><a href="{{machineURL .MachineID}}">{{with .Hostname}}{{.}}{{else}}<code>{{.MachineID}}</code>{{end}}</a></td>
+  <td>{{orDash .SerialNum}}</td>
+  <td>{{.BucketTitle}}</td>
+  {{if not .Counted}}<td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">—</td>
+  {{else if .Capped}}<td class="num">1,000+</td><td class="num">1,000+</td><td class="num">{{.Pending7}}+</td><td class="num">{{.Unknown7}}+</td>
+  {{else}}<td class="num">{{.Pending30}}</td><td class="num">{{.Unknown30}}</td><td class="num">{{.Pending7}}</td><td class="num">{{.Unknown7}}</td>{{end}}
+  <td>{{orDash (print .ReportedMode)}}</td>
+  <td>{{orDash (print .IntendedMode)}}</td>
+  <td class="num">{{.ObservedDays}}</td>
+  <td>{{orDash .Why}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+</div>
+{{if .Cohort.On}}{{if .Cohort.Groups}}
+<div class="form-actions">
+  <label>Add the ticked Macs to the group
+    <select name="group" required>{{range .Cohort.Groups}}<option value="{{verbatim .Name}}">{{.Name}} ({{.ClientMode}}{{if .AcceptReported}}, also counts reported membership{{end}})</option>{{end}}</select>
+  </label>
+  <button type="submit">Add these Macs to the Lockdown group</button>
+</div>
+<p class="hint">Each ticked Mac is assigned the group, as <code>rudolph group add</code> does, and gets the group's client mode at its next sync unless it has a temporary mode or a client mode of its own. At most {{.Cohort.Max}} Macs at a time, all Ready in this list's snapshot, which must be the fleet job's latest run. A Mac may have run something unknown since the run: watch its events for its first days in Lockdown. A group that also counts reported membership can gain Macs on its own, so a cohort group is better without it.</p>
+</form>
+{{else if .Cohort.GroupsUnread}}
+<p class="hint">The groups could not be read, so these Macs cannot be added to a Lockdown group from here now.</p>
+{{else}}
+<p class="hint">To add these Macs to a Lockdown group, first create a group and set its client mode to LOCKDOWN or STANDALONE on its page.</p>
+{{end}}{{end}}
+{{else}}
+<p>No Macs in this list.</p>
+{{end}}
+{{template "pager" .Pager}}
+{{else}}
+{{template "fleetnotcomputed"}}
+{{end}}
+{{end}}

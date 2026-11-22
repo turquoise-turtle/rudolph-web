@@ -1,0 +1,52 @@
+{{define "content"}}
+{{template "fleetnav" "health"}}
+{{if .Age.Computed}}
+<p class="hint">Rudolph's fleet job walks every Mac once a day and lists the ones that need attention. Generated {{template "time" .Age.GeneratedAt}}: {{.Summary.Macs}} Macs, {{.Summary.Attention}} of them in at least one list below. A Mac can be in several lists.</p>
+{{template "fleetstale" .Age}}
+{{if .VersionDiffers}}<p class="error" role="status"><strong>Warning:</strong> the fleet job lists Macs below Santa {{.Summary.MinSantaVersion}}, but this web view {{if .ViewMinVersion}}marks Macs below Santa {{.ViewMinVersion}}{{else}}marks no Mac as needing an update{{end}}. Set <code>FLEET_MIN_SANTA_VERSION</code> on Rudolph's fleet function and <code>min_santa_version</code> here to the same version.</p>{{end}}
+<div class="scroll">
+<table>
+<thead><tr><th scope="col">List</th><th scope="col">Macs</th><th scope="col">A Mac is listed when</th></tr></thead>
+<tbody>
+{{range .Rows}}
+<tr data-category="{{.Category}}">
+  <td><a href="{{.URL}}">{{.Title}}</a></td>
+  <td class="num">{{.Count}}</td>
+  <td>{{.About}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+</div>
+<p>This run counted a Mac as not syncing after {{.Summary.StaleDays}} days without a completed sync{{if .Summary.Holiday}}: holiday mode was on{{with .Summary.HolidayUntil}}, until {{.}} (UTC){{end}}{{end}}.{{if .Summary.VersionUnknown}} {{.Summary.VersionUnknown}} {{if eq .Summary.VersionUnknown 1}}Mac reports{{else}}Macs report{{end}} no Santa version that can be read, and {{if eq .Summary.VersionUnknown 1}}is{{else}}are{{end}} in no list.{{end}}</p>
+{{else}}
+{{template "fleetnotcomputed"}}
+{{end}}
+<h2>Stale threshold</h2>
+{{with .Holiday}}
+{{if .Unread}}
+<p>The stored stale threshold could not be read.</p>
+{{else}}
+<p>A Mac counts as not syncing after {{.StaleDays}} days without a completed sync.{{if .Stored}} Holiday mode is set: {{.HolidayStaleDays}} days until {{.HolidayUntil}} (a UTC date, inclusive){{if .Lapsed}}; that day has passed, so the normal threshold applies again{{end}}.{{else}} No holiday mode is set.{{end}} The fleet job uses this setting from its next run.</p>
+{{if $.Edit.On}}
+<details class="edit"><summary>Set holiday mode</summary>
+<form class="edit-form" method="post" action="/admin/fleet/holiday">
+  <label>Stale after <span class="hint">(days, 1 to 365, at least the normal threshold)</span>
+    <input name="stale_days" type="number" min="1" max="365" required{{if .Stored}} value="{{.HolidayStaleDays}}"{{end}}>
+  </label>
+  <label>Until <span class="hint">(the holiday's last day, a UTC date, at most 366 days ahead)</span>
+    <input name="until" type="date" required{{if .Stored}} value="{{verbatim .HolidayUntil}}"{{end}}>
+  </label>
+  <button type="submit">Set holiday mode</button>
+</form>
+<p class="hint">Over a holiday Macs are simply off. Holiday mode raises the stale threshold until the end of the day given; the day after, the normal threshold applies again by itself. A new holiday replaces the one set. As <code>rudolph fleet holiday</code> does.</p>
+</details>
+{{if .Stored}}
+<form class="edit-form" method="post" action="/admin/fleet/holiday/end">
+  <button type="submit" class="danger">End holiday mode now</button>
+</form>
+{{end}}
+{{end}}
+{{end}}
+{{end}}
+{{end}}

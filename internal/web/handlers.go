@@ -147,6 +147,7 @@ func (s *server) machineDetail(w http.ResponseWriter, r *http.Request) {
 		Pager        pager
 		Edit         editForms
 		Groups       machineGroupForms
+		Unknown      unknownFigure
 	}{
 		Machine:      machine,
 		Inherited:    inherited,
@@ -159,6 +160,7 @@ func (s *server) machineDetail(w http.ResponseWriter, r *http.Request) {
 		Pager:        links("/machines/"+url.PathEscape(id), url.Values{}, nav, rules.NextCursor),
 		Edit:         edit,
 		Groups:       groupForms,
+		Unknown:      s.machineUnknownFigure(r, machine.MachineID),
 	})
 }
 
@@ -302,18 +304,24 @@ func (s *server) groupDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	edit := s.editForms(r)
 	var modeOptions []configOption
+	var ready groupReadiness
 	if edit.On {
 		modeOptions = groupModeOptions(group.ClientMode)
+		// Changing a group's mode is how its Macs are moved to Lockdown, so
+		// the form shows how ready they are; viewers' pages cost no extra read.
+		ready = s.groupReadinessOf(r, group.Name)
 	}
 	s.render(w, r, http.StatusOK, "group", "Group "+groupLabel(name), "groups", struct {
 		Group       store.Group
 		ModeOptions []configOption
+		Readiness   groupReadiness
 		Rules       []store.Rule
 		Pager       pager
 		Edit        editForms
 	}{
 		Group:       group,
 		ModeOptions: modeOptions,
+		Readiness:   ready,
 		Rules:       page.Items,
 		Pager:       links(groupURL(name), url.Values{}, nav, page.NextCursor),
 		Edit:        edit,

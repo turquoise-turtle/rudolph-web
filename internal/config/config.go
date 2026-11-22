@@ -32,6 +32,11 @@ const (
 	// only needs more than the default.
 	EnvTopListStaleAfter = "RUDOLPH_WEB_TOP_LIST_STALE_AFTER"
 
+	// EnvFleetStaleAfter is how old the fleet job's snapshot may be before
+	// the fleet pages warn that the job may have stopped. The job runs once a
+	// day unless Rudolph's schedule says otherwise.
+	EnvFleetStaleAfter = "RUDOLPH_WEB_FLEET_STALE_AFTER"
+
 	// EnvTableName names Rudolph's DynamoDB table. Unset, cmd/lambda has no data
 	// layer and the data pages answer 503.
 	EnvTableName = "RUDOLPH_WEB_DYNAMODB_TABLE"
@@ -73,7 +78,12 @@ const (
 	defaultTopListStaleAfter = 3 * time.Hour
 	minTopListStaleAfter     = time.Hour
 	maxTopListStaleAfter     = 168 * time.Hour
-	entraAuthority           = "https://login.microsoftonline.com"
+	// A day and two hours: one missed daily run. The most is two weeks, for a
+	// job scheduled to skip days.
+	defaultFleetStaleAfter = 26 * time.Hour
+	minFleetStaleAfter     = time.Hour
+	maxFleetStaleAfter     = 336 * time.Hour
+	entraAuthority         = "https://login.microsoftonline.com"
 )
 
 // DefaultMinSantaVersion is the default minimum Santa version: 2026.9 fixed
@@ -100,6 +110,7 @@ type Config struct {
 	EventsTableName       string // empty: no execution events
 	CLIEnv                string // empty: CLI commands without ENV=
 	TopListStaleAfter     time.Duration
+	FleetStaleAfter       time.Duration
 	Editing               bool   // admins may write; needs TableName
 	MinSantaVersion       string // empty: no update needed marker
 }
@@ -120,6 +131,7 @@ func FromEnv(getenv func(string) string) (Config, error) {
 		EventsTableName:       get(EnvEventsTableName),
 		CLIEnv:                get(EnvCLIEnv),
 		TopListStaleAfter:     defaultTopListStaleAfter,
+		FleetStaleAfter:       defaultFleetStaleAfter,
 	}
 	var errs []error
 	required := func(name, v string) bool {
@@ -176,6 +188,17 @@ func FromEnv(getenv func(string) string) (Config, error) {
 			errs = append(errs, fmt.Errorf("%s must be between %v and %v", EnvTopListStaleAfter, minTopListStaleAfter, maxTopListStaleAfter))
 		default:
 			c.TopListStaleAfter = d
+		}
+	}
+	if v := get(EnvFleetStaleAfter); v != "" {
+		d, err := time.ParseDuration(v)
+		switch {
+		case err != nil:
+			errs = append(errs, fmt.Errorf("%s must be a Go duration such as 26h", EnvFleetStaleAfter))
+		case d < minFleetStaleAfter || d > maxFleetStaleAfter:
+			errs = append(errs, fmt.Errorf("%s must be between %v and %v", EnvFleetStaleAfter, minFleetStaleAfter, maxFleetStaleAfter))
+		default:
+			c.FleetStaleAfter = d
 		}
 	}
 	if c.EventsTableName != "" && c.TableName == "" {
