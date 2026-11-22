@@ -70,6 +70,17 @@ variable "top_list_stale_after" {
   }
 }
 
+variable "min_santa_version" {
+  type        = string
+  description = "Santa version below which the machine list and page mark a Mac \"update needed\" (RUDOLPH_WEB_MIN_SANTA_VERSION), such as 2026.9 or 2026.10.1. Santa 2026.9 fixed ways for a local user to pause enforcement. Empty turns the marker off."
+  default     = "2026.9"
+
+  validation {
+    condition     = var.min_santa_version == "" || can(regex("^[0-9]{1,9}(\\.[0-9]{1,9})+$", var.min_santa_version))
+    error_message = "min_santa_version must be a version of at least two numeric parts, such as 2026.9, or empty to turn the marker off."
+  }
+}
+
 variable "session_ttl" {
   type        = string
   description = "Session cookie lifetime as a Go duration between 5m and 12h (RUDOLPH_WEB_SESSION_TTL). Role changes take effect at most one TTL after the next sign-in."

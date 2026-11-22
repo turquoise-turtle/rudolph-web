@@ -10,6 +10,7 @@ Admins use it to see:
   plus a detail page with last sync, client mode, rule counts and machine-specific rules.
   The detail page names the model after its identifier (`Mac16,12 - MacBook Air (13-inch, M4, 2025)`) from a table copied by hand from Apple's support pages (`internal/macmodels`); an identifier the table does not know, and the list, show the identifier alone.
   Both mark a Santa version below 2026.8 as "legacy client" (Rudolph supports 2025.12 only for macOS 13 Macs, with limits); an empty or unparseable version is not marked.
+  Both also mark a Mac "update needed" when its Santa version is below the minimum, `RUDOLPH_WEB_MIN_SANTA_VERSION` (default 2026.9, which fixed ways for a local user to pause enforcement), and the detail page names the minimum; versions compare part by part as numbers, so 2026.10 is above 2026.9.
   Its "Configuration" table shows each setting Rudolph sends the Mac: its own value, marked "(this Mac)", or the global one, marked "(global config)", as `rudolph config get --machine` works it out; URLs show only their scheme, host and path, since the rest may hold a token.
   Its "Sync health" section lists signs that a Mac is not syncing as it should: not seen for more than a day, a last sync without postflight 30 minutes after its preflight, a pending clean sync request, and a temporary client mode (running, ended, or ignored because it ends more than 30 days ahead).
 - **Global rules**: a paginated list you can filter by rule type and policy.
@@ -174,6 +175,7 @@ Role changes take effect at the next sign-in, which is at most one session TTL l
 | `RUDOLPH_WEB_EDITING` | no | `true` lets `Rudolph.Admin` add, remove and move rules, collect their allowed executions, set temporary client modes, manage device groups, change a Mac's and the global configuration, and request or cancel a clean sync (needs `RUDOLPH_WEB_DYNAMODB_TABLE`, and the role's write grant from `enable_editing`); `false` or unset keeps the view read-only; anything else is an error |
 | `RUDOLPH_WEB_TOP_LIST_STALE_AFTER` | no | Go duration, 1h–168h, default `3h`: how old a top list may be before its page warns that Rudolph's ranker may have stopped |
 | `RUDOLPH_WEB_EVENTS_TABLE` | no | Rudolph's execution events table (`<prefix>_rudolph_events`), read by `cmd/lambda`; unset, the events and top list pages return 503. Needs `RUDOLPH_WEB_DYNAMODB_TABLE` |
+| `RUDOLPH_WEB_MIN_SANTA_VERSION` | no | Santa version, of at least two numeric parts (`2026.9`, `2026.10.1`), below which the machine list and page mark a Mac "update needed"; unset or empty, `2026.9`; `off` turns the marker off; anything else is an error. Terraform's `min_santa_version` sets it |
 
 \* Each secret has exactly one source. Set the plain variable, as local development does, or name a
 SecureString parameter with its `*_SSM_PARAMETER` variable; setting both is an error. `cmd/lambda`
@@ -216,6 +218,10 @@ two SecureString parameters, the first deploy, and how to roll the cookie key an
 `make build` alone produces `build/package/rudolph_web_deployment.zip`
 (runtime `provided.al2023`, architecture `arm64`), and `make tf-check` runs `terraform fmt -check`,
 `init -backend=false` and `validate` without touching an AWS account.
+
+### Upgrading: minimum Santa version
+
+This release adds the `min_santa_version` Terraform variable (default `"2026.9"`; `""` turns the marker off). An existing environment must add it to its `_variables.tf`, `main.tf` and `config.auto.tfvars.json` before `make plan` runs, as envcheck requires. It is a code and configuration change only, with no IAM change. See [docs/deploy.md](docs/deploy.md#upgrading-minimum-santa-version).
 
 ## Tests
 

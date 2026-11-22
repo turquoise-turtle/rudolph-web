@@ -109,6 +109,10 @@ type Options struct {
 	// modes. Nil keeps the view read-only: no forms are shown and the write
 	// routes do not exist. The audit trail is read through Store either way.
 	Writer store.Writer
+	// MinSantaVersion is the Santa version below which the machine list and
+	// page mark a Mac "update needed", such as 2026.9; empty turns the marker
+	// off. It must be a version of at least two numeric parts.
+	MinSantaVersion string
 }
 
 type server struct {
@@ -151,7 +155,12 @@ func New(opts Options) (http.Handler, error) {
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()
 	}
-	pages, err := parseTemplates(cliFuncs(clicmd.New(opts.CLIEnv)))
+	if opts.MinSantaVersion != "" {
+		if _, ok := store.ParseVersion(opts.MinSantaVersion); !ok {
+			return nil, errors.New("web: MinSantaVersion must be a version such as 2026.9, or empty")
+		}
+	}
+	pages, err := parseTemplates(cliFuncs(clicmd.New(opts.CLIEnv)), minVersionFuncs(opts.MinSantaVersion))
 	if err != nil {
 		return nil, err
 	}
@@ -459,6 +468,16 @@ type ruleTypeChoice struct {
 	id    string
 }
 
+// minVersionFuncs gives the templates the update needed marker: whether a
+// reported Santa version is below the minimum (never, with the minimum off),
+// and the minimum to name.
+func minVersionFuncs(minimum string) template.FuncMap {
+	return template.FuncMap{
+		"updateNeeded":    func(v string) bool { return minimum != "" && store.SantaVersionBelow(v, minimum) },
+		"minSantaVersion": func() string { return minimum },
+	}
+}
+
 // cliFuncs gives the templates the copy-and-paste CLI commands. Each returns
 // "" when no command can be built (an identifier of the wrong shape), and the
 // templates then show nothing.
@@ -548,7 +567,8 @@ func cliFuncs(b clicmd.Builder) template.FuncMap {
 }
 
 func parseTemplates(extra ...template.FuncMap) (map[string]*template.Template, error) {
-	base := template.New("layout.html").Funcs(funcs).Funcs(displayFuncs)
+	// The update needed marker is off unless New passes the minimum in extra, which replaces these.
+	base := template.New("layout.html").Funcs(funcs).Funcs(displayFuncs).Funcs(minVersionFuncs(""))
 	for _, fm := range extra {
 		base = base.Funcs(fm)
 	}
