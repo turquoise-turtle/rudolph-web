@@ -767,6 +767,20 @@ func TestQueryBudget_OneBoundedPaginatedQueryPerList(t *testing.T) {
 	for i := 1; i <= 300; i++ {
 		s.SetMachineGroups(fmt.Sprintf("machine-%03d", i), []string{"eng"}, nil, nil)
 	}
+	var stale []store.FleetHealthRow
+	var ready []store.ReadinessRow
+	for i := 1; i <= 300; i++ {
+		id := fmt.Sprintf("machine-%03d", i)
+		stale = append(stale, store.FleetHealthRow{MachineID: id, Hostname: fmt.Sprintf("host-%03d", i)})
+		ready = append(ready, store.ReadinessRow{MachineID: id, Hostname: fmt.Sprintf("host-%03d", i), Bucket: store.ReadinessReady, Counted: true})
+		s.AddUnknownBinary("machine-001", store.UnknownBinary{FileSHA256: fmt.Sprintf("%064d", i), FileName: "f"})
+	}
+	s.SetFleetSnapshot(fake.FleetSnapshot{
+		Summary: store.FleetSummary{Snapshot: "20260917T110000.000000000Z-0a1b2c3d", GeneratedAt: fixedNow.Add(-time.Hour), Macs: 300,
+			ReadinessAll: store.ReadinessCounts{Macs: 300, Ready: 300}, ReadinessGroups: map[string]store.ReadinessCounts{"eng": {Macs: 300, Ready: 300}}},
+		Health:    map[store.FleetCategory][]store.FleetHealthRow{store.FleetCategoryStale: stale},
+		Readiness: map[string][]store.ReadinessRow{"": ready, "eng": ready},
+	})
 	a := newApp(t, s, pageSize)
 
 	cases := []struct {
@@ -777,7 +791,7 @@ func TestQueryBudget_OneBoundedPaginatedQueryPerList(t *testing.T) {
 		{"/machines", "ListMachines", 0},
 		{"/machines?hostname=host-", "ListMachines", 0},
 		{"/machines?serial=SER", "ListMachines", 0},
-		{"/machines/machine-001", "ListMachineRules", 3}, // GetMachine, GlobalConfig and ListGroups (a group may set the client mode)
+		{"/machines/machine-001", "ListMachineRules", 4}, // GetMachine, GlobalConfig, ListGroups (a group may set the client mode) and MachineUnknown
 		{"/rules", "ListGlobalRules", 0},
 		{"/rules?type=BINARY&policy=ALLOWLIST", "ListGlobalRules", 0},
 		{"/events", "ListExecutionEvents", 0},
@@ -787,6 +801,10 @@ func TestQueryBudget_OneBoundedPaginatedQueryPerList(t *testing.T) {
 		{"/groups/eng/members", "ListGroupMembers", 1}, // ListGroups
 		{"/events/file-access", "ListFileAccessEvents", 0},
 		{"/events/file-access?machine=machine-001", "ListFileAccessEvents", 3}, // GetMachine for the stored spelling, as for executions
+		{"/fleet/health/stale", "ListFleetHealth", 0},                          // the pointer is read inside the list's first page
+		{"/fleet/readiness/macs?bucket=ready", "ListReadiness", 0},
+		{"/fleet/readiness/macs?group=eng&bucket=ready", "ListReadiness", 0},
+		{"/machines/machine-001/unknown", "ListMachineUnknown", 3}, // GetMachine for the stored spelling, as for events
 	}
 	for _, tc := range cases {
 		t.Run(tc.target, func(t *testing.T) {

@@ -107,6 +107,27 @@ func everyPage(t *testing.T) (*app, *http.Cookie, map[string]bool) {
 	s.AddAuditEntry(store.AuditEntry{Time: fixedNow, Actor: x("web:admin@example.com"), Action: "group.update", Target: "group:" + group,
 		Summary: x("changed")})
 
+	fleetRow := store.FleetHealthRow{MachineID: editMachine, Hostname: x("lab"), SerialNum: x("C02"), LastSeen: fixedNow,
+		LastCompleted: fixedNow, Reported: store.ClientMode(x("MONITOR")), Intended: store.ClientMode(x("LOCKDOWN")), Source: x("group:ops"),
+		Reason: x("Outlier"), Hash: x("hash"), ExpectedHash: x("expected"), Flags: x("0x7f"), SantaVersion: x("2026.8")}
+	readyRow := store.ReadinessRow{MachineID: editMachine, Hostname: x("lab"), SerialNum: x("C02"), Bucket: store.ReadinessReady, Counted: true,
+		ReportedMode: store.ClientMode(x("MONITOR")), IntendedMode: store.ClientMode(x("MONITOR")), Why: x("observed")}
+	health := map[store.FleetCategory][]store.FleetHealthRow{}
+	for _, c := range store.FleetCategories {
+		health[c] = []store.FleetHealthRow{fleetRow}
+	}
+	s.SetFleetSnapshot(fake.FleetSnapshot{
+		Summary: store.FleetSummary{Snapshot: x("20260917T110000.000000000Z-0a1b2c3d"), GeneratedAt: fixedNow.Add(-time.Hour), Macs: 2,
+			MinSantaVersion: x("2026.9"), StaleDays: 60, Holiday: true, HolidayUntil: x("2027-02-01"),
+			ReadinessAll: store.ReadinessCounts{Macs: 2, Ready: 2}, ReadinessGroups: map[string]store.ReadinessCounts{group: {Macs: 1, Ready: 1}}},
+		Health:    health,
+		Readiness: map[string][]store.ReadinessRow{"": {readyRow}, group: {readyRow}},
+	})
+	s.SetFleetHealthConfig(store.FleetHealthConfig{StaleDays: 10, HolidayStaleDays: 60, HolidayUntil: x("2027-02-01")})
+	s.SetMachineUnknown(editMachine, store.UnknownCounts{Last30: 2, Last7: 1})
+	s.AddUnknownBinary(editMachine, store.UnknownBinary{FileSHA256: sha, FileName: x("tool"), SigningID: x("ABCDE12345:com.tool"),
+		TeamID: x("ABCDE12345"), LastDay: fixedNow})
+
 	a := newEditApp(t, s, true)
 	admin := a.cookie(t, auth.RoleViewer, auth.RoleAdmin)
 	esc := url.PathEscape(group)
@@ -133,6 +154,16 @@ func everyPage(t *testing.T) (*app, *http.Cookie, map[string]bool) {
 		"/admin/config":                  true,
 		"/admin/audit":                   true,
 		"/admin/rules/new?team_id=EQHXZ8M8AV&signing_id=EQHXZ8M8AV:com.x": false,
+		"/fleet":                             true,
+		"/fleet/health/stale":                true,
+		"/fleet/health/mode":                 true,
+		"/fleet/health/rules":                true,
+		"/fleet/health/sip":                  true,
+		"/fleet/health/version":              true,
+		"/fleet/readiness":                   true,
+		"/fleet/readiness/macs?bucket=ready": true,
+		"/fleet/readiness/macs?" + url.Values{"group": {group}, "bucket": {"ready"}}.Encode(): true,
+		"/machines/" + editMachine + "/unknown":                                               true,
 	}
 }
 
