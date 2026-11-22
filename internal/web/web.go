@@ -582,11 +582,15 @@ func cliFuncs(b clicmd.Builder) template.FuncMap {
 		"cliCollectMachine": func(t store.RuleType, id, machine string, on bool) string {
 			return str(b.CollectAllowedEvents(t, id, clicmd.Machine(machine, ""), on))
 		},
-		"cmd":             func(label, command string) cliCommand { return cliCommand{label, command} },
-		"cliMachineRules": func(machine string) string { return str(b.MachineRules(machine)) },
-		"cliConfigGet":    func(machine string) string { return str(b.ConfigGet(machine)) },
-		"cliEndTemporary": func(machine string) string { return str(b.EndTemporaryMode(machine)) },
-		"cliMonitorFor2h": func(machine string) string { return str(b.TemporaryMode(machine, store.ClientModeMonitor, "2h")) },
+		"cliCollectGroup": func(t store.RuleType, id, group string, on bool) string {
+			return str(b.CollectAllowedEvents(t, id, clicmd.Group(group), on))
+		},
+		"cliGroupFileAccess": func(group, action string) string { return str(b.GroupFileAccessOverride(group, action)) },
+		"cmd":                func(label, command string) cliCommand { return cliCommand{label, command} },
+		"cliMachineRules":    func(machine string) string { return str(b.MachineRules(machine)) },
+		"cliConfigGet":       func(machine string) string { return str(b.ConfigGet(machine)) },
+		"cliEndTemporary":    func(machine string) string { return str(b.EndTemporaryMode(machine)) },
+		"cliMonitorFor2h":    func(machine string) string { return str(b.TemporaryMode(machine, store.ClientModeMonitor, "2h")) },
 	}
 }
 

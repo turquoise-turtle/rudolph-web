@@ -421,7 +421,9 @@ func sortedStrings(s []string) []string {
 // name to entry, sorted by name. An entry that is not a map is skipped, and a
 // mistyped Description or AcceptReported is shown as empty or false, so one
 // bad entry does not hide the others. ClientMode is read as Rudolph's
-// groups.StoredClientMode reads it, so a value Rudolph ignores shows as none.
+// groups.StoredClientMode reads it, and OverrideFileAccessAction as its
+// groups.StoredFileAccessAction does (legacy spellings normalised), so a
+// value Rudolph ignores shows as none.
 func DecodeGroupRegistry(item map[string]types.AttributeValue) []store.Group {
 	m, ok := item["Groups"].(*types.AttributeValueMemberM)
 	if !ok {
@@ -445,6 +447,14 @@ func DecodeGroupRegistry(item map[string]types.AttributeValue) []store.Group {
 			if err := stored.UnmarshalDynamoDBAttributeValue(v); err == nil {
 				if mode, ok := stored.Mode(); ok {
 					g.ClientMode = clientModes[int64(mode)]
+				}
+			}
+		}
+		if v, ok := entry.Value["OverrideFileAccessAction"]; ok {
+			var stored rudolphgroups.StoredFileAccessAction
+			if err := stored.UnmarshalDynamoDBAttributeValue(v); err == nil {
+				if action, ok := stored.Action(); ok {
+					g.FileAccessOverride = string(action)
 				}
 			}
 		}

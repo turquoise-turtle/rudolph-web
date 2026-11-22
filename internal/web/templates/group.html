@@ -9,8 +9,13 @@
   <dt>Members</dt><dd><a href="{{groupMembersURL .Group.Name}}">List this group's Macs</a></dd>
   {{end}}
   <dt>Client mode</dt><dd>{{with .Group.ClientMode}}{{.}}{{else}}<span class="muted">not set</span>: its Macs follow another of their groups' modes, or the global mode{{end}}</dd>
+  <dt>Override file access action</dt><dd>{{with .Group.FileAccessOverride}}{{.}}{{else}}<span class="muted">not set</span>: its Macs follow another of their groups' overrides, or the global one{{end}}</dd>
 </dl>
-<p class="hint">A Mac with no temporary mode or client mode of its own gets the strictest client mode of its groups (LOCKDOWN, then STANDALONE, then MONITOR), or the global configuration's when none of its groups has one.</p>
+<p class="hint">A Mac with no temporary mode or client mode of its own gets the strictest client mode of its groups (LOCKDOWN, then STANDALONE, then MONITOR), or the global configuration's when none of its groups has one. A Mac with no file access override of its own gets the most relaxed override of its groups (DISABLE, then AUDIT_ONLY, then NONE), or the global configuration's when none of its groups has one.</p>
+<details class="cmds"><summary>Commands</summary><ul>
+  {{range .FileAccessActions}}{{if ne . $.Group.FileAccessOverride}}{{template "cmd" (cmd (printf "Set the file access override to %s" .) (cliGroupFileAccess $.Group.Name .))}}{{end}}{{end}}
+  {{if .Group.FileAccessOverride}}{{template "cmd" (cmd "Remove the file access override" (cliGroupFileAccess .Group.Name ""))}}{{end}}
+</ul></details>
 {{if .Edit.On}}
 <details class="edit config-edit"><summary>Change settings</summary>
 <form class="config-form" method="post" action="/admin/groups/config">
@@ -23,6 +28,11 @@
   <td><label for="cfg-ClientMode">Client mode</label></td>
   <td>{{with .Group.ClientMode}}{{.}}{{else}}<span class="muted">not set</span>{{end}}</td>
   <td><input type="hidden" name="orig_ClientMode" value="{{verbatim .Group.ClientMode}}"><select name="ClientMode" id="cfg-ClientMode">{{range .ModeOptions}}<option value="{{verbatim .Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select><p class="hint">Every Mac in this group without a temporary or its own client mode gets this one from its next sync, unless another of its groups has a stricter one: LOCKDOWN or STANDALONE here blocks unknown binaries on all of them. Not set, they follow their other groups' modes or the global one. Rudolph caches the groups for up to a minute, so Macs that sync within that minute may still get the old mode.</p></td>
+</tr>
+<tr data-edit-setting="OverrideFileAccessAction">
+  <td><label for="cfg-OverrideFileAccessAction">Override file access action</label></td>
+  <td>{{with .Group.FileAccessOverride}}{{.}}{{else}}<span class="muted">not set</span>{{end}}</td>
+  <td><input type="hidden" name="orig_OverrideFileAccessAction" value="{{verbatim .Group.FileAccessOverride}}"><select name="OverrideFileAccessAction" id="cfg-OverrideFileAccessAction">{{range .FileAccessOptions}}<option value="{{verbatim .Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}</select><p class="hint">Every Mac in this group without a file access override of its own gets this one from its next sync, unless another of its groups has a more relaxed one: DISABLE here switches file access policies off on all of them, AUDIT_ONLY only logs what they would deny, and NONE applies them as written even while the global configuration relaxes them. Not set, they follow their other groups' overrides or the global one. Rudolph caches the groups for up to a minute, so Macs that sync within that minute may still get the old override.</p></td>
 </tr>
 </tbody>
 </table>
@@ -59,6 +69,7 @@
 </details>
 {{end}}
 <h2>Rules</h2>
+{{if .Edit.On}}{{if not .AllEventUpload}}<p class="hint"><strong>Note:</strong> {{if .GlobalUnread}}the global configuration could not be read to check EnableAllEventUpload.{{else}}the global configuration does not turn on EnableAllEventUpload.{{end}} Santa uploads allowed executions only with it, so a rule collecting allowed executions stores nothing from a Mac unless its own configuration turns it on.</p>{{end}}{{end}}
 {{if .Rules}}
 <div class="scroll">
 <table>
@@ -71,11 +82,12 @@
   <td><code>{{.Identifier}}</code>{{with .CELExpr}}<br><code class="cel">{{lines .}}</code>{{end}}</td>
   <td>{{.CustomMessage}}{{with .CustomURL}}<br><span class="muted">{{.}}</span>{{end}}</td>
   <td>{{.Description}}</td>
-  <td>{{with .State}}{{.}}{{else}}—{{end}}</td>
-  <td>{{with cliRuleGroup "deny" .RuleType .Identifier $.Group.Name}}<details class="cmds"><summary>Commands</summary><ul>
+  <td>{{with .State}}{{.}}{{else}}—{{end}}{{if .CollectAllowedEvents}}<br><span class="muted">collecting allowed executions</span>{{end}}</td>
+  <td>{{$rule := .}}{{with cliRuleGroup "deny" .RuleType .Identifier $.Group.Name}}<details class="cmds"><summary>Commands</summary><ul>
     {{template "cmd" (cmd "Block in this group" .)}}
+    {{if canCollect $rule}}{{if $rule.CollectAllowedEvents}}{{template "cmd" (cmd "Stop collecting allowed executions" (cliCollectGroup $rule.RuleType $rule.Identifier $.Group.Name false))}}{{else}}{{template "cmd" (cmd "Collect allowed executions" (cliCollectGroup $rule.RuleType $rule.Identifier $.Group.Name true))}}{{end}}{{end}}
   </ul></details>{{end}}</td>
-  {{if $.Edit.On}}<td><details class="edit rule-edit"><summary>Change</summary>{{template "removerule" (removeRuleForm "group" $.Group.Name .)}}</details></td>{{end}}
+  {{if $.Edit.On}}<td><details class="edit rule-edit"><summary>Change</summary>{{template "removerule" (removeRuleForm "group" $.Group.Name .)}}{{if canCollect .}}{{template "collectrule" (removeRuleForm "group" $.Group.Name .)}}{{end}}</details></td>{{end}}
 </tr>
 {{end}}
 </tbody>

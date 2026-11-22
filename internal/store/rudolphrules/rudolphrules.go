@@ -319,13 +319,31 @@ func UnknownMachine(id string) error {
 }
 
 // CheckCollection checks a change to whether a rule's allowed executions are
-// collected. Rudolph's index of collected rules has global and machine scopes
-// only, so group rules are refused.
+// collected: a global, machine or group rule, as Rudolph's index of collected
+// rules has all three scopes.
 func CheckCollection(actor store.Actor, target store.RuleTarget, ruleType store.RuleType, identifier string) (Remove, error) {
-	if target.Kind == store.TargetGroup {
-		return Remove{}, store.Invalid("Rudolph collects the allowed executions of global and machine rules only, not group rules")
+	ch, err := CheckRemove(actor, target, ruleType, identifier)
+	if err != nil {
+		return Remove{}, err
 	}
-	return CheckRemove(actor, target, ruleType, identifier)
+	// Global and machine rules may be stored under identifiers older Rudolph versions accepted. Group rules have
+	// always been validated when written (groups.ValidateRule), so no group has a rule under any other.
+	if ch.Target.Kind == store.TargetGroup && !rules.ValidIdentifier(ch.RuleType, identifier) {
+		return Remove{}, store.Invalid("identifier %q is not a valid %s identifier", identifier, ruleType)
+	}
+	return ch, nil
+}
+
+// NotAnAllowRule is the refusal to collect the allowed executions of a group
+// rule that allows nothing, in Rudolph's words (groups.ErrNotAnAllowRule).
+func NotAnAllowRule() error {
+	return store.Invalid("%v", groups.ErrNotAnAllowRule)
+}
+
+// GroupRuleCollectable reports whether a group rule's policy lets it be
+// flagged, as Rudolph's groups.IsAllow does.
+func GroupRuleCollectable(policy store.Policy) bool {
+	return policy == store.PolicyAllowlist || policy == store.PolicyAllowlistCompiler
 }
 
 // CollectionSummary describes a change to a rule's collection for the audit

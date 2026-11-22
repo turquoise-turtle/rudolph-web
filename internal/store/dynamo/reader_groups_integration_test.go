@@ -66,12 +66,16 @@ func TestListGroupRules(t *testing.T) {
 		t.Fatal(err)
 	}
 	queriesOnly(t, 1)
-	if len(page.Items) != 1 {
-		t.Fatalf("rules %+v, want the one eng rule", page.Items)
+	if len(page.Items) != 2 {
+		t.Fatalf("rules %+v, want the two eng rules", page.Items)
 	}
 	r := page.Items[0]
-	if r.RuleType != store.RuleTypeSigningID || r.Policy != store.PolicyBlocklist || r.Identifier != "EQHXZ8M8AV:com.google.GeminiMacOS" || r.CustomMessage != "Not for Eng" {
+	if r.RuleType != store.RuleTypeSigningID || r.Policy != store.PolicyBlocklist || r.Identifier != "EQHXZ8M8AV:com.google.GeminiMacOS" || r.CustomMessage != "Not for Eng" || r.CollectAllowedEvents {
 		t.Errorf("rule %+v", r)
+	}
+	// The fixture's flagged group rule (Rudolph's testdata/webcontract/README.md).
+	if f := page.Items[1]; f.RuleType != store.RuleTypeTeamID || f.Policy != store.PolicyAllowlist || f.Identifier != "ABCDE12345" || !f.CollectAllowedEvents {
+		t.Errorf("flagged rule %+v, want the TeamID allow ABCDE12345 with CollectAllowedEvents", f)
 	}
 
 	empty, err := s.ListGroupRules(ctx, "nobody", store.PageRequest{Limit: 10})
@@ -85,7 +89,7 @@ func TestListGroupRules(t *testing.T) {
 
 func TestListGroupRules_CursorBoundToTheGroup(t *testing.T) {
 	s := newStore(t)
-	// The fixture has one eng rule; use global rule paging to obtain a cursor of another query, which must not be
+	// Use global rule paging to obtain a cursor of another query, which must not be
 	// accepted here.
 	global, err := s.ListGlobalRules(ctx, store.RuleFilter{}, store.PageRequest{Limit: 1})
 	if err != nil || global.NextCursor == "" {

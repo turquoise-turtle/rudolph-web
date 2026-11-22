@@ -305,10 +305,6 @@ func (s *server) setRuleCollection(w http.ResponseWriter, r *http.Request) {
 		s.renderError(w, r, http.StatusBadRequest, "Not changed: unknown target.")
 		return
 	}
-	if target.Kind == store.TargetGroup {
-		s.renderError(w, r, http.StatusBadRequest, "Not changed: Rudolph collects the allowed executions of global and machine rules only, not group rules.")
-		return
-	}
 	ruleType := store.RuleType(f.Get("type"))
 	if !slices.Contains(store.RuleTypes, ruleType) {
 		s.renderError(w, r, http.StatusBadRequest, "Not changed: unknown rule type.")
@@ -326,7 +322,7 @@ func (s *server) setRuleCollection(w http.ResponseWriter, r *http.Request) {
 	err := s.writer.SetRuleCollection(r.Context(), actorOf(r), target, ruleType, strings.TrimSpace(f.Get("identifier")), collect)
 	// A second click, or a change made with the CLI meanwhile, leaves the rule as asked.
 	if err != nil && !errors.Is(err, store.ErrNothingToChange) {
-		s.writeError(w, r, err, "There is no such rule: it may have been removed, or the machine rule may have expired.")
+		s.writeError(w, r, err, "There is no such rule: it may have been removed, the machine rule may have expired, or the group may have been deleted.")
 		return
 	}
 	http.Redirect(w, r, back, http.StatusSeeOther)

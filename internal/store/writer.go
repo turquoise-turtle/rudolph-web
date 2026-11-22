@@ -195,12 +195,14 @@ type Writer interface {
 	// rule is marked so that the Mac drops it (or gets the global rule back)
 	// at its next sync. ErrNotFound when there is no such rule.
 	RemoveRule(ctx context.Context, actor Actor, target RuleTarget, ruleType RuleType, identifier string) error
-	// SetRuleCollection sets or clears CollectAllowedEvents on a global or
-	// machine rule, as rudolph rule update --collect-allowed-events does, so
-	// that the allowed executions it matches are stored (or no longer are).
-	// ErrNothingToChange when the rule already is as asked; ErrNotFound when
-	// there is no such rule or the machine rule has expired. Group rules are
-	// ErrInvalidArgument: Rudolph cannot collect them.
+	// SetRuleCollection sets or clears CollectAllowedEvents on a global,
+	// machine or group rule, as rudolph rule update --collect-allowed-events
+	// does, so that the allowed executions it matches are stored (or no
+	// longer are). ErrNothingToChange when the rule already is as asked;
+	// ErrNotFound when there is no such rule, the machine rule has expired or
+	// the group is not registered. Only an allowing group rule (ALLOWLIST,
+	// ALLOWLIST_COMPILER) can be flagged: any other is ErrInvalidArgument.
+	// Clearing is accepted whatever the policy.
 	SetRuleCollection(ctx context.Context, actor Actor, target RuleTarget, ruleType RuleType, identifier string, collect bool) error
 	// MoveMachineRules copies every machine rule in force on one Mac to
 	// another, as stored (policy, messages, CEL expression, description,
@@ -263,6 +265,20 @@ type Writer interface {
 	// the group is not registered; ErrNothingToChange when it already has the
 	// mode (or none, when removing).
 	SetGroupClientMode(ctx context.Context, actor Actor, group string, mode ClientMode) error
+	// SetGroupFileAccessOverride sets a group's file access override (one of
+	// FileAccessActions), or removes it when action is "", as rudolph config
+	// update --group (or --ungrouped) --override-file-access-action does,
+	// recording config.update. The rest is as for SetGroupClientMode, and no
+	// value needs confirming.
+	SetGroupFileAccessOverride(ctx context.Context, actor Actor, group string, action string) error
+	// UpdateGroupSettings changes a group's client mode, its file access
+	// override or both in one write with one config.update entry, as a single
+	// rudolph config update --group does, so a change to both is never half
+	// applied or half recorded. A setting the group already has as asked is
+	// left out of the write and the entry; when that leaves nothing it is
+	// ErrNothingToChange. Otherwise as SetGroupClientMode and
+	// SetGroupFileAccessOverride, which are this with one setting.
+	UpdateGroupSettings(ctx context.Context, actor Actor, group string, change GroupSettingsChange) error
 	// SetFleetHoliday raises the fleet job's stale threshold to staleDays
 	// through until (a UTC date, YYYY-MM-DD, inclusive), replacing any
 	// holiday stored, as rudolph fleet holiday does, recording
@@ -286,6 +302,14 @@ type Writer interface {
 	// is ErrSnapshotTooOld. A failure after a Mac was assigned is a
 	// *PartialCohortError.
 	AssignCohort(ctx context.Context, actor Actor, snapshot, group string, machineIDs []string) (int, error)
+}
+
+// GroupSettingsChange is a change to a group's settings. A nil setting is left
+// as it is; one pointing at "" is removed, so the group's Macs follow their
+// own or the global setting again.
+type GroupSettingsChange struct {
+	ClientMode         *ClientMode
+	FileAccessOverride *string
 }
 
 // ConfigChange is a change to a global or machine configuration. A nil

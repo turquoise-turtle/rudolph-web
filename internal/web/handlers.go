@@ -110,21 +110,21 @@ func (s *server) machineDetail(w http.ResponseWriter, r *http.Request) {
 		s.log.Warn("reading the global config failed", "err", err)
 		global = store.Config{}
 	}
-	// One read of the groups serves both the client mode the Mac's groups
-	// give it and the admin's group forms. Without it the page still shows
-	// the Mac's own and the global settings.
+	// One read of the groups serves the client mode and file access override
+	// the Mac's groups give it and the admin's group forms. Without it the
+	// page still shows the Mac's own and the global settings.
 	registered, err := s.store.ListGroups(r.Context())
 	groupsUnread := err != nil
 	if groupsUnread {
 		s.log.Warn("reading the groups failed", "err", err)
 	}
-	var fromGroup groupMode
+	var fromGroup groupSettings
 	if !groupsUnread {
-		fromGroup.Mode, fromGroup.Group = rudolphrules.MachineGroupClientMode(registered, machine.AssignedGroups, machine.ReportedGroups)
+		fromGroup = machineGroupSettings(registered, machine)
 	}
 	inherited := groupMode{Mode: global.ClientMode}
 	if fromGroup.Mode != "" {
-		inherited = fromGroup
+		inherited = fromGroup.groupMode
 	}
 	title := machine.Hostname
 	if title == "" {
@@ -192,12 +192,7 @@ func (s *server) rules(w http.ResponseWriter, r *http.Request) {
 	// Macs upload allowed executions; viewers' pages cost no extra read.
 	var allEventUpload, globalUnread bool
 	if edit.On {
-		global, err := s.store.GlobalConfig(r.Context())
-		if err != nil {
-			s.log.Warn("reading the global config failed", "err", err)
-			globalUnread = true
-		}
-		allEventUpload = err == nil && global.EnableAllEventUpload != nil && *global.EnableAllEventUpload
+		allEventUpload, globalUnread = s.allEventUpload(r)
 	}
 	s.render(w, r, http.StatusOK, "rules", "Global rules", "rules", struct {
 		Filter         store.RuleFilter
@@ -249,7 +244,7 @@ func (s *server) groups(w http.ResponseWriter, r *http.Request) {
 		rows = append(rows, groupRow{Group: g, Reported: reported})
 	}
 	// Rudolph registers the ungrouped group only once it has a rule or a
-	// client mode, but it can have rules before then, so it is always listed,
+	// setting, but it can have rules before then, so it is always listed,
 	// last.
 	rows = append(rows, groupRow{Group: ungroupedOf(groups)})
 	s.render(w, r, http.StatusOK, "groups", "Groups", "groups", struct {
@@ -303,29 +298,55 @@ func (s *server) groupDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	edit := s.editForms(r)
-	var modeOptions []configOption
+	var modeOptions, fileAccessOptions []configOption
 	var ready groupReadiness
+	// Only admins can turn collection on, so only they need to know whether
+	// Macs upload allowed executions; viewers' pages cost no extra read.
+	var allEventUpload, globalUnread bool
 	if edit.On {
 		modeOptions = groupModeOptions(group.ClientMode)
+		fileAccessOptions = groupFileAccessOptions(group.FileAccessOverride)
 		// Changing a group's mode is how its Macs are moved to Lockdown, so
 		// the form shows how ready they are; viewers' pages cost no extra read.
 		ready = s.groupReadinessOf(r, group.Name)
+		allEventUpload, globalUnread = s.allEventUpload(r)
 	}
 	s.render(w, r, http.StatusOK, "group", "Group "+groupLabel(name), "groups", struct {
-		Group       store.Group
-		ModeOptions []configOption
-		Readiness   groupReadiness
-		Rules       []store.Rule
-		Pager       pager
-		Edit        editForms
+		Group             store.Group
+		ModeOptions       []configOption
+		FileAccessOptions []configOption
+		FileAccessActions []string
+		Readiness         groupReadiness
+		Rules             []store.Rule
+		Pager             pager
+		Edit              editForms
+		AllEventUpload    bool
+		GlobalUnread      bool
 	}{
-		Group:       group,
-		ModeOptions: modeOptions,
-		Readiness:   ready,
-		Rules:       page.Items,
-		Pager:       links(groupURL(name), url.Values{}, nav, page.NextCursor),
-		Edit:        edit,
+		Group:             group,
+		ModeOptions:       modeOptions,
+		FileAccessOptions: fileAccessOptions,
+		FileAccessActions: store.FileAccessActions,
+		Readiness:         ready,
+		Rules:             page.Items,
+		Pager:             links(groupURL(name), url.Values{}, nav, page.NextCursor),
+		Edit:              edit,
+		AllEventUpload:    allEventUpload,
+		GlobalUnread:      globalUnread,
 	})
+}
+
+// allEventUpload reads whether the global configuration turns on
+// EnableAllEventUpload, without which Macs upload no allowed executions for
+// a collecting rule to store. unread says the configuration could not be
+// read, which the page says instead of failing.
+func (s *server) allEventUpload(r *http.Request) (on, unread bool) {
+	global, err := s.store.GlobalConfig(r.Context())
+	if err != nil {
+		s.log.Warn("reading the global config failed", "err", err)
+		return false, true
+	}
+	return global.EnableAllEventUpload != nil && *global.EnableAllEventUpload, false
 }
 
 // memberRow is one Mac on a group's members page. How is "assigned",

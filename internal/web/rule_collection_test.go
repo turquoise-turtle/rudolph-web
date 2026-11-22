@@ -6,11 +6,12 @@ package web_test
 //   - With editing on, admins get a button on each allowing rule (ALLOWLIST, ALLOWLIST_COMPILER) that is in force:
 //     "Collect allowed executions", or "Stop collecting" on a collecting rule. It posts target, machine, type,
 //     identifier and collect=on|off to /admin/rules/collect and returns to the list (303), as removing does. Blocking
-//     rules get no button: blocked executions are always stored. Group rules get none: Rudolph can't collect them.
+//     rules get no button: blocked executions are always stored. Group rules get the same button since Rudolph 019bf42
+//     (group_rule_collection_test.go).
 //   - Turning collection on while the global config doesn't set EnableAllEventUpload to yes says so on the rules page
 //     (nothing would be uploaded from Macs that don't upload allowed events).
-//   - A change that changes nothing is still a 303, with nothing audited; an unknown rule is 404; group or unknown
-//     targets are 400.
+//   - A change that changes nothing is still a 303, with nothing audited; an unknown rule is 404; unknown targets are
+//     400.
 
 import (
 	"net/http"
@@ -66,9 +67,6 @@ func TestRuleCollection_ButtonsOnAllowingRulesOnly(t *testing.T) {
 	row := ruleRow(t, body, collectAllow)
 	mustContain(t, row, "collecting allowed executions", `name="collect" value="off"`, "Stop collecting")
 
-	body = a.get(t, "/groups/eng", admin).Body.String()
-	mustNotContain(t, ruleRow(t, body, collectAllow), `action="/admin/rules/collect"`)
-
 	// Viewers see the mark but no button.
 	_, body = a.viewerGet(t, "/machines/"+editMachine)
 	mustContain(t, ruleRow(t, body, collectAllow), "collecting allowed executions")
@@ -113,7 +111,6 @@ func TestRuleCollection_Refusals(t *testing.T) {
 		code int
 	}{
 		"unknown rule":   {url.Values{"target": {"global"}, "type": {"BINARY"}, "identifier": {strings.Repeat("cd", 32)}, "collect": {"on"}}, http.StatusNotFound},
-		"group rule":     {url.Values{"target": {"group"}, "group": {"eng"}, "type": {"BINARY"}, "identifier": {collectAllow}, "collect": {"on"}}, http.StatusBadRequest},
 		"bad collect":    {url.Values{"target": {"global"}, "type": {"BINARY"}, "identifier": {collectAllow}, "collect": {"maybe"}}, http.StatusBadRequest},
 		"unknown target": {url.Values{"target": {"fleet"}, "type": {"BINARY"}, "identifier": {collectAllow}, "collect": {"on"}}, http.StatusBadRequest},
 	} {
