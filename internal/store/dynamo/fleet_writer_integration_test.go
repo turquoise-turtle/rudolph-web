@@ -298,6 +298,8 @@ func TestAssignCohort_ChecksTheSnapshotThenWrites(t *testing.T) {
 		t.Errorf("refusals were audited: %+v", after[:len(after)-len(before)])
 	}
 
+	// GetMachine answers not found for a Mac without sensor data, and the fixture has none for machine B.
+	putSensorData(t, machineB, "C02MACB", "mac-b", nil)
 	ddblocal.ResetCounts()
 	n, err := st.AssignCohort(ctx, writerActor, snapshot, "pilot", []string{machineA, machineB})
 	if err != nil || n != 2 {
