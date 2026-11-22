@@ -29,10 +29,11 @@ type Call struct {
 }
 
 // Paginated reports whether the call was a paginated list query (as opposed to
-// a bounded point read such as GetMachine or ListGroups, one registry item).
+// a bounded point read such as GetMachine, ListGroups, one registry item, or
+// MachineUnknown, one Query of at most 1,000 markers).
 func (c Call) Paginated() bool {
 	switch c.Method {
-	case "GetMachine", "ListGroups", "GlobalClientMode", "GlobalConfig":
+	case "GetMachine", "ListGroups", "GlobalClientMode", "GlobalConfig", "FleetSummary", "FleetHealthConfig", "MachineUnknown":
 		return false
 	}
 	return true
@@ -55,9 +56,17 @@ type Store struct {
 	execEvents   []store.ExecutionEvent
 	faaEvents    []store.FileAccessEvent
 	topLists     map[store.TopFilter]topList
-	calls        []Call
-	err          error
-	audit        []store.AuditEntry
+	// fleetPointer is the ID of the latest snapshot in fleetSnapshots, "" until
+	// the first SetFleetSnapshot.
+	fleetSnapshots  map[string]*fleetSnapshot
+	fleetPointer    string
+	fleetConfig     store.FleetHealthConfig
+	unknownCounts   map[string]store.UnknownCounts
+	unknownBinaries map[string][]store.UnknownBinary
+
+	calls []Call
+	err   error
+	audit []store.AuditEntry
 
 	// cursors authenticates page cursors with a per-store key, as the real
 	// implementation will with a key derived from the application secret.
@@ -86,6 +95,10 @@ func New() *Store {
 		groupRules:   map[string]map[string]store.Rule{},
 		machineGrps:  map[string]machineGroups{},
 		topLists:     map[store.TopFilter]topList{},
+
+		fleetSnapshots:  map[string]*fleetSnapshot{},
+		unknownCounts:   map[string]store.UnknownCounts{},
+		unknownBinaries: map[string][]store.UnknownBinary{},
 	}
 }
 

@@ -115,7 +115,7 @@ func (s *Store) TopBinaries(ctx context.Context, f store.TopFilter, p store.Page
 		return store.TopList{}, fmt.Errorf("dynamo: reading top list snapshot: %w", err)
 	}
 	if p.Cursor != "" && len(out.Items) == 0 {
-		if err := s.checkTopSnapshotExists(ctx, partition); err != nil {
+		if err := s.checkSnapshotExists(ctx, partition); err != nil {
 			return store.TopList{}, err
 		}
 	}
@@ -142,16 +142,17 @@ func (s *Store) TopBinaries(ctx context.Context, f store.TopFilter, p store.Page
 	return list, nil
 }
 
-// checkTopSnapshotExists runs after a cursor's page came back empty, which
-// happens either when the pinned snapshot has expired (its rows are deleted 8
-// days after the ranker wrote them) or when the previous page ended exactly on
+// checkSnapshotExists runs after a cursor's page of a top list or a fleet
+// list came back empty, which happens either when the pinned snapshot has
+// expired (its rows are deleted 8 days after the ranker wrote them, 3 days
+// after the fleet job did) or when the previous page ended exactly on
 // the snapshot's last row: a Query that stops at its Limit returns a
 // LastEvaluatedKey without knowing whether more rows follow, so such a page
 // still hands out a cursor. Telling the two apart costs one more Query, but
 // only on this empty page, never on a page with rows. An expired snapshot
 // returns ErrInvalidCursor so the page asks the user to start again rather
 // than showing an empty list as if nothing had been blocked or allowed.
-func (s *Store) checkTopSnapshotExists(ctx context.Context, partition string) error {
+func (s *Store) checkSnapshotExists(ctx context.Context, partition string) error {
 	out, err := s.client.Query(ctx, &dynamodb.QueryInput{
 		TableName:              aws.String(s.eventsTable),
 		KeyConditionExpression: aws.String("PK = :pk"),
@@ -162,7 +163,7 @@ func (s *Store) checkTopSnapshotExists(ctx context.Context, partition string) er
 		Limit:                aws.Int32(1),
 	})
 	if err != nil {
-		return fmt.Errorf("dynamo: checking top list snapshot: %w", err)
+		return fmt.Errorf("dynamo: checking snapshot: %w", err)
 	}
 	if len(out.Items) == 0 {
 		return store.ErrInvalidCursor
