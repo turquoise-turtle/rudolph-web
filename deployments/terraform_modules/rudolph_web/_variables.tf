@@ -70,6 +70,17 @@ variable "top_list_stale_after" {
   }
 }
 
+variable "fleet_stale_after" {
+  type        = string
+  description = "How old the snapshot of Rudolph's fleet job may be before the fleet health and readiness pages warn that the job may have stopped (RUDOLPH_WEB_FLEET_STALE_AFTER), in whole hours from 1h to 336h. The default suits a job that runs once a day; raise it when Rudolph's fleet_schedule_expression skips days."
+  default     = "26h"
+
+  validation {
+    condition     = can(regex("^[1-9][0-9]*h$", var.fleet_stale_after)) && try(tonumber(trimsuffix(var.fleet_stale_after, "h")) <= 336, false)
+    error_message = "fleet_stale_after must be whole hours from 1h to 336h, e.g. 26h."
+  }
+}
+
 variable "min_santa_version" {
   type        = string
   description = "Santa version below which the machine list and page mark a Mac \"update needed\" (RUDOLPH_WEB_MIN_SANTA_VERSION), such as 2026.9 or 2026.10.1. Santa 2026.9 fixed ways for a local user to pause enforcement. Empty turns the marker off."
@@ -152,7 +163,7 @@ variable "events_dynamodb_table_name" {
 
 variable "enable_editing" {
   type        = bool
-  description = "Let Rudolph.Admin change rules, temporary client modes, a Mac's and the global configuration (including clean sync requests), and device groups and their members from the web view (RUDOLPH_WEB_EDITING); on by default, and only Rudolph.Admin holders see the forms. Grants the role PutItem, UpdateItem, DeleteItem and BatchWriteItem on the store table, limited to Rudolph's rule, rules feed, machine, global config, group, group member, event collection and audit partitions (audit: PutItem only, and never with ExpiresAfter). Every change is recorded in Rudolph's audit trail. Set false to keep the view and its role read-only."
+  description = "Let Rudolph.Admin change rules, temporary client modes, a Mac's and the global configuration (including clean sync requests), device groups and their members, and the fleet job's holiday mode from the web view (RUDOLPH_WEB_EDITING); on by default, and only Rudolph.Admin holders see the forms. Grants the role PutItem, UpdateItem, DeleteItem and BatchWriteItem on the store table, limited to Rudolph's rule, rules feed, machine, global config, group, group member, event collection, fleet health and audit partitions (audit: PutItem only, and never with ExpiresAfter). Every change is recorded in Rudolph's audit trail. Set false to keep the view and its role read-only."
   default     = true
 }
 

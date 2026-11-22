@@ -1,7 +1,7 @@
 #
 # IAM: read two parameters, decrypt them, read Rudolph's two tables, write its own logs. With enable_editing, also
 # write Rudolph's rules, device groups, a Mac's and the global configuration (including clean sync requests and
-# temporary client modes) and the audit trail. Nothing else.
+# temporary client modes), the fleet job's holiday mode and the audit trail. Nothing else.
 #
 
 resource "aws_iam_role" "web" {
@@ -101,8 +101,8 @@ data "aws_iam_policy_document" "web" {
   }
 
   # Admin writes (enable_editing), made with Rudolph's own packages, so exactly the writes of the CLI's rule add,
-  # remove and update (collecting allowed executions), its config update and temporary client mode, and its group
-  # create, update, delete, add and remove: PutItem, UpdateItem and DeleteItem, also inside TransactWriteItems, which
+  # remove and update (collecting allowed executions), its config update and temporary client mode, its group
+  # create, update, delete, add and remove, and its fleet holiday: PutItem, UpdateItem and DeleteItem, also inside TransactWriteItems, which
   # has no IAM action of its own, and BatchWriteItem, which has one and which groups.DeleteGroup uses to delete a
   # group's rules (group delete --force). Only on the store table itself (never an index or the events table), and
   # only to the partitions those writes touch:
@@ -118,6 +118,8 @@ data "aws_iam_policy_document" "web" {
   #   GroupMembers#*               a group's member rows, written in the same transaction as a Mac's Groups row when a
   #                                group is assigned or removed (groups)
   #   EventCollection              the index of rules whose allowed executions are collected (eventcollection)
+  #   FleetHealth                  the fleet job's stale threshold and its holiday mode (fleethealth), exactly, not as a
+  #                                prefix; the job's own rows are in the events table, which this role only reads
   # The audit trail (one partition per UTC day) is a statement of its own with PutItem only, so no UpdateItem or
   # DeleteItem; but a PutItem can replace an entry with the same key, and what prevents that is Rudolph's conditional put
   # (attribute_not_exists(PK)), not IAM. The actions are in for_each so that they exist only when editing is on; each
@@ -130,7 +132,7 @@ data "aws_iam_policy_document" "web" {
       {
         sid              = "WriteRudolphRules"
         actions          = ["dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:DeleteItem", "dynamodb:BatchWriteItem"]
-        leading_keys     = ["GlobalRules", "RulesFeed", "MachineRules#*", "Machine#*", "GlobalConfig", "GroupRules#*", "GroupRegistry", "GroupMembers#*", "EventCollection"]
+        leading_keys     = ["GlobalRules", "RulesFeed", "MachineRules#*", "Machine#*", "GlobalConfig", "GroupRules#*", "GroupRegistry", "GroupMembers#*", "EventCollection", "FleetHealth"]
         extra_conditions = []
       },
       {
