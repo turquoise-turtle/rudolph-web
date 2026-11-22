@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/airbnb/rudolph/pkg/types"
+
 	"github.com/turquoise-turtle/rudolph-web/internal/store"
 	"github.com/turquoise-turtle/rudolph-web/internal/store/rudolphrules"
 )
@@ -377,21 +379,24 @@ func (s *Store) changeAssigned(actor store.Actor, machineID, group string, assig
 	return nil
 }
 
-// SetGroupClientMode implements store.Writer. Like Rudolph, it registers the
+// SetGroupClientMode implements store.Writer.
+func (s *Store) SetGroupClientMode(ctx context.Context, actor store.Actor, group string, mode store.ClientMode) error {
+	return s.UpdateGroupSettings(ctx, actor, group, store.GroupSettingsChange{ClientMode: &mode})
+}
+
+// SetGroupFileAccessOverride implements store.Writer.
+func (s *Store) SetGroupFileAccessOverride(ctx context.Context, actor store.Actor, group string, action string) error {
+	return s.UpdateGroupSettings(ctx, actor, group, store.GroupSettingsChange{FileAccessOverride: &action})
+}
+
+// UpdateGroupSettings implements store.Writer. Like Rudolph, it registers the
 // group of Macs in no group when that is not registered yet.
-func (s *Store) SetGroupClientMode(_ context.Context, actor store.Actor, group string, mode store.ClientMode) error {
-	who, err := actor.AuditName()
+func (s *Store) UpdateGroupSettings(_ context.Context, actor store.Actor, group string, change store.GroupSettingsChange) error {
+	checked, err := rudolphrules.CheckGroupSettings(actor, group, change)
 	if err != nil {
 		return err
 	}
-	name, err := rudolphrules.GroupConfigName(group)
-	if err != nil {
-		return err
-	}
-	want, err := rudolphrules.GroupClientMode(mode)
-	if err != nil {
-		return err
-	}
+	name := checked.Group
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.err != nil {
@@ -404,12 +409,22 @@ func (s *Store) SetGroupClientMode(_ context.Context, actor store.Actor, group s
 		}
 		g = store.Group{Name: name, Description: "Macs in no group"}
 	}
-	if g.ClientMode == mode {
+	// The fake holds only values Rudolph can decode, so stored and decodable are the same.
+	mode, err := rudolphrules.ClientMode(g.ClientMode)
+	hasMode := err == nil
+	hasAction := g.FileAccessOverride != ""
+	checked, changes := checked.WithoutUnchanged(mode, hasMode, hasMode, types.FileAccessAction(g.FileAccessOverride), hasAction, hasAction)
+	if !changes {
 		return store.ErrNothingToChange
 	}
-	g.ClientMode = mode
+	if c := checked.Change; c.ClientMode != nil || c.RemoveClientMode {
+		g.ClientMode = *change.ClientMode
+	}
+	if c := checked.Change; c.FileAccessAction != nil || c.RemoveFileAccessAction {
+		g.FileAccessOverride = *change.FileAccessOverride
+	}
 	s.groups[name] = g
-	s.recordAudit(who, store.ActionConfigUpdate, groupAuditTarget(name), rudolphrules.GroupClientModeSummary(want))
+	s.recordAudit(checked.Actor, store.ActionConfigUpdate, groupAuditTarget(name), rudolphrules.GroupSettingsSummary(checked.Change))
 	return nil
 }
 
@@ -429,11 +444,18 @@ func (s *Store) SetRuleCollection(_ context.Context, actor store.Actor, target s
 		return s.err
 	}
 	rules := s.globalRules
-	if ch.Target.Kind == store.TargetMachine {
+	switch ch.Target.Kind {
+	case store.TargetMachine:
 		if ch.Target.MachineID, err = s.storedMachineID(ch.Target.MachineID); err != nil {
 			return err
 		}
 		rules = s.machineRules[ch.Target.MachineID]
+	case store.TargetGroup:
+		// As groups.SetCollectAllowedEvents: the group must be registered, the reserved one included.
+		if _, ok := s.groups[ch.Target.Group]; !ok {
+			return store.ErrNotFound
+		}
+		rules = s.groupRules[ch.Target.Group]
 	}
 	key := ruleKey(store.Rule{RuleType: ruleType, Identifier: identifier})
 	r, ok := rules[key]
@@ -444,6 +466,8 @@ func (s *Store) SetRuleCollection(_ context.Context, actor store.Actor, target s
 		return store.Invalid("the rule is being removed from the Mac; add it again instead")
 	case r.CollectAllowedEvents == collect:
 		return store.ErrNothingToChange
+	case collect && ch.Target.Kind == store.TargetGroup && !rudolphrules.GroupRuleCollectable(r.Policy):
+		return rudolphrules.NotAnAllowRule()
 	}
 	r.CollectAllowedEvents = collect
 	rules[key] = r

@@ -9,6 +9,7 @@ package clicmd
 
 import (
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/turquoise-turtle/rudolph-web/internal/store"
@@ -156,11 +157,8 @@ func (b Builder) Rule(verb string, t store.RuleType, id string, tg Target) (stri
 }
 
 // CollectAllowedEvents turns collection of allowed executions on or off for an
-// existing global or machine rule.
+// existing global, machine or group rule.
 func (b Builder) CollectAllowedEvents(t store.RuleType, id string, tg Target, on bool) (string, bool) {
-	if tg.kind == "group" {
-		return "", false
-	}
 	flag := "--collect-allowed-events=false"
 	if on {
 		flag = "--collect-allowed-events=true"
@@ -222,4 +220,23 @@ func (b Builder) GroupAdd(machineID, group string) (string, bool) {
 		return "", false
 	}
 	return b.join("group", "add", "--machine", quote(machineID), quote(group), "--yes")
+}
+
+// GroupFileAccessOverride sets a group's file access override (one of
+// store.FileAccessActions), or removes it when action is "", so the group's
+// Macs follow their own or the global override again. Rudolph's
+// cli-examples.txt has no line for it; the format is its docs/cli.md's, with
+// the value in lower case as there.
+func (b Builder) GroupFileAccessOverride(group, action string) (string, bool) {
+	target, ok := targetArgs(Group(group), false)
+	if !ok {
+		return "", false
+	}
+	if action == "" {
+		return b.join("config", "update", target, "--inherit", "override-file-access-action", "--yes")
+	}
+	if !slices.Contains(store.FileAccessActions, action) {
+		return "", false
+	}
+	return b.join("config", "update", target, "--override-file-access-action", strings.ToLower(action), "--yes")
 }

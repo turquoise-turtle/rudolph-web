@@ -140,18 +140,48 @@ func groupModeOptions(current store.ClientMode) []configOption {
 	return options
 }
 
-// updateGroupConfig changes a group's client mode, as rudolph config update
-// --group (or --ungrouped) does. The form is the configuration form cut down
-// to the one setting a group has.
+// groupFileAccessOptions are the choices of a group's file access override
+// form. As for the client mode, "not set" removes the group's override.
+func groupFileAccessOptions(current string) []configOption {
+	options := []configOption{{Value: "", Label: "not set", Selected: current == ""}}
+	for _, a := range store.FileAccessActions {
+		options = append(options, configOption{Value: a, Label: a, Selected: a == current})
+	}
+	return options
+}
+
+// groupSettingChange decides what a posted group setting asks for, given the
+// value the form showed (when it sent one) and the stored value. As on the
+// configuration forms, a setting left as the form showed it is not a change,
+// so a form drawn before someone else changed it does not put it back; one
+// changed on the form is stale when the stored value is no longer what the
+// form showed, since saving would overwrite a change the person has not seen.
+func groupSettingChange(f url.Values, name, value, stored string) (changed, stale bool) {
+	orig, hasOrig := f[origPrefix+name]
+	if hasOrig && value == orig[0] {
+		return false, false
+	}
+	if value == stored {
+		return false, false
+	}
+	return true, hasOrig && orig[0] != stored
+}
+
+// updateGroupConfig changes a group's client mode, its file access override
+// or both, as rudolph config update --group (or --ungrouped) does. The form
+// is the configuration form cut down to the two settings a group has, and a
+// post may carry either. Both changed together go to the store as one change,
+// which it writes and records once, as the CLI does.
 func (s *server) updateGroupConfig(w http.ResponseWriter, r *http.Request) {
 	if !s.parseForm(w, r) {
 		return
 	}
+	const modeSetting, fileAccessSetting = "ClientMode", "OverrideFileAccessAction"
 	for name, values := range r.PostForm {
 		switch name {
-		case "name", "ClientMode", origPrefix + "ClientMode", "confirm_mode":
+		case "name", modeSetting, origPrefix + modeSetting, fileAccessSetting, origPrefix + fileAccessSetting, "confirm_mode":
 		default:
-			s.renderError(w, r, http.StatusBadRequest, fmt.Sprintf("Not saved: %q is not a setting a group has; a group has only a client mode.", name))
+			s.renderError(w, r, http.StatusBadRequest, fmt.Sprintf("Not saved: %q is not a setting a group has; a group has only a client mode and a file access override.", name))
 			return
 		}
 		if len(values) != 1 {
@@ -159,15 +189,27 @@ func (s *server) updateGroupConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	modes, posted := r.PostForm["ClientMode"]
-	if !posted {
-		s.renderError(w, r, http.StatusBadRequest, "Not saved: no client mode was given.")
+	modes, modePosted := r.PostForm[modeSetting]
+	actions, actionPosted := r.PostForm[fileAccessSetting]
+	if !modePosted && !actionPosted {
+		s.renderError(w, r, http.StatusBadRequest, "Not saved: no client mode or file access override was given.")
 		return
 	}
-	mode := store.ClientMode(modes[0])
-	if mode != "" && !slices.Contains(store.ClientModes, mode) {
-		s.renderError(w, r, http.StatusBadRequest, "Not saved: unknown client mode; choose MONITOR, LOCKDOWN or STANDALONE, or not set.")
-		return
+	var mode store.ClientMode
+	if modePosted {
+		mode = store.ClientMode(modes[0])
+		if mode != "" && !slices.Contains(store.ClientModes, mode) {
+			s.renderError(w, r, http.StatusBadRequest, "Not saved: unknown client mode; choose MONITOR, LOCKDOWN or STANDALONE, or not set.")
+			return
+		}
+	}
+	var action string
+	if actionPosted {
+		action = actions[0]
+		if action != "" && !slices.Contains(store.FileAccessActions, action) {
+			s.renderError(w, r, http.StatusBadRequest, "Not saved: unknown file access action; choose NONE, AUDIT_ONLY or DISABLE, or not set.")
+			return
+		}
 	}
 	// Consistent, so that the check against what the form showed sees a
 	// change made a moment ago.
@@ -182,26 +224,34 @@ func (s *server) updateGroupConfig(w http.ResponseWriter, r *http.Request) {
 		s.renderError(w, r, http.StatusNotFound, "Group not found: it may have been deleted.")
 		return
 	}
-	// As on the configuration forms: a mode left as the form showed it is not
-	// a change, so a form drawn before someone else changed it does not put it
-	// back; one changed on the form is refused when the stored mode is no
-	// longer what the form showed, since saving would overwrite a change the
-	// person has not seen.
-	orig, hasOrig := r.PostForm[origPrefix+"ClientMode"]
-	if hasOrig && mode == store.ClientMode(orig[0]) {
-		http.Redirect(w, r, groupURL(name), http.StatusSeeOther)
-		return
-	}
-	if hasOrig && mode != group.ClientMode && store.ClientMode(orig[0]) != group.ClientMode {
-		s.renderError(w, r, http.StatusConflict, "Not saved: the group's client mode was changed since this page was loaded; reload it to see it as it is now, and make your change again.")
-		return
-	}
-	if mode != group.ClientMode {
-		if mode != "" && mode != store.ClientModeMonitor && !modeConfirmed(r.PostForm, string(mode)) {
-			s.renderError(w, r, http.StatusBadRequest, fmt.Sprintf("Not saved: %s blocks unknown binaries on every Mac of the group without its own client mode. To confirm, type %s in the confirmation box.", mode, mode))
+	var change store.GroupSettingsChange
+	if modePosted {
+		changed, stale := groupSettingChange(r.PostForm, modeSetting, string(mode), string(group.ClientMode))
+		if stale {
+			s.renderError(w, r, http.StatusConflict, "Not saved: the group's client mode was changed since this page was loaded; reload it to see it as it is now, and make your change again.")
 			return
 		}
-		err := s.writer.SetGroupClientMode(r.Context(), actorOf(r), name, mode)
+		if changed {
+			change.ClientMode = &mode
+		}
+	}
+	if actionPosted {
+		changed, stale := groupSettingChange(r.PostForm, fileAccessSetting, action, group.FileAccessOverride)
+		if stale {
+			s.renderError(w, r, http.StatusConflict, "Not saved: the group's file access override was changed since this page was loaded; reload it to see it as it is now, and make your change again.")
+			return
+		}
+		if changed {
+			change.FileAccessOverride = &action
+		}
+	}
+	// Only a client mode needs confirming, as with the CLI's --confirm-group-lockdown.
+	if change.ClientMode != nil && mode != "" && mode != store.ClientModeMonitor && !modeConfirmed(r.PostForm, string(mode)) {
+		s.renderError(w, r, http.StatusBadRequest, fmt.Sprintf("Not saved: %s blocks unknown binaries on every Mac of the group without its own client mode. To confirm, type %s in the confirmation box.", mode, mode))
+		return
+	}
+	if change.ClientMode != nil || change.FileAccessOverride != nil {
+		err := s.writer.UpdateGroupSettings(r.Context(), actorOf(r), name, change)
 		if err != nil && !errors.Is(err, store.ErrNothingToChange) {
 			s.writeError(w, r, err, "Group not found: it may have been deleted.")
 			return

@@ -193,13 +193,31 @@ type groupMode struct {
 	Group string
 }
 
+// groupSettings is what a Mac gets from its groups: the client mode, and the
+// file access override with the group it comes from. FileAccess is "" when
+// none of its groups has an override, or they could not be read.
+type groupSettings struct {
+	groupMode
+	FileAccess      string
+	FileAccessGroup string
+}
+
+// machineGroupSettings works out what a Mac gets from its groups as Rudolph
+// does, from the registered groups.
+func machineGroupSettings(registered []store.Group, m store.MachineDetail) groupSettings {
+	var g groupSettings
+	g.Mode, g.Group = rudolphrules.MachineGroupClientMode(registered, m.AssignedGroups, m.ReportedGroups)
+	g.FileAccess, g.FileAccessGroup = rudolphrules.MachineGroupFileAccessOverride(registered, m.AssignedGroups, m.ReportedGroups)
+	return g
+}
+
 // machineConfigRows lists what a Mac gets for each setting, as `rudolph config
 // get --machine` works it out: a setting its own config stores with a
-// readable value is the Mac's, a client mode it does not set comes from its
-// groups when one of them has one, and every other setting follows the global
-// config. Without globalRead, what Rudolph sends for an unset setting is not
-// known.
-func machineConfigRows(own, global store.Config, globalRead bool, fromGroup groupMode) []configRow {
+// readable value is the Mac's, a client mode or file access override it does
+// not set comes from its groups when one of them has one, and every other
+// setting follows the global config. Without globalRead, what Rudolph sends
+// for an unset setting is not known.
+func machineConfigRows(own, global store.Config, globalRead bool, fromGroup groupSettings) []configRow {
 	rows := make([]configRow, len(configSettings))
 	for i, cs := range configSettings {
 		row := configRow{Setting: cs.attribute, Label: cs.label, Code: cs.code}
@@ -207,6 +225,8 @@ func machineConfigRows(own, global store.Config, globalRead bool, fromGroup grou
 			row.Set, row.Value, row.Origin = true, v, originMachine
 		} else if cs.kind == kindMode && fromGroup.Mode != "" {
 			row.Set, row.Value, row.Origin = true, string(fromGroup.Mode), "group "+fromGroup.Group
+		} else if cs.kind == kindFileAccess && fromGroup.FileAccess != "" {
+			row.Set, row.Value, row.Origin = true, fromGroup.FileAccess, "group "+fromGroup.FileAccessGroup
 		} else if v, set := cs.value(global); set {
 			row.Set, row.Value, row.Origin = true, v, originGlobal
 			if !global.Exists {
@@ -606,7 +626,7 @@ func (s *server) cleanSync(w http.ResponseWriter, r *http.Request) {
 
 // machineConfigForm is the edit form of a Mac's own configuration; empty
 // when the page shows no edit forms.
-func machineConfigForm(edit editForms, m store.MachineDetail, global store.Config, globalRead bool, fromGroup groupMode) configForm {
+func machineConfigForm(edit editForms, m store.MachineDetail, global store.Config, globalRead bool, fromGroup groupSettings) configForm {
 	if !edit.On {
 		return configForm{}
 	}

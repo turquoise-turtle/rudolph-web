@@ -394,6 +394,11 @@ type Group struct {
 	// of the global config's. "" when the group has none, or stores one
 	// Rudolph cannot decode and so ignores.
 	ClientMode ClientMode
+	// FileAccessOverride is the override file access action the group's Macs
+	// get when they have none of their own (the most relaxed of their groups'
+	// wins), ahead of the global config's: one of FileAccessActions. "" when
+	// the group has none, or stores one Rudolph cannot decode and so ignores.
+	FileAccessOverride string
 }
 
 // GroupMember is one of a group's Macs. Machine always has MachineID; the

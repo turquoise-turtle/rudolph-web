@@ -165,6 +165,7 @@ collects, else on. */}}
 <form class="inline" method="post" action="/admin/rules/collect">
   <input type="hidden" name="target" value="{{verbatim .Target}}">
   {{with .Machine}}<input type="hidden" name="machine" value="{{verbatim .}}">{{end}}
+  {{with .Group}}<input type="hidden" name="group" value="{{verbatim .}}">{{end}}
   <input type="hidden" name="type" value="{{verbatim .Rule.RuleType}}">
   <input type="hidden" name="identifier" value="{{verbatim .Rule.Identifier}}">
   {{if .Rule.CollectAllowedEvents}}<input type="hidden" name="collect" value="off">

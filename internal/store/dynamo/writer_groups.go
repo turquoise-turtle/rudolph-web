@@ -183,18 +183,26 @@ func groupAuditTarget(name string) string {
 // SetGroupClientMode implements store.Writer, as rudolph config update
 // --group (or --ungrouped) does after --confirm-group-lockdown.
 func (s *Store) SetGroupClientMode(ctx context.Context, actor store.Actor, group string, mode store.ClientMode) error {
-	who, err := actor.AuditName()
+	return s.UpdateGroupSettings(ctx, actor, group, store.GroupSettingsChange{ClientMode: &mode})
+}
+
+// SetGroupFileAccessOverride implements store.Writer, as rudolph config
+// update --group (or --ungrouped) --override-file-access-action does.
+func (s *Store) SetGroupFileAccessOverride(ctx context.Context, actor store.Actor, group string, action string) error {
+	return s.UpdateGroupSettings(ctx, actor, group, store.GroupSettingsChange{FileAccessOverride: &action})
+}
+
+// UpdateGroupSettings implements store.Writer with Rudolph's
+// groups.ChangeSettings, which the CLI's config update --group calls and
+// which groups.SetClientMode and groups.SetFileAccessOverride wrap: one
+// conditional update of the registry for whichever settings change, bumping
+// MembershipVersion once and no group's RulesVersion.
+func (s *Store) UpdateGroupSettings(ctx context.Context, actor store.Actor, group string, change store.GroupSettingsChange) error {
+	checked, err := rudolphrules.CheckGroupSettings(actor, group, change)
 	if err != nil {
 		return err
 	}
-	name, err := rudolphrules.GroupConfigName(group)
-	if err != nil {
-		return err
-	}
-	want, err := rudolphrules.GroupClientMode(mode)
-	if err != nil {
-		return err
-	}
+	name := checked.Group
 	c, err := s.rudolph(ctx)
 	if err != nil {
 		return err
@@ -207,9 +215,10 @@ func (s *Store) SetGroupClientMode(ctx context.Context, actor store.Actor, group
 	if !registered && name != groups.Ungrouped {
 		return store.ErrNotFound
 	}
-	// A stored mode Rudolph cannot decode is still worth removing or replacing.
-	current, has := entry.ClientModeOf()
-	if (want == nil && !entry.ClientMode.Stored()) || (want != nil && has && current == *want) {
+	mode, hasMode := entry.ClientModeOf()
+	action, hasAction := entry.FileAccessOverrideOf()
+	checked, changes := checked.WithoutUnchanged(mode, hasMode, entry.ClientMode.Stored(), action, hasAction, entry.OverrideFileAccessAction.Stored())
+	if !changes {
 		return store.ErrNothingToChange
 	}
 	if !registered {
@@ -221,12 +230,12 @@ func (s *Store) SetGroupClientMode(ctx context.Context, actor store.Actor, group
 			return fmt.Errorf("dynamo: registering the group of Macs in no group: %w", err)
 		}
 	}
-	err = groups.SetClientMode(c, name, want)
+	err = groups.ChangeSettings(c, name, checked.Change)
 	if errors.Is(err, groups.ErrGroupNotFound) {
 		return store.ErrNotFound
 	}
 	if err != nil {
-		return fmt.Errorf("dynamo: changing a group's client mode: %w", err)
+		return fmt.Errorf("dynamo: changing a group's settings: %w", err)
 	}
-	return s.record(ctx, c, who, store.ActionConfigUpdate, groupAuditTarget(name), rudolphrules.GroupClientModeSummary(want))
+	return s.record(ctx, c, checked.Actor, store.ActionConfigUpdate, groupAuditTarget(name), rudolphrules.GroupSettingsSummary(checked.Change))
 }

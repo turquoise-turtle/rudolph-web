@@ -2,6 +2,7 @@ package rudolphrules
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -227,13 +228,81 @@ func GroupClientMode(mode store.ClientMode) (*types.ClientMode, error) {
 	return &m, nil
 }
 
-// GroupClientModeSummary is the CLI's audit summary of a change to a group's
-// client mode: "ClientMode=LOCKDOWN", or "ClientMode inherited" when it is
-// removed.
-func GroupClientModeSummary(mode *types.ClientMode) string {
-	request := machineconfiguration.MachineConfigurationUpdateRequest{ClientMode: mode}
-	if mode == nil {
-		request.Inherit = []string{"ClientMode"}
+// GroupSettings is a checked change to a group's settings.
+type GroupSettings struct {
+	Actor string
+	// Group is the group's name, normalised.
+	Group string
+	// Change is the change as Rudolph's groups.ChangeSettings takes it.
+	Change groups.SettingsChange
+}
+
+// CheckGroupSettings checks a change to a group's client mode and file access
+// override as the CLI's config update --group does. The override must be one
+// of store.FileAccessActions exactly: the legacy spellings Rudolph still
+// reads are not written from here. A change that names no setting is
+// store.ErrNothingToChange.
+func CheckGroupSettings(actor store.Actor, group string, change store.GroupSettingsChange) (GroupSettings, error) {
+	who, err := actor.AuditName()
+	if err != nil {
+		return GroupSettings{}, err
+	}
+	name, err := GroupConfigName(group)
+	if err != nil {
+		return GroupSettings{}, err
+	}
+	checked := GroupSettings{Actor: who, Group: name}
+	if change.ClientMode != nil {
+		mode, err := GroupClientMode(*change.ClientMode)
+		if err != nil {
+			return GroupSettings{}, err
+		}
+		checked.Change.ClientMode, checked.Change.RemoveClientMode = mode, mode == nil
+	}
+	if change.FileAccessOverride != nil {
+		switch action := *change.FileAccessOverride; {
+		case action == "":
+			checked.Change.RemoveFileAccessAction = true
+		case slices.Contains(store.FileAccessActions, action):
+			a := types.FileAccessAction(action)
+			checked.Change.FileAccessAction = &a
+		default:
+			return GroupSettings{}, store.Invalid("unknown file access action; must be NONE, AUDIT_ONLY or DISABLE")
+		}
+	}
+	if change.ClientMode == nil && change.FileAccessOverride == nil {
+		return GroupSettings{}, fmt.Errorf("%w: no group setting to change was given", store.ErrNothingToChange)
+	}
+	return checked, nil
+}
+
+// WithoutUnchanged leaves out of a change the settings the group already has
+// as asked: mode and action are what it has now, and the has flags say
+// whether anything is stored for each, decodable or not. A stored value
+// Rudolph cannot decode counts as none, but is still worth removing or
+// replacing. ok is false when nothing is left to change.
+func (g GroupSettings) WithoutUnchanged(mode types.ClientMode, hasMode, modeStored bool, action types.FileAccessAction, hasAction, actionStored bool) (GroupSettings, bool) {
+	c := &g.Change
+	if (c.ClientMode != nil && hasMode && *c.ClientMode == mode) || (c.RemoveClientMode && !modeStored) {
+		c.ClientMode, c.RemoveClientMode = nil, false
+	}
+	if (c.FileAccessAction != nil && hasAction && *c.FileAccessAction == action) || (c.RemoveFileAccessAction && !actionStored) {
+		c.FileAccessAction, c.RemoveFileAccessAction = nil, false
+	}
+	return g, c.ClientMode != nil || c.RemoveClientMode || c.FileAccessAction != nil || c.RemoveFileAccessAction
+}
+
+// GroupSettingsSummary is the CLI's audit summary of a change to a group's
+// settings (updateGroupConfig in internal/cli/config/config-group.go):
+// "ClientMode=LOCKDOWN", "OverrideFileAccessAction inherited", or both in one
+// entry, such as "ClientMode=MONITOR, OverrideFileAccessAction=DISABLE".
+func GroupSettingsSummary(change groups.SettingsChange) string {
+	request := machineconfiguration.MachineConfigurationUpdateRequest{ClientMode: change.ClientMode, OverrideFileAccessAction: change.FileAccessAction}
+	if change.RemoveClientMode {
+		request.Inherit = append(request.Inherit, "ClientMode")
+	}
+	if change.RemoveFileAccessAction {
+		request.Inherit = append(request.Inherit, "OverrideFileAccessAction")
 	}
 	return ConfigUpdateSummary(request)
 }
@@ -261,4 +330,28 @@ func MachineGroupClientMode(registered []store.Group, assigned, reported []strin
 		return "", ""
 	}
 	return modes[group], group
+}
+
+// MachineGroupFileAccessOverride is the file access override a Mac gets from
+// its groups, and the group it comes from, as Rudolph's
+// groups.MachineFileAccessOverride works it out from the registered groups:
+// the most relaxed override among the Mac's effective groups (between equal
+// ones, the group whose name sorts first), or the ungrouped group's when it
+// is in none. "" when none of them has an override.
+func MachineGroupFileAccessOverride(registered []store.Group, assigned, reported []string) (string, string) {
+	registry := &groups.Registry{Groups: make(map[string]groups.Entry, len(registered))}
+	for _, g := range registered {
+		entry := groups.Entry{Description: g.Description, AcceptReported: g.AcceptReported}
+		if g.FileAccessOverride != "" {
+			entry.OverrideFileAccessAction = &groups.StoredFileAccessAction{}
+			// Cannot fail: it only keeps the value.
+			_ = entry.OverrideFileAccessAction.UnmarshalDynamoDBAttributeValue(&dynamotypes.AttributeValueMemberS{Value: g.FileAccessOverride})
+		}
+		registry.Groups[g.Name] = entry
+	}
+	action, group, ok := groups.MachineFileAccessOverride(registry, &groups.MachineGroups{Assigned: assigned, Reported: reported})
+	if !ok {
+		return "", ""
+	}
+	return string(action), group
 }
