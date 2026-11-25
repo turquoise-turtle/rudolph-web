@@ -29,8 +29,8 @@
 <h2>Caching</h2>
 <p>Santa normally caches its decision for a binary until the binary or the rules change. When an expression reads only <code>target</code>, its answer is the same every time the binary runs, so Santa caches it. Once it reads <code>args</code>, <code>envs</code>, <code>euid</code>, <code>cwd</code> or <code>path</code>, Santa evaluates it again on every execution, which costs a little each time the binary runs: keep such rules to the binaries that need them.</p>
 
-<h2>Try an expression</h2>
-<form class="cel-try" method="get" action="/rules/cel#try-result">
+<h2 id="try">Try an expression</h2>
+<form class="cel-try" method="get" action="/rules/cel#try">
   <label class="wide">Expression
     <textarea name="expr" rows="3" cols="80" maxlength="16384" autocomplete="off" spellcheck="false" required>{{verbatim .Try.Expr}}</textarea>
   </label>
@@ -65,7 +65,7 @@
   <button type="submit">Try</button>
 </form>
 {{if .Try.Tried}}
-<p class="cel-answer" id="try-result">{{if .Try.Error}}Santa would not apply this: <output class="cel-error">{{lines .Try.Error}}</output>{{else}}Santa would apply <output class="cel-result">{{.Try.Result}}</output>, and the result is <output class="cel-cache">{{if .Try.Cacheable}}cached{{else}}not cached{{end}}</output>.{{end}}</p>
+<p class="cel-answer">{{if .Try.Error}}Santa would not apply this: <output class="cel-error">{{lines .Try.Error}}</output>{{else}}Santa would apply <output class="cel-result">{{.Try.Result}}</output>, and the result is <output class="cel-cache">{{if .Try.Cacheable}}cached{{else}}not cached{{end}}</output>.{{end}}</p>
 {{end}}
 <p class="hint">Nothing is saved: this only runs the expression here, as Santa would. To add a CEL rule, choose the CEL policy on an add-rule form (admins, on the rules page, a Mac's page or a group's page) and put the expression in its CEL expression box.</p>
 
@@ -79,7 +79,7 @@
   <dt>Identifier</dt><dd>{{with .Identifier}}<code>{{.}}</code>{{else}}<span class="muted">the tool's own</span>{{end}}</dd>
   <dt>Expression</dt><dd><code class="cmd" tabindex="0">{{.Expression}}</code></dd>
 </dl>
-<p><a href="/rules/cel?expr={{.Expression}}#try-result">Try it</a></p>
+<p><a href="/rules/cel?expr={{.Expression}}#try">Try it</a></p>
 </section>
 {{end}}
 {{end}}
