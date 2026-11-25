@@ -60,7 +60,7 @@ func (s *Store) RequestRankerRun(ctx context.Context, actor store.Actor, now tim
 // zero when it has not yet.
 func (s *Store) topListsGeneratedAt(ctx context.Context) (time.Time, error) {
 	// A deployment without an events table shows no top lists, so there is
-	// nothing to be fresh. The run is still allowed (owner's decision): the
+	// nothing to be fresh. The run is still allowed, because the
 	// ranker is Rudolph's and may well have its table, and the marker alone
 	// keeps the button to one start per interval.
 	if s.eventsTable == "" {
