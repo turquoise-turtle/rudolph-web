@@ -2,8 +2,9 @@
 {{template "rulesnav" "cel"}}
 <p>A rule with the CEL policy matches a binary like any other rule, by its binary hash, certificate, team ID, signing ID or CDHash, and then decides with a <a href="https://cel.dev">CEL</a> expression each time the binary runs. Santa evaluates it on the Mac, with the execution's arguments, environment and user, so one rule can allow a tool for most uses and block one of them.</p>
 <p>Rudolph talks to Santa with sync protocol v1, so Santa evaluates its CEL rules with CEL v1. The web view checks an expression the same way before saving it: an expression Santa could not compile is refused, as Santa would skip the rule on every Mac.</p>
+<p>On this page: <a href="#use">what an expression can use</a>, <a href="#workshop">what needs Workshop</a>, <a href="#caching">caching</a>, <a href="#try">try an expression</a> and <a href="#examples">examples</a>.</p>
 
-<h2>What an expression can use</h2>
+<h2 id="use">What an expression can use</h2>
 <div class="scroll">
 <table>
 <thead><tr><th>Name</th><th>Type</th><th>What it is</th></tr></thead>
@@ -23,24 +24,24 @@
 </div>
 <p>The expression returns <code>true</code> to allow (as ALLOWLIST) or <code>false</code> to block (as BLOCKLIST), or one of the policies {{range $i, $p := .Policies}}{{if $i}}, {{end}}<code>{{$p}}</code>{{end}}, usually as <code>condition ? BLOCKLIST : ALLOWLIST</code>. It has CEL's standard functions and macros (such as <code>startsWith</code>, <code>endsWith</code>, <code>contains</code>, <code>matches</code>, <code>size</code>, <code>in</code>, <code>exists</code>, <code>all</code> and <code>timestamp</code>) and the string functions <code>charAt</code>, <code>format</code>, <code>indexOf</code>, <code>join</code>, <code>lastIndexOf</code>, <code>lowerAscii</code>, <code>replace</code>, <code>reverse</code>, <code>split</code>, <code>substring</code>, <code>trim</code> and <code>upperAscii</code>. An expression that fails while it runs, such as reading <code>args[5]</code> of a shorter command, decides nothing: Santa goes on to the binary's other rules and then its client mode, or blocks it on a Mac set to fail closed.</p>
 
-<h2>What needs Workshop</h2>
+<h2 id="workshop">What needs Workshop</h2>
 <p>Workshop, North Pole Security's commercial sync server, sends rules with CEL v2, which adds <code>ancestors</code> (the processes that started this one), <code>fds</code> (its open file descriptors) and the <code>FD_TYPE_</code> values, <code>target.entitlements</code>, the policies <code>REQUIRE_TOUCHID</code>, <code>REQUIRE_TOUCHID_ONLY</code>, <code>SEATBELT</code> and <code>AUDIT</code>, and the functions <code>today()</code>, <code>now()</code>, <code>days()</code>, <code>weekdays()</code>, <code>policy_for_range()</code>, <code>kill_on_expiry()</code>, <code>require_touchid_with_cooldown_minutes()</code> and <code>require_touchid_only_with_cooldown_minutes()</code>. Rules from Rudolph cannot use any of them, and an expression that does is refused.</p>
 
-<h2>Caching</h2>
+<h2 id="caching">Caching</h2>
 <p>Santa normally caches its decision for a binary until the binary or the rules change. When an expression reads only <code>target</code>, its answer is the same every time the binary runs, so Santa caches it. Once it reads <code>args</code>, <code>envs</code>, <code>euid</code>, <code>cwd</code> or <code>path</code>, Santa evaluates it again on every execution, which costs a little each time the binary runs: keep such rules to the binaries that need them.</p>
 
 <h2 id="try">Try an expression</h2>
 <form class="cel-try" method="get" action="/rules/cel#try">
   <label class="wide">Expression
-    <textarea name="expr" rows="3" cols="80" maxlength="16384" autocomplete="off" spellcheck="false" required>{{verbatim .Try.Expr}}</textarea>
+    <textarea name="expr" rows="{{.Try.ExprRows}}" cols="80" maxlength="16384" autocomplete="off" spellcheck="false" required>{{verbatim .Try.Expr}}</textarea>
   </label>
-  <label>Arguments <span class="hint">(one per line, the command first)</span>
+  <label>args <span class="hint">(arguments, one per line, the command first)</span>
     <textarea name="args" rows="4" cols="36" autocomplete="off" spellcheck="false">{{verbatim .Try.Args}}</textarea>
   </label>
-  <label>Environment <span class="hint">(NAME=value, one per line)</span>
+  <label>envs <span class="hint">(environment, NAME=value, one per line)</span>
     <textarea name="envs" rows="4" cols="36" autocomplete="off" spellcheck="false">{{verbatim .Try.Envs}}</textarea>
   </label>
-  <label>euid <span class="hint">(0 is root)</span>
+  <label>euid <span class="hint">(empty is 0, root)</span>
     <input name="euid" value="{{verbatim .Try.EUID}}" size="6" inputmode="numeric" autocomplete="off">
   </label>
   <label>path
@@ -55,21 +56,25 @@
   <label>target.team_id
     <input name="team_id" value="{{verbatim .Try.TeamID}}" size="12" autocomplete="off" spellcheck="false">
   </label>
-  <label>target.signing_time <span class="hint">(empty for none)</span>
+  <label>target.signing_time <span class="hint">(a date or time; empty for none)</span>
     <input name="signing_time" value="{{verbatim .Try.SigningTime}}" size="20" placeholder="2025-01-31" autocomplete="off">
   </label>
-  <label>target.secure_signing_time
+  <label>target.secure_signing_time <span class="hint">(empty for none)</span>
     <input name="secure_signing_time" value="{{verbatim .Try.SecureSigningTime}}" size="20" placeholder="2025-01-31" autocomplete="off">
   </label>
   <label class="check"><input type="checkbox" name="platform" value="1"{{if .Try.Platform}} checked{{end}}> target.is_platform_binary</label>
   <button type="submit">Try</button>
 </form>
 {{if .Try.Tried}}
-<p class="cel-answer">{{if .Try.Error}}Santa would not apply this: <output class="cel-error">{{lines .Try.Error}}</output>{{else}}Santa would apply <output class="cel-result">{{.Try.Result}}</output>, and the result is <output class="cel-cache">{{if .Try.Cacheable}}cached{{else}}not cached{{end}}</output>.{{end}}</p>
-{{end}}
-<p class="hint">Nothing is saved: this only runs the expression here, as Santa would. To add a CEL rule, choose the CEL policy on an add-rule form (admins, on the rules page, a Mac's page or a group's page) and put the expression in its CEL expression box.</p>
+<p class="cel-answer" data-outcome="{{.Try.Outcome}}">{{if .Try.SampleError}}Not tried: <output class="cel-error">{{lines .Try.SampleError}}</output>{{else if and .Try.Error .Try.Compiled}}Santa can compile this, but it failed on this sample execution: <output class="cel-error">{{lines .Try.Error}}</output>{{else if .Try.Error}}Santa would not apply this: <output class="cel-error">{{lines .Try.Error}}</output>{{else}}Santa would apply <output class="cel-result">{{.Try.Result}}</output>, and the result is <output class="cel-cache">{{if .Try.Cacheable}}cached{{else}}not cached{{end}}</output>: the expression reads {{if .Try.Cacheable}}only <code>target</code>{{else}}<code>args</code>, <code>envs</code>, <code>euid</code>, <code>cwd</code> or <code>path</code>{{end}} (<a href="#caching">caching</a>).{{end}}</p>
+{{range .Try.Where}}<pre class="cel-where">{{.Line}}
+{{.Caret}}</pre>
+{{end}}{{if and .Try.Error .Try.Compiled}}<p class="hint">An expression that fails while it runs on a Mac decides nothing: Santa goes on to the binary's other rules and then its client mode, or blocks it on a Mac set to fail closed.</p>
+{{end}}{{with .Try.AddURL}}<p><a href="{{.}}">Add a global rule for this sample's signing ID or team ID</a>: copy the expression first, then choose the CEL policy on the form and paste it into the CEL expression box.</p>
+{{end}}{{end}}
+<p class="hint">Nothing is saved: this only runs the expression here, as Santa would. {{if .CanEdit}}To add a CEL rule, copy the expression, open the add-rule form on <a href="/rules">the rules page</a> (a global rule), a <a href="/machines">Mac's</a> page or a <a href="/groups">group's</a> page, choose the CEL policy and paste the expression into its CEL expression box.{{else}}To add a CEL rule, choose the CEL policy on an add-rule form (admins, on the rules page, a Mac's page or a group's page) and put the expression in its CEL expression box.{{end}}</p>
 
-<h2>Examples</h2>
+<h2 id="examples">Examples</h2>
 {{range .Examples}}
 <section class="cel-example">
 <h3>{{.Name}}</h3>
@@ -79,7 +84,7 @@
   <dt>Identifier</dt><dd>{{with .Identifier}}<code>{{.}}</code>{{else}}<span class="muted">the tool's own</span>{{end}}</dd>
   <dt>Expression</dt><dd><code class="cmd" tabindex="0">{{.Expression}}</code></dd>
 </dl>
-<p><a href="/rules/cel?expr={{.Expression}}#try">Try it</a></p>
+<p><a href="{{.TryURL}}">Try it</a> on a sample execution it blocks{{with .AddURL}}, or copy the expression and <a href="{{.}}">open the add-rule form for this identifier</a> (choose the CEL policy there){{end}}.</p>
 </section>
 {{end}}
 {{end}}

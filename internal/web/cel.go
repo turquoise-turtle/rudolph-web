@@ -2,13 +2,18 @@ package web
 
 import (
 	"net/http"
+	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/airbnb/rudolph/pkg/model/rules"
 
 	"github.com/turquoise-turtle/rudolph-web/internal/santacel"
+	"github.com/turquoise-turtle/rudolph-web/internal/store"
+	"github.com/turquoise-turtle/rudolph-web/internal/textsafe"
 )
 
 // celTry is the try form on /rules/cel, as submitted, and its answer.
@@ -27,9 +32,60 @@ type celTry struct {
 
 	Tried     bool
 	Result    string
-	Error     string
 	Cacheable bool
+	// SampleError is why the sample execution could not be read; Error is why
+	// Santa could not compile the expression or, with Compiled, how running
+	// it on the sample failed. The three read differently to the person: fix
+	// the sample, fix the expression, or the rule decides nothing for such an
+	// execution.
+	SampleError string
+	Error       string
+	Compiled    bool
+	// Where shows the places a compile error names, in the expression.
+	Where []celWhere
+	// AddURL is the add-rule page pre-filled with the sample's signing ID and
+	// team ID, for admins once the expression has given an answer.
+	AddURL string
 }
+
+// celWhere is one line of the expression, or the part of a long one around
+// the error, and a caret under the character a compile error names.
+type celWhere struct {
+	Line  string
+	Caret string
+}
+
+// celExample is an example and where its links go.
+type celExample struct {
+	santacel.Example
+	TryURL string
+	AddURL string
+}
+
+// Outcome names how the answer is coloured.
+func (t celTry) Outcome() string {
+	switch {
+	case t.SampleError != "" || t.Error != "":
+		return "error"
+	case strings.HasPrefix(t.Result, "ALLOWLIST"):
+		return "allow"
+	}
+	return "block"
+}
+
+// ExprRows makes the expression box tall enough to show a long or multi-line
+// expression whole after a try, as no script can grow it while typing.
+func (t celTry) ExprRows() int {
+	rows := 0
+	for line := range strings.SplitSeq(t.Expr, "\n") {
+		rows += 1 + len(line)/exprBoxColumns
+	}
+	return min(max(rows, 3), 16)
+}
+
+// exprBoxColumns is about how many characters fit across the expression box
+// at its narrowest on a laptop; a wider box only leaves a spare row.
+const exprBoxColumns = 80
 
 // maxTryLines bounds the args and envs of a sample execution; the form is
 // open to every viewer.
@@ -60,19 +116,79 @@ func (s *server) celRules(w http.ResponseWriter, r *http.Request) {
 		SigningTime:       strings.TrimSpace(q.Get("signing_time")),
 		SecureSigningTime: strings.TrimSpace(q.Get("secure_signing_time")),
 	}
+	canEdit := s.canEdit(r)
 	status := http.StatusOK
 	if strings.TrimSpace(t.Expr) != "" {
 		t.Tried = true
 		if err := t.evaluate(); err != "" {
-			t.Error = err
+			t.SampleError = err
 			status = http.StatusBadRequest
+		}
+		if canEdit && t.Result != "" {
+			t.AddURL = newRuleURL(store.TopBinary{SigningID: t.SigningID, TeamID: t.TeamID})
+		}
+	}
+	examples := make([]celExample, len(santacel.Examples))
+	for i, e := range santacel.Examples {
+		examples[i] = celExample{Example: e, TryURL: tryURL(e)}
+		if canEdit {
+			examples[i].AddURL = exampleAddURL(e)
 		}
 	}
 	s.render(w, r, status, "cel", "CEL rules", "rules", struct {
 		Try      celTry
-		Examples []santacel.Example
+		Examples []celExample
 		Policies []string
-	}{t, santacel.Examples, santacel.Policies})
+		CanEdit  bool
+	}{t, examples, santacel.Policies, canEdit})
+}
+
+// tryURL is the try form filled in with an example and its sample execution,
+// landing on the form as a submitted try does.
+func tryURL(e santacel.Example) string {
+	c := e.Sample
+	v := url.Values{
+		"args": {strings.Join(c.Args, "\n")},
+		"euid": {strconv.Itoa(c.EUID)},
+	}
+	set := func(name, value string) {
+		if value != "" {
+			v.Set(name, value)
+		}
+	}
+	set("path", c.Path)
+	set("cwd", c.CWD)
+	set("signing_id", c.SigningID)
+	set("team_id", c.TeamID)
+	if c.PlatformBinary {
+		v.Set("platform", "1")
+	}
+	var envs []string
+	for name, value := range c.Envs {
+		envs = append(envs, name+"="+value)
+	}
+	slices.Sort(envs)
+	set("envs", strings.Join(envs, "\n"))
+	if !c.SigningTime.IsZero() {
+		v.Set("signing_time", c.SigningTime.UTC().Format(time.RFC3339))
+	}
+	if !c.SecureSigningTime.IsZero() {
+		v.Set("secure_signing_time", c.SecureSigningTime.UTC().Format(time.RFC3339))
+	}
+	// expr leads, so the address reads as a try of that expression.
+	return "/rules/cel?expr=" + url.QueryEscape(e.Expression) + "&" + v.Encode() + "#try"
+}
+
+// exampleAddURL is the add-rule page pre-filled with an example's identifier,
+// or "" for an example that has none or one that page does not take.
+func exampleAddURL(e santacel.Example) string {
+	switch store.RuleType(e.RuleType) {
+	case store.RuleTypeSigningID:
+		return newRuleURL(store.TopBinary{SigningID: e.Identifier})
+	case store.RuleTypeTeamID:
+		return newRuleURL(store.TopBinary{TeamID: e.Identifier})
+	}
+	return ""
 }
 
 // evaluate fills in the answer, or returns why the sample execution itself
@@ -120,9 +236,10 @@ func (t *celTry) evaluate() string {
 		return "the secure signing time must be a date such as 2025-01-31 or a time such as 2025-01-31T09:00:00Z"
 	}
 
-	result, cacheable, err := santacel.Try(t.Expr, c)
+	result, cacheable, compiled, err := santacel.TryCompiled(t.Expr, c)
 	if err != nil {
-		t.Error = err.Error()
+		t.Error, t.Compiled = err.Error(), compiled
+		t.Where = whereInExpr(t.Expr, santacel.Positions(err))
 		return ""
 	}
 	t.Result, t.Cacheable = result, cacheable
@@ -151,4 +268,44 @@ func sampleTime(v string) (time.Time, bool) {
 		}
 	}
 	return time.Time{}, false
+}
+
+const (
+	// maxWhere bounds the places shown: an expression with many errors is
+	// fixed from the first few.
+	maxWhere = 3
+	// whereBefore and whereAfter are how much of a long line is shown around
+	// an error, so the caret stays on screen without scrolling sideways.
+	whereBefore = 60
+	whereAfter  = 40
+)
+
+// whereInExpr shows each place a compile error names. The expression box has
+// no line or column numbers, so "line 2, column 14" alone leaves the person
+// counting characters.
+func whereInExpr(expr string, at []santacel.Position) []celWhere {
+	if len(at) == 0 {
+		return nil
+	}
+	lines := strings.Split(expr, "\n")
+	var where []celWhere
+	for _, p := range at[:min(len(at), maxWhere)] {
+		if p.Line < 1 || p.Line > len(lines) {
+			continue
+		}
+		line := []rune(strings.TrimSuffix(lines[p.Line-1], "\r"))
+		col := min(max(p.Column-1, 0), len(line))
+		start, end := max(col-whereBefore, 0), min(col+whereAfter, len(line))
+		// Escaped as the page will show it, so the caret counts the
+		// characters actually printed before it.
+		before, after := textsafe.String(string(line[start:col])), textsafe.String(string(line[col:end]))
+		if start > 0 {
+			before = "..." + before
+		}
+		if end < len(line) {
+			after += "..."
+		}
+		where = append(where, celWhere{Line: before + after, Caret: strings.Repeat(" ", utf8.RuneCountInString(before)) + "^"})
+	}
+	return where
 }
