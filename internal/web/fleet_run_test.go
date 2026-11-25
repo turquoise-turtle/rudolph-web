@@ -15,15 +15,17 @@ package web_test
 //     writes the marker with a conditional write, which decides between concurrent requests, and only the winner
 //     calls start. The handler passes its own clock (Options.Now) as now and the runner's Start as start.
 //   - Started: one audit entry fleet.run on target fleet by the web actor, with a short summary naming the fleet job,
-//     and 303 to /fleet?run=started, which shows "Started: the fleet lists update in a few minutes."
+//     and 303 to /admin?started=fleet, which shows "Started: the fleet lists update in a few minutes." (moved from
+//     /fleet?run=started to the admin home with "Run the ranker now", 2026-11-25: admin_runs_test.go)
 //   - Refused: 409 saying "Not started" and how long until the next allowed run, in whole minutes rounded up
 //     ("in 15 minutes", "in 1 minute"); nothing started, nothing audited, and a refusal because of a fresh snapshot
 //     writes no marker.
 //   - Start failed: the marker is kept, so the button cannot be hammered against a failing Lambda; 500 saying the fleet
 //     job "could not be started", without the AWS error; nothing audited (nothing ran). store.ErrFleetRunNotStarted
 //     wraps the runner's error.
-//   - The button (a form posting to /admin/fleet/run, "Run the fleet job now") shows only to admins with editing on
-//     and a runner. A viewer's /fleet makes no extra reads.
+//   - The button (a form posting to /admin/fleet/run, "Run the fleet job now") is on /admin, and shows only with
+//     editing on and a runner; /fleet links admins there instead (admin_runs_test.go). A viewer's /fleet makes no
+//     extra reads.
 
 import (
 	"context"
@@ -113,7 +115,7 @@ var fleetRunForm = regexp.MustCompile(`(?s)<form[^>]*action="/admin/fleet/run"[^
 func TestFleetRun_ButtonOnlyForAdminsWithEditingAndAFunction(t *testing.T) {
 	s := fleetStore()
 	a, _ := newFleetRunApp(t, s, s, &fleetRunner{})
-	_, body := adminGet(t, a, "/fleet")
+	_, body := adminGet(t, a, "/admin")
 	m := fleetRunForm.FindStringSubmatch(body)
 	if m == nil {
 		t.Fatal("an admin with editing on and a fleet function has no form posting to /admin/fleet/run")
@@ -126,12 +128,15 @@ func TestFleetRun_ButtonOnlyForAdminsWithEditingAndAFunction(t *testing.T) {
 	_, body = a.viewerGet(t, "/fleet")
 	mustNotContain(t, body, "/admin/fleet/run", "Run the fleet job now")
 
+	_, body = adminGet(t, a, "/fleet")
+	mustNotContain(t, body, "/admin/fleet/run", "Run the fleet job now")
+
 	noFunction, _ := newFleetRunApp(t, s, s, nil)
-	_, body = adminGet(t, noFunction, "/fleet")
+	_, body = adminGet(t, noFunction, "/admin")
 	mustNotContain(t, body, "/admin/fleet/run", "Run the fleet job now")
 
 	editingOff, _ := newFleetRunApp(t, s, nil, &fleetRunner{})
-	_, body = adminGet(t, editingOff, "/fleet")
+	_, body = adminGet(t, editingOff, "/admin")
 	mustNotContain(t, body, "/admin/fleet/run", "Run the fleet job now")
 }
 
@@ -159,7 +164,7 @@ func TestFleetRun_StartsAuditsAndSaysSo(t *testing.T) {
 	admin := a.cookie(t, auth.RoleAdmin)
 
 	rec := a.post(t, "/admin/fleet/run", url.Values{}, admin, true)
-	see303(t, rec, "/fleet?run=started")
+	see303(t, rec, "/admin?started=fleet")
 	if n := r.count(); n != 1 {
 		t.Errorf("the fleet job was started %d times, want once", n)
 	}
@@ -178,9 +183,9 @@ func TestFleetRun_StartsAuditsAndSaysSo(t *testing.T) {
 		t.Errorf("ActionFleetRun = %q, want fleet.run", store.ActionFleetRun)
 	}
 
-	_, body := adminGet(t, a, "/fleet?run=started")
+	_, body := adminGet(t, a, "/admin?started=fleet")
 	mustContain(t, body, "Started: the fleet lists update in a few minutes.")
-	_, body = adminGet(t, a, "/fleet")
+	_, body = adminGet(t, a, "/admin")
 	mustNotContain(t, body, "Started: the fleet lists update")
 }
 
@@ -190,7 +195,7 @@ func TestFleetRun_RefusedWithinFifteenMinutesOfTheLastRequest(t *testing.T) {
 	a, c := newFleetRunApp(t, s, s, r)
 	admin := a.cookie(t, auth.RoleAdmin)
 
-	see303(t, a.post(t, "/admin/fleet/run", url.Values{}, admin, true), "/fleet?run=started")
+	see303(t, a.post(t, "/admin/fleet/run", url.Values{}, admin, true), "/admin?started=fleet")
 
 	rec := a.post(t, "/admin/fleet/run", url.Values{}, admin, true)
 	if rec.Code != http.StatusConflict {
@@ -214,7 +219,7 @@ func TestFleetRun_RefusedWithinFifteenMinutesOfTheLastRequest(t *testing.T) {
 	}
 
 	c.advance(time.Minute)
-	see303(t, a.post(t, "/admin/fleet/run", url.Values{}, admin, true), "/fleet?run=started")
+	see303(t, a.post(t, "/admin/fleet/run", url.Values{}, admin, true), "/admin?started=fleet")
 	if n := r.count(); n != 2 {
 		t.Errorf("15 minutes after the first request: %d starts, want 2", n)
 	}
@@ -246,7 +251,7 @@ func TestFleetRun_RefusedWhileTheSnapshotIsFresh(t *testing.T) {
 
 	// Had the refusal written the marker, the next run would wait until 15 minutes after it.
 	c.advance(10 * time.Minute)
-	see303(t, a.post(t, "/admin/fleet/run", url.Values{}, admin, true), "/fleet?run=started")
+	see303(t, a.post(t, "/admin/fleet/run", url.Values{}, admin, true), "/admin?started=fleet")
 	if n := r.count(); n != 1 {
 		t.Errorf("once the snapshot is 15 minutes old: %d starts, want 1", n)
 	}
@@ -256,7 +261,7 @@ func TestFleetRun_NoSnapshotYetCanStart(t *testing.T) {
 	s := fake.New()
 	r := &fleetRunner{}
 	a, _ := newFleetRunApp(t, s, s, r)
-	see303(t, a.post(t, "/admin/fleet/run", url.Values{}, a.cookie(t, auth.RoleAdmin), true), "/fleet?run=started")
+	see303(t, a.post(t, "/admin/fleet/run", url.Values{}, a.cookie(t, auth.RoleAdmin), true), "/admin?started=fleet")
 	if n := r.count(); n != 1 {
 		t.Errorf("before the job's first run: %d starts, want 1", n)
 	}

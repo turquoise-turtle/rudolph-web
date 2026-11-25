@@ -52,7 +52,8 @@ func TestFleetRun_InvokeOnlyTheFleetFunctionWithEditing(t *testing.T) {
 		}
 		for _, dyn := range nested(doc, "dynamic") {
 			src := bodySource(t, module, dyn)
-			if !strings.Contains(src, "lambda:") {
+			// The ranker's statement (ranker_run_test.go) is checked there; every Lambda statement names one function.
+			if !strings.Contains(src, "lambda:") || !strings.Contains(src, "fleet_function_name") {
 				continue
 			}
 			found++
@@ -89,7 +90,7 @@ func TestFleetRun_InvokeOnlyTheFleetFunctionWithEditing(t *testing.T) {
 		}
 	}
 	if found != 1 {
-		t.Errorf("%d conditional statements grant a Lambda action, want exactly 1", found)
+		t.Errorf("%d conditional statements grant a Lambda action on the fleet function, want exactly 1", found)
 	}
 }
 

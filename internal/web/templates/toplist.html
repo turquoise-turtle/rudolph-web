@@ -50,4 +50,5 @@
 {{else}}
 <p>This list has not been computed yet. Rudolph's ranker builds it on its schedule; check again after its next run.{{if .Unknown}} The unknown lists first appear after the ranker's first run once the upgraded Rudolph is deployed.{{end}}</p>
 {{end}}
+{{if .CanRun}}<p class="hint">Rudolph's ranker rebuilds these lists on its schedule. <a href="/admin#run-ranker">Run it now on the admin page</a>.</p>{{end}}
 {{end}}

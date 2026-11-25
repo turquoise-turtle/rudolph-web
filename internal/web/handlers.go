@@ -784,6 +784,9 @@ func (s *server) topList(w http.ResponseWriter, r *http.Request, page topListPag
 		StaleHours  string
 		Binaries    []topRow
 		Pager       pager
+		// CanRun is set for admins who can start the ranker; the page links
+		// them to the button on the admin page.
+		CanRun bool
 	}{
 		List:        page,
 		Unknown:     decision != nil,
@@ -798,13 +801,23 @@ func (s *server) topList(w http.ResponseWriter, r *http.Request, page topListPag
 		StaleHours:  strconv.FormatFloat(s.topListStaleAfter.Hours(), 'f', -1, 64),
 		Binaries:    rows,
 		Pager:       links(page.Path, topListQuery(days, decisionValue), nav, list.NextCursor),
+		CanRun:      s.rankerRunner != nil && canEdit,
 	})
 }
 
 // ---------------------------------------------------------------------------
 // Admin
 
-// admin says where the admin actions are (Rudolph.Admin only).
+// admin says where the admin actions are and holds the buttons that start
+// Rudolph's jobs (Rudolph.Admin only).
 func (s *server) admin(w http.ResponseWriter, r *http.Request) {
-	s.render(w, r, http.StatusOK, "admin", "Admin", "admin", struct{ Editing bool }{s.writer != nil})
+	started := r.URL.Query().Get("started")
+	var runs []adminRun
+	for _, j := range s.jobRuns() {
+		runs = append(runs, adminRun{jobRun: j, Started: started == j.Slug})
+	}
+	s.render(w, r, http.StatusOK, "admin", "Admin", "admin", struct {
+		Editing bool
+		Runs    []adminRun
+	}{s.writer != nil, runs})
 }
