@@ -81,6 +81,7 @@ func fleetAudit(t *testing.T, st *dynamo.Store) []store.AuditEntry {
 
 func TestFleetHealthConfig_DefaultsWithoutTheItem(t *testing.T) {
 	st := newStore(t)
+	deleteFleetHealthItem(t)
 	got, err := st.FleetHealthConfig(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -95,6 +96,7 @@ func TestFleetHealthConfig_DefaultsWithoutTheItem(t *testing.T) {
 
 func TestFleetHoliday_SetAndEndThroughRudolph(t *testing.T) {
 	st := newStore(t)
+	deleteFleetHealthItem(t)
 	until := holidayDay(30)
 	if err := st.SetFleetHoliday(ctx, writerActor, 60, until); err != nil {
 		t.Fatal(err)

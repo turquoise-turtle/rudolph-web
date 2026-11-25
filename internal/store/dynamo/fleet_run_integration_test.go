@@ -21,11 +21,14 @@ package dynamo_test
 // least 15 minutes before now) decides between concurrent requests: the loser gets a *store.FleetRunTooSoonError
 // with RetryAt from the stored RequestedAt and calls no start. The winner calls start; its error is returned wrapped
 // with store.ErrFleetRunNotStarted, the marker kept and nothing audited; success records fleet.run on fleet through
-// Rudolph's audit package. FleetHealth / Config, the holiday setting, is never touched. No Scan or Query.
+// Rudolph's audit package. FleetHealth / Config, the fleet health setting (the stale threshold, the holiday and the
+// minimum Santa version), is never touched: the item seeded from the web contract is the same after the request. No
+// Scan or Query.
 
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -125,6 +128,7 @@ func noScanOrQuery(t *testing.T) {
 func TestRequestFleetRun_WritesTheMarkerStartsAndAudits(t *testing.T) {
 	st := newStore(t)
 	putFleetFixture(t, fleetSnapshot, fleetRunNow.Add(-3*time.Hour))
+	setting := fleetHealthSetting(t)
 	ddblocal.ResetCounts()
 	c := &runCounter{}
 	if err := st.RequestFleetRun(ctx, writerActor, fleetRunNow, c.start); err != nil {
@@ -149,8 +153,8 @@ func TestRequestFleetRun_WritesTheMarkerStartsAndAudits(t *testing.T) {
 	if err != nil || secs < fleetRunNow.Add(15*time.Minute).Unix() || secs > fleetRunNow.Add(24*time.Hour).Unix() {
 		t.Errorf("ExpiresAfter %s, want Unix seconds 15 minutes to a day after the request", exp.Value)
 	}
-	if fleetHealthItem(t) != nil {
-		t.Error("the request wrote FleetHealth / Config, the holiday setting")
+	if after := fleetHealthItem(t); !reflect.DeepEqual(after, setting) {
+		t.Errorf("the request changed FleetHealth / Config, the fleet health setting:\n before %v\n after  %v", setting, after)
 	}
 	entries := runEntries(t, func() ([]store.AuditEntry, error) { return st.ListAudit(ctx, time.Now().Add(-time.Hour), 100) })
 	if len(entries) != 1 || entries[0].Target != "fleet" || !strings.HasPrefix(entries[0].Actor, "web:") ||
@@ -271,4 +275,15 @@ func TestRequestFleetRun_RefusesAnUnusableActorBeforeWriting(t *testing.T) {
 	if fleetRunMarker(t) != nil || c.count() != 0 {
 		t.Error("an unusable actor wrote the marker or started the job")
 	}
+}
+
+// fleetHealthSetting is the fleet health setting before a test changes anything: the contract rows newStore seeds hold
+// one (FleetHealth / Config with MinSantaVersion), so a test of a write that must leave it alone compares it after.
+func fleetHealthSetting(t *testing.T) map[string]types.AttributeValue {
+	t.Helper()
+	it := fleetHealthItem(t)
+	if it == nil {
+		t.Fatal("the seeded contract rows hold no FleetHealth / Config item to compare against")
+	}
+	return it
 }

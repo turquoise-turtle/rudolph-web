@@ -28,6 +28,7 @@ package dynamo_test
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -109,6 +110,7 @@ func wantRankerTooSoon(t *testing.T, err error, retryAt time.Time) {
 func TestRequestRankerRun_WritesTheMarkerStartsAndAudits(t *testing.T) {
 	st := newStore(t)
 	putTopPointer(t, fleetRunNow.Add(-time.Hour))
+	setting := fleetHealthSetting(t)
 	ddblocal.ResetCounts()
 	c := &runCounter{}
 	if err := st.RequestRankerRun(ctx, writerActor, fleetRunNow, c.start); err != nil {
@@ -136,8 +138,8 @@ func TestRequestRankerRun_WritesTheMarkerStartsAndAudits(t *testing.T) {
 	if fleetRunMarker(t) != nil {
 		t.Error("the ranker request wrote the fleet job's marker, FleetHealth / RunRequested")
 	}
-	if fleetHealthItem(t) != nil {
-		t.Error("the ranker request wrote FleetHealth / Config, the holiday setting")
+	if after := fleetHealthItem(t); !reflect.DeepEqual(after, setting) {
+		t.Errorf("the ranker request changed FleetHealth / Config, the fleet health setting:\n before %v\n after  %v", setting, after)
 	}
 	entries := rankerEntries(t, st)
 	if len(entries) != 1 || entries[0].Target != "ranker" || !strings.HasPrefix(entries[0].Actor, "web:") ||

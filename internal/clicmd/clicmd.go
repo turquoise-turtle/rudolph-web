@@ -240,3 +240,11 @@ func (b Builder) GroupFileAccessOverride(group, action string) (string, bool) {
 	}
 	return b.join("config", "update", target, "--override-file-access-action", strings.ToLower(action), "--yes")
 }
+
+// FleetMinSantaVersion sets the minimum Santa version: a release, off, or
+// with version "" the default again (--default).
+//
+// STUB: not implemented yet.
+func (b Builder) FleetMinSantaVersion(version string) (string, bool) {
+	return "", false
+}

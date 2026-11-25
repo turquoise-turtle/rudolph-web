@@ -2,6 +2,7 @@ package fake
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"sort"
@@ -380,4 +381,18 @@ func (s *Store) markRun(job rudolphrules.JobRun, marker *time.Time, now time.Tim
 	}
 	*marker = now
 	return nil
+}
+
+// SetMinSantaVersion implements store.Writer.
+//
+// STUB: not implemented yet.
+func (s *Store) SetMinSantaVersion(_ context.Context, _ store.Actor, _ string) error {
+	return errors.New("not implemented")
+}
+
+// ClearMinSantaVersion implements store.Writer.
+//
+// STUB: not implemented yet.
+func (s *Store) ClearMinSantaVersion(_ context.Context, _ store.Actor) error {
+	return errors.New("not implemented")
 }

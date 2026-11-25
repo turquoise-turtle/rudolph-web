@@ -269,6 +269,14 @@ func FromEnv(getenv func(string) string) (Config, error) {
 	return c, nil
 }
 
+// IgnoredEnvironment returns one line to log at start-up for each setting
+// that is still in the environment but no longer read.
+//
+// STUB: not implemented yet.
+func IgnoredEnvironment(getenv func(string) string) []string {
+	return nil
+}
+
 // A ParameterFetcher reads a single decrypted parameter value by name. The
 // implementation used in production is internal/awsssm; it caches values for
 // the life of the process, so a warm Lambda never calls SSM again.

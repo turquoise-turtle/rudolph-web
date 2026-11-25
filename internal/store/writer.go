@@ -291,6 +291,16 @@ type Writer interface {
 	// rudolph fleet holiday --end does. ErrNothingToChange, with nothing
 	// written or recorded, when none is stored.
 	EndFleetHoliday(ctx context.Context, actor Actor) error
+	// SetMinSantaVersion stores the minimum Santa version (a release, or
+	// "off"), as rudolph fleet min-santa-version does, recording
+	// fleet.min-santa-version on the fleet with the CLI's summary.
+	// Rudolph's refusal is ErrInvalidArgument with its message.
+	SetMinSantaVersion(ctx context.Context, actor Actor, version string) error
+	// ClearMinSantaVersion removes the stored minimum Santa version, so
+	// Rudolph's default applies again, as rudolph fleet min-santa-version
+	// --default does. ErrNothingToChange, with nothing written or recorded,
+	// when none is stored.
+	ClearMinSantaVersion(ctx context.Context, actor Actor) error
 	// AssignCohort assigns group to each of the Macs, which must be Ready in
 	// the fleet's readiness list of snapshot, recording group.add for each as
 	// AssignGroup does, and returns how many it assigned. Everything is

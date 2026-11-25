@@ -231,6 +231,18 @@ type FleetHealthConfig struct {
 	StaleDays        int
 	HolidayStaleDays int
 	HolidayUntil     string
+	// MinSantaVersion is the stored minimum Santa version as Rudolph's
+	// fleethealth.FromItem reads it: a release such as 2026.10, "off", or ""
+	// when none is stored or the stored one cannot be used.
+	MinSantaVersion string
+}
+
+// MinSantaVersionInForce is the minimum Santa version the fleet job and every
+// page use, as Rudolph's fleethealth.Config.MinSantaVersionInForce says.
+//
+// STUB: not implemented yet.
+func (c FleetHealthConfig) MinSantaVersionInForce() (version string, off bool, stored bool) {
+	return "", false, false
 }
 
 // FleetReader reads the fleet job's snapshot and a Mac's unknown binaries.

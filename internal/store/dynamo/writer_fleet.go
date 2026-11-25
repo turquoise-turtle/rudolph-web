@@ -163,3 +163,17 @@ func (s *Store) readyInSnapshot(ctx context.Context, snapshot, machineID string)
 	}
 	return len(out.Item) > 0, nil
 }
+
+// SetMinSantaVersion implements store.Writer.
+//
+// STUB: not implemented yet.
+func (s *Store) SetMinSantaVersion(_ context.Context, _ store.Actor, _ string) error {
+	return errors.New("not implemented")
+}
+
+// ClearMinSantaVersion implements store.Writer.
+//
+// STUB: not implemented yet.
+func (s *Store) ClearMinSantaVersion(_ context.Context, _ store.Actor) error {
+	return errors.New("not implemented")
+}
