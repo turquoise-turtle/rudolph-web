@@ -28,9 +28,6 @@ module "rudolph_web" {
   # How old the fleet job's snapshot may be before the fleet pages warn; fit it to the fleet job's schedule.
   fleet_stale_after = var.fleet_stale_after
 
-  # Macs below this Santa version are marked "update needed"; empty turns the marker off.
-  min_santa_version = var.min_santa_version
-
   create_ssm_parameters = var.create_ssm_parameters
   ssm_kms_key_arn       = var.ssm_kms_key_arn
 

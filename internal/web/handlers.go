@@ -72,13 +72,16 @@ func (s *server) machines(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.render(w, r, http.StatusOK, "machines", "Machines", "machines", struct {
-		Filter   store.MachineFilter
-		Machines []store.Machine
-		Pager    pager
+		Filter     store.MachineFilter
+		Machines   []store.Machine
+		MinVersion minVersion
+		Pager      pager
 	}{
 		Filter:   filter,
 		Machines: page.Items,
-		Pager:    links("/machines", url.Values{"serial": {serial}, "hostname": {hostname}}, nav, page.NextCursor),
+		// Read after the page's own data, so a refused request costs no read.
+		MinVersion: s.minVersionInForce(r.Context()),
+		Pager:      links("/machines", url.Values{"serial": {serial}, "hostname": {hostname}}, nav, page.NextCursor),
 	})
 }
 
@@ -137,6 +140,7 @@ func (s *server) machineDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	s.render(w, r, http.StatusOK, "machine", "Machine "+title, "machines", struct {
 		Machine      store.MachineDetail
+		MinVersion   minVersion
 		Inherited    groupMode
 		Config       []configRow
 		ConfigForm   configForm
@@ -150,6 +154,7 @@ func (s *server) machineDetail(w http.ResponseWriter, r *http.Request) {
 		Unknown      unknownFigure
 	}{
 		Machine:      machine,
+		MinVersion:   s.minVersionInForce(r.Context()),
 		Inherited:    inherited,
 		Config:       machineConfigRows(machine.Config, global, !globalUnread, fromGroup),
 		ConfigForm:   machineConfigForm(edit, machine, global, !globalUnread, fromGroup),

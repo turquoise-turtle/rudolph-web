@@ -23,6 +23,14 @@ import (
 // environment may set them differently (or, for a local module, not set version at all).
 var moduleArgsNotCompared = map[string]bool{"source": true, "version": true}
 
+// retiredSettings are settings a release removed, each with where it went. Terraform only warns about a tfvars value
+// for an undeclared variable, and a variable that is declared but no longer used is no error at all, so an environment
+// that still has one would deploy as if the setting still did something. They are refused wherever they appear,
+// whatever the example has: the example no longer has them to compare with.
+var retiredSettings = map[string]string{
+	"min_santa_version": "the minimum Santa version is now Rudolph's stored setting; remove it here, and change the minimum with `rudolph fleet min-santa-version` or the form on /admin/config",
+}
+
 type module struct {
 	file string
 	args map[string]bool
@@ -32,6 +40,8 @@ type config struct {
 	// variables maps each declared variable to the base name of the file declaring it.
 	variables map[string]string
 	modules   map[string]module
+	// retired holds one problem for each place a retired setting is declared or passed to a module.
+	retired []string
 }
 
 // Check returns one line per way the environment in envDir falls short of the example in exampleDir, sorted. It returns
@@ -46,7 +56,7 @@ func Check(envDir, exampleDir string) ([]string, error) {
 		return nil, fmt.Errorf("example environment: %w", err)
 	}
 
-	var problems []string
+	problems := append([]string(nil), env.retired...)
 	for name, file := range example.variables {
 		if _, ok := env.variables[name]; !ok {
 			problems = append(problems, fmt.Sprintf("variable %q is declared in the example's %s but not in this environment", name, file))
@@ -75,6 +85,10 @@ func Check(envDir, exampleDir string) ([]string, error) {
 			return nil, fmt.Errorf("environment: %w", err)
 		}
 		for _, key := range keys {
+			if moved, ok := retiredSettings[key]; ok {
+				problems = append(problems, fmt.Sprintf("%s still sets %q, which was removed: %s", filepath.Base(path), key, moved))
+				continue
+			}
 			if _, ok := env.variables[key]; !ok {
 				problems = append(problems, fmt.Sprintf("%s sets %q, but this environment declares no such variable, so Terraform would ignore it with only a warning", filepath.Base(path), key))
 			}
@@ -128,6 +142,19 @@ func load(dir string) (*config, error) {
 			return nil, err
 		}
 		for _, b := range blocks {
+			// Checked in override files too: an argument there reaches the module like any other.
+			switch b.kind {
+			case "variable":
+				if moved, ok := retiredSettings[b.label]; ok {
+					cfg.retired = append(cfg.retired, fmt.Sprintf("%s still declares the variable %q, which was removed: %s", name, b.label, moved))
+				}
+			case "module":
+				for arg := range b.args {
+					if moved, ok := retiredSettings[arg]; ok {
+						cfg.retired = append(cfg.retired, fmt.Sprintf("%s still passes %s to module %q, which no longer takes it: %s", name, arg, b.label, moved))
+					}
+				}
+			}
 			switch {
 			case b.kind == "variable" && !override:
 				if _, seen := cfg.variables[b.label]; !seen {

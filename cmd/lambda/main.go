@@ -41,6 +41,11 @@ func main() {
 		log.Error("invalid configuration", "err", err)
 		os.Exit(1)
 	}
+	// Once per cold start: a setting left over from before an upgrade is
+	// ignored, and its owner should hear where it went.
+	for _, line := range config.IgnoredEnvironment(os.Getenv) {
+		log.Warn(line)
+	}
 	ac := cfg.AuthConfig()
 	ac.Logger = log
 	a, err := auth.New(ac)
@@ -53,7 +58,7 @@ func main() {
 		log.Error("data layer setup", "err", err)
 		os.Exit(1)
 	}
-	opts := web.Options{Auth: a, Store: reader, Logger: log, CLIEnv: cfg.CLIEnv, TopListStaleAfter: cfg.TopListStaleAfter, MinSantaVersion: cfg.MinSantaVersion,
+	opts := web.Options{Auth: a, Store: reader, Logger: log, CLIEnv: cfg.CLIEnv, TopListStaleAfter: cfg.TopListStaleAfter,
 		FleetStaleAfter: cfg.FleetStaleAfter}
 	// Without RUDOLPH_WEB_EDITING=true the view stays read-only: no forms, and
 	// the write routes do not exist. The role is only granted writes with

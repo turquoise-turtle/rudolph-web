@@ -42,6 +42,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	rudolphtypes "github.com/airbnb/rudolph/pkg/types"
 )
 
 // MaxPageSize is the largest page any implementation must serve.
@@ -228,84 +230,32 @@ func LegacySantaVersion(v string) bool {
 	return r.Year < 2026 || (r.Year == 2026 && r.Month < 8)
 }
 
-// ParseVersion reads a version of at least two dot-separated numeric parts,
-// such as 2026.9 or 2026.10.1, as configured for a minimum Santa version.
-// Each part is decimal digits only, so signs, suffixes like -beta and empty
-// parts are refused.
-func ParseVersion(v string) (parts []int, ok bool) {
-	fields := strings.Split(v, ".")
-	if len(fields) < 2 {
-		return nil, false
-	}
-	for _, f := range fields {
-		n, ok := versionPart(f)
-		if !ok {
-			return nil, false
-		}
-		parts = append(parts, n)
-	}
-	return parts, true
-}
-
-// versionPart reads one part of a version: 1 to 9 decimal digits, so it
-// never overflows an int.
-func versionPart(f string) (int, bool) {
-	if f == "" || len(f) > 9 || strings.Trim(f, "0123456789") != "" {
-		return 0, false
-	}
-	n, err := strconv.Atoi(f)
-	return n, err == nil
-}
-
-// reportedVersion reads a Santa version as a Mac reports it: the release
-// ParseSantaVersion reads, so the same versions count as parseable here as
-// for LegacySantaVersion, then any further numeric parts (the patch level of
-// 2026.10.2). Comparison stops at the first further part that is not a
-// number.
-func reportedVersion(v string) ([]int, bool) {
-	r, ok := ParseSantaVersion(v)
-	if !ok {
-		return nil, false
-	}
-	parts := []int{r.Year, r.Month}
-	fields := strings.Split(strings.TrimSpace(v), ".")
-	for _, f := range fields[2:] {
-		n, ok := versionPart(f)
-		if !ok {
-			break
-		}
-		parts = append(parts, n)
-	}
-	return parts, true
-}
-
-// SantaVersionBelow reports whether the reported Santa version v is below
-// minimum, comparing part by part as numbers (2026.10 is above 2026.9), with
-// missing parts counted as 0 (2026.9 is not below 2026.9.0). An empty or
-// unparseable v, or a minimum ParseVersion refuses, is never below, since nothing
-// is known about it.
+// SantaVersionBelow reports whether the reported Santa version v is below the
+// minimum Santa version, exactly as Rudolph's fleet job decides it: both are
+// read by Rudolph's own parser and compared by its Before, which looks at the
+// year and month only, so a minimum of 2026.10.1 marks the same Macs as
+// 2026.10 and the pages never disagree with the fleet's Version list. An
+// empty or unparseable v is never below, since nothing is known about it, and
+// neither is anything below a minimum that is no release (off included).
 func SantaVersionBelow(v, minimum string) bool {
-	m, ok := ParseVersion(minimum)
-	if !ok {
+	reported, least := rudolphtypes.ParseSantaVersion(v), rudolphtypes.ParseSantaVersion(minimum)
+	// Rudolph reads what it cannot parse as the current release, which is
+	// older than none; a minimum it cannot parse must not make every Mac old.
+	if reported.IsCurrent() || least.IsCurrent() {
 		return false
 	}
-	r, ok := reportedVersion(v)
-	if !ok {
-		return false
+	return reported.Before(least)
+}
+
+// SameSantaRelease reports whether two minimum Santa versions list the same
+// Macs: the same text (off and off), or releases of the same year and month
+// by Rudolph's parser (2026.9 and 2026.9.0).
+func SameSantaRelease(a, b string) bool {
+	if a == b {
+		return true
 	}
-	for i := range max(len(m), len(r)) {
-		var a, b int
-		if i < len(r) {
-			a = r[i]
-		}
-		if i < len(m) {
-			b = m[i]
-		}
-		if a != b {
-			return a < b
-		}
-	}
-	return false
+	ra, rb := rudolphtypes.ParseSantaVersion(a), rudolphtypes.ParseSantaVersion(b)
+	return !ra.IsCurrent() && ra == rb
 }
 
 // SyncState is a host's sync progress (SK=SyncState).

@@ -7,4 +7,50 @@
 {{template "configtable" .Rows}}
 {{if .Edit}}{{template "configform" .Form}}{{end}}
 <p class="hint">URLs show only their scheme, host and path, as the rest may hold a token. USB settings are not shown. <code>rudolph config get --global</code> shows every setting in full.</p>
+<section id="min-santa-version">
+<h2>Minimum Santa version</h2>
+{{with .MinVersion}}
+{{if eq .Result "saved"}}<p role="status"><strong>Saved.</strong> The "update needed" marker follows at once.</p>{{end}}
+{{if eq .Result "unchanged"}}<p role="status"><strong>Nothing changed:</strong> no minimum Santa version was stored, so the default already applies.</p>{{end}}
+{{if .Unread}}
+<p>The stored minimum Santa version could not be read. Until it can, the pages mark Macs below the default, {{.InForce.Version}}.</p>
+{{else}}
+{{with .InForce}}<p data-min-santa-version>{{if .Stored}}{{if .Off}}The minimum Santa version check is <strong>off</strong>, set here: no Mac is marked "update needed" or listed under Version.{{else}}The minimum Santa version is <strong>{{.Version}}</strong>, set here.{{end}}{{else}}The minimum Santa version is the default <strong>{{.Version}}</strong>; none is stored.{{end}}</p>{{end}}
+{{end}}
+<p class="hint">A Mac reporting an older Santa release is marked "update needed" on the machine pages and listed under Version on the fleet pages. Only the year and month are compared, by the fleet job and here alike, so a patch release such as 2026.10.1 marks the same Macs as 2026.10. The marker follows a change at once, or within a minute of one made with the CLI; the fleet job's Version list follows at the job's next run.{{if .CanRun}} <a href="/admin#run-fleet">Run it now on the admin page</a>.{{end}}</p>
+{{if and .Edit (not .Unread)}}
+<form class="edit-form" method="get" action="/admin/config">
+  <label>New minimum <span class="hint">(a release such as 2026.10, or off)</span>
+    <input name="min_santa_version" type="text" maxlength="32" required value="{{.Typed}}">
+  </label>
+  <button type="submit">Preview</button>
+</form>
+{{with .Preview}}
+<p data-preview="candidate">{{if eq .Candidate "off"}}With the check <strong>off</strong>{{else}}At <strong>{{.Candidate}}</strong>{{end}}: {{.Below}} of {{.Macs}} Macs would be marked "update needed".</p>
+<p data-preview="in-force">{{if $.MinVersion.InForce.Off}}Now, with the check <strong>off</strong>{{else}}Now, at <strong>{{$.MinVersion.InForce.Version}}</strong>{{end}}: {{.BelowNow}} of {{.Macs}} Macs are marked.</p>
+{{if .Capped}}<p class="hint">These counts are of the first {{.Macs}} Macs on the machine list; the fleet has more.</p>{{end}}
+<form class="edit-form" method="post" action="/admin/config/min-santa-version">
+  <input type="hidden" name="min_santa_version" value="{{.Candidate}}">
+  <button type="submit">Save {{.Candidate}}</button>
+</form>
+{{end}}
+{{if not .InForce.Off}}
+<form class="edit-form" method="post" action="/admin/config/min-santa-version">
+  <input type="hidden" name="min_santa_version" value="off">
+  <button type="submit" class="danger">Turn the check off</button>
+</form>
+{{end}}
+{{if .InForce.Stored}}
+<form class="edit-form" method="post" action="/admin/config/min-santa-version/default">
+  <button type="submit">Return to the default</button>
+</form>
+{{end}}
+{{end}}
+<details class="cmds"><summary>Commands</summary><ul>
+{{with .Preview}}{{template "cmd" (cmd (printf "Set it to %s" .Candidate) (cliFleetMinVersion .Candidate))}}{{end}}
+{{template "cmd" (cmd "Turn the check off" (cliFleetMinVersion "off"))}}
+{{template "cmd" (cmd "Return to the default" (cliFleetMinVersion ""))}}
+</ul></details>
+{{end}}
+</section>
 {{end}}

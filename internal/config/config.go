@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/turquoise-turtle/rudolph-web/internal/auth"
-	"github.com/turquoise-turtle/rudolph-web/internal/store"
 )
 
 // Environment variable names.
@@ -70,10 +69,6 @@ const (
 	// commands start with (ENV=<name> rudolph ...). Unset, they start with
 	// plain rudolph and the operator's shell supplies ENV.
 	EnvCLIEnv = "RUDOLPH_WEB_CLI_ENV"
-	// EnvMinSantaVersion is the Santa version below which the pages mark a
-	// Mac "update needed". Unset or empty means DefaultMinSantaVersion, and
-	// "off" turns the marker off.
-	EnvMinSantaVersion = "RUDOLPH_WEB_MIN_SANTA_VERSION"
 
 	// Names of SSM Parameter Store parameters holding the secrets. When one of
 	// these is set the matching plain variable must be unset, and the value is
@@ -99,9 +94,10 @@ const (
 	entraAuthority         = "https://login.microsoftonline.com"
 )
 
-// DefaultMinSantaVersion is the default minimum Santa version: 2026.9 fixed
-// ways for a local user to pause enforcement (owner, 2026-11-22).
-const DefaultMinSantaVersion = "2026.9"
+// retiredMinSantaVersion was the web view's own minimum Santa version. The
+// minimum is Rudolph's stored setting now, but a function deployed before the
+// upgrade may still carry the variable, so it is ignored rather than refused.
+const retiredMinSantaVersion = "RUDOLPH_WEB_MIN_SANTA_VERSION"
 
 // cliEnvRe matches environment names that can follow ENV= in a shell command
 // without quoting.
@@ -129,7 +125,6 @@ type Config struct {
 	TopListStaleAfter     time.Duration
 	FleetStaleAfter       time.Duration
 	Editing               bool   // admins may write; needs TableName
-	MinSantaVersion       string // empty: no update needed marker
 	FleetFunction         string // empty: admins cannot start the fleet job; needs Editing
 	RankerFunction        string // empty: admins cannot start the ranker; needs Editing
 }
@@ -249,17 +244,6 @@ func FromEnv(getenv func(string) string) (Config, error) {
 	if c.CLIEnv != "" && !cliEnvRe.MatchString(c.CLIEnv) {
 		errs = append(errs, fmt.Errorf("%s must be letters, digits, '.', '_' or '-' (at most 64)", EnvCLIEnv))
 	}
-	switch v := get(EnvMinSantaVersion); v {
-	case "":
-		c.MinSantaVersion = DefaultMinSantaVersion
-	case "off":
-	default:
-		if _, ok := store.ParseVersion(v); !ok {
-			errs = append(errs, fmt.Errorf("%s must be a version such as 2026.9, or off", EnvMinSantaVersion))
-		} else {
-			c.MinSantaVersion = v
-		}
-	}
 	if c.Addr == "" {
 		c.Addr = defaultAddr
 	}
@@ -270,11 +254,15 @@ func FromEnv(getenv func(string) string) (Config, error) {
 }
 
 // IgnoredEnvironment returns one line to log at start-up for each setting
-// that is still in the environment but no longer read.
-//
-// STUB: not implemented yet.
+// that is still in the environment but no longer read, so an operator who
+// set one finds out where it went. A blank value counts as unset.
 func IgnoredEnvironment(getenv func(string) string) []string {
-	return nil
+	var lines []string
+	if strings.TrimSpace(getenv(retiredMinSantaVersion)) != "" {
+		lines = append(lines, retiredMinSantaVersion+" is set but ignored: the minimum Santa version is Rudolph's stored setting now, "+
+			"changed with `rudolph fleet min-santa-version` or the form on /admin/config")
+	}
+	return lines
 }
 
 // A ParameterFetcher reads a single decrypted parameter value by name. The

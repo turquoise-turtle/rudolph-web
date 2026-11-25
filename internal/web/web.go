@@ -107,13 +107,9 @@ type Options struct {
 	// that the ranker may have stopped; 0 means DefaultTopListStaleAfter.
 	TopListStaleAfter time.Duration
 	// Writer lets Rudolph.Admin add and remove rules, set temporary client
-	// modes and the fleet's holiday mode, and add Macs to a Lockdown group. Nil keeps the view read-only: no forms are shown and the write
+	// modes, the fleet's holiday mode and the minimum Santa version, and add Macs to a Lockdown group. Nil keeps the view read-only: no forms are shown and the write
 	// routes do not exist. The audit trail is read through Store either way.
 	Writer store.Writer
-	// MinSantaVersion is the Santa version below which the machine list and
-	// page mark a Mac "update needed", such as 2026.9; empty turns the marker
-	// off. It must be a version of at least two numeric parts.
-	MinSantaVersion string
 	// FleetStaleAfter is how old the fleet job's snapshot may be before the
 	// fleet pages warn that the job may have stopped; 0 means
 	// DefaultFleetStaleAfter.
@@ -153,10 +149,10 @@ type server struct {
 
 	topListStaleAfter time.Duration
 	fleetStaleAfter   time.Duration
-	// minSantaVersion is Options.MinSantaVersion, which the fleet page
-	// compares with the fleet job's own minimum.
-	minSantaVersion string
-	writer          store.Writer
+	writer            store.Writer
+	// minVersionCache holds the minimum Santa version in force for the
+	// machine pages; see minVersionInForce.
+	minVersionCache minVersionCache
 	// fleetRunner is nil unless the fleet job can be started: Options.FleetRunner
 	// with a writer. rankerRunner is the same for the ranker.
 	fleetRunner  FleetRunner
@@ -197,12 +193,7 @@ func New(opts Options) (http.Handler, error) {
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()
 	}
-	if opts.MinSantaVersion != "" {
-		if _, ok := store.ParseVersion(opts.MinSantaVersion); !ok {
-			return nil, errors.New("web: MinSantaVersion must be a version such as 2026.9, or empty")
-		}
-	}
-	pages, err := parseTemplates(cliFuncs(clicmd.New(opts.CLIEnv)), minVersionFuncs(opts.MinSantaVersion))
+	pages, err := parseTemplates(cliFuncs(clicmd.New(opts.CLIEnv)))
 	if err != nil {
 		return nil, err
 	}
@@ -216,7 +207,6 @@ func New(opts Options) (http.Handler, error) {
 
 		topListStaleAfter: opts.TopListStaleAfter,
 		fleetStaleAfter:   opts.FleetStaleAfter,
-		minSantaVersion:   opts.MinSantaVersion,
 		writer:            opts.Writer,
 	}
 	if opts.Writer != nil {
@@ -299,6 +289,8 @@ func New(opts Options) (http.Handler, error) {
 		mux.Handle("POST /admin/machines/{id}/groups", admin(s.assignGroup))
 		mux.Handle("POST /admin/machines/{id}/groups/remove", admin(s.unassignGroup))
 		mux.Handle("POST /admin/config", admin(s.updateGlobalConfig))
+		mux.Handle("POST /admin/config/min-santa-version", admin(s.setMinSantaVersion))
+		mux.Handle("POST /admin/config/min-santa-version/default", admin(s.clearMinSantaVersion))
 		mux.Handle("POST /admin/machines/{id}/config", admin(s.updateMachineConfig))
 		mux.Handle("POST /admin/machines/{id}/clean-sync", admin(s.cleanSync))
 		mux.Handle("POST /admin/fleet/holiday", admin(s.setFleetHoliday))
@@ -530,16 +522,6 @@ type ruleTypeChoice struct {
 	id    string
 }
 
-// minVersionFuncs gives the templates the update needed marker: whether a
-// reported Santa version is below the minimum (never, with the minimum off),
-// and the minimum to name.
-func minVersionFuncs(minimum string) template.FuncMap {
-	return template.FuncMap{
-		"updateNeeded":    func(v string) bool { return minimum != "" && store.SantaVersionBelow(v, minimum) },
-		"minSantaVersion": func() string { return minimum },
-	}
-}
-
 // cliFuncs gives the templates the copy-and-paste CLI commands. Each returns
 // "" when no command can be built (an identifier of the wrong shape), and the
 // templates then show nothing.
@@ -625,6 +607,7 @@ func cliFuncs(b clicmd.Builder) template.FuncMap {
 		},
 		"cliGroupFileAccess": func(group, action string) string { return str(b.GroupFileAccessOverride(group, action)) },
 		"cmd":                func(label, command string) cliCommand { return cliCommand{label, command} },
+		"cliFleetMinVersion": func(version string) string { return str(b.FleetMinSantaVersion(version)) },
 		"cliMachineRules":    func(machine string) string { return str(b.MachineRules(machine)) },
 		"cliConfigGet":       func(machine string) string { return str(b.ConfigGet(machine)) },
 		"cliEndTemporary":    func(machine string) string { return str(b.EndTemporaryMode(machine)) },
@@ -633,8 +616,7 @@ func cliFuncs(b clicmd.Builder) template.FuncMap {
 }
 
 func parseTemplates(extra ...template.FuncMap) (map[string]*template.Template, error) {
-	// The update needed marker is off unless New passes the minimum in extra, which replaces these.
-	base := template.New("layout.html").Funcs(funcs).Funcs(displayFuncs).Funcs(minVersionFuncs(""))
+	base := template.New("layout.html").Funcs(funcs).Funcs(displayFuncs)
 	for _, fm := range extra {
 		base = base.Funcs(fm)
 	}
