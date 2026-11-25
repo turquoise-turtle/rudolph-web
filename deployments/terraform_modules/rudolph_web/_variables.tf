@@ -163,18 +163,29 @@ variable "events_dynamodb_table_name" {
 
 variable "enable_editing" {
   type        = bool
-  description = "Let Rudolph.Admin change rules, temporary client modes, a Mac's and the global configuration (including clean sync requests), device groups and their members, and the fleet job's holiday mode from the web view (RUDOLPH_WEB_EDITING), and with fleet_function_name start the fleet job; on by default, and only Rudolph.Admin holders see the forms. Grants the role PutItem, UpdateItem, DeleteItem and BatchWriteItem on the store table, limited to Rudolph's rule, rules feed, machine, global config, group, group member, event collection, fleet health and audit partitions (audit: PutItem only, and never with ExpiresAfter). Every change is recorded in Rudolph's audit trail. Set false to keep the view and its role read-only."
+  description = "Let Rudolph.Admin change rules, temporary client modes, a Mac's and the global configuration (including clean sync requests), device groups and their members, and the fleet job's holiday mode from the web view (RUDOLPH_WEB_EDITING), and with fleet_function_name or ranker_function_name start the fleet job or the ranker; on by default, and only Rudolph.Admin holders see the forms. Grants the role PutItem, UpdateItem, DeleteItem and BatchWriteItem on the store table, limited to Rudolph's rule, rules feed, machine, global config, group, group member, event collection, fleet health and audit partitions (audit: PutItem only, and never with ExpiresAfter). Every change is recorded in Rudolph's audit trail. Set false to keep the view and its role read-only."
   default     = true
 }
 
 variable "fleet_function_name" {
   type        = string
-  description = "Name of Rudolph's fleet Lambda, <rudolph prefix>_rudolph_fleet such as production_rudolph_fleet (RUDOLPH_WEB_FLEET_FUNCTION). With enable_editing, Rudolph.Admin can then start the fleet job from the fleet page instead of waiting for its daily run, at most once every 15 minutes, each start recorded in Rudolph's audit trail; the role gets lambda:InvokeFunction on exactly that function in this account and region, and nothing else. A function name, not an ARN. Empty (the default) or without enable_editing: no button, no route and no grant."
+  description = "Name of Rudolph's fleet Lambda, <rudolph prefix>_rudolph_fleet such as production_rudolph_fleet (RUDOLPH_WEB_FLEET_FUNCTION). With enable_editing, Rudolph.Admin can then start the fleet job from the admin page instead of waiting for its daily run, at most once every 15 minutes, each start recorded in Rudolph's audit trail; the role gets lambda:InvokeFunction on exactly that function in this account and region, and nothing else. A function name, not an ARN. Empty (the default) or without enable_editing: no button, no route and no grant."
   default     = ""
 
   validation {
     condition     = can(regex("^[A-Za-z0-9_-]{0,64}$", var.fleet_function_name))
     error_message = "fleet_function_name must be a Lambda function name (letters, digits, '-' and '_', at most 64), not an ARN, or empty."
+  }
+}
+
+variable "ranker_function_name" {
+  type        = string
+  description = "Name of Rudolph's ranker Lambda, <rudolph prefix>_rudolph_ranker such as production_rudolph_ranker (RUDOLPH_WEB_RANKER_FUNCTION). With enable_editing, Rudolph.Admin can then start the ranker, which rebuilds the top lists, from the admin page instead of waiting for its next scheduled run, at most once every 15 minutes, each start recorded in Rudolph's audit trail; the role gets lambda:InvokeFunction on exactly that function in this account and region, and nothing else. A function name, not an ARN. Independent of fleet_function_name and of events_dynamodb_table_name. Empty (the default) or without enable_editing: no button, no route and no grant."
+  default     = ""
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9_-]{0,64}$", var.ranker_function_name))
+    error_message = "ranker_function_name must be a Lambda function name (letters, digits, '-' and '_', at most 64), not an ARN, or empty."
   }
 }
 

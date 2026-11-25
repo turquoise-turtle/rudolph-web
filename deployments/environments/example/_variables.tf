@@ -94,7 +94,13 @@ variable "enable_editing" {
 
 variable "fleet_function_name" {
   type        = string
-  description = "Name of Rudolph's fleet Lambda, <rudolph prefix>_rudolph_fleet such as production_rudolph_fleet. With enable_editing, Rudolph.Admin can then start the fleet job from the fleet page, at most once every 15 minutes; the role may invoke exactly that function. Empty: no button and no grant."
+  description = "Name of Rudolph's fleet Lambda, <rudolph prefix>_rudolph_fleet such as production_rudolph_fleet. With enable_editing, Rudolph.Admin can then start the fleet job from the admin page, at most once every 15 minutes; the role may invoke exactly that function. Empty: no button and no grant."
+  default     = ""
+}
+
+variable "ranker_function_name" {
+  type        = string
+  description = "Name of Rudolph's ranker Lambda, <rudolph prefix>_rudolph_ranker such as production_rudolph_ranker. With enable_editing, Rudolph.Admin can then start the ranker, which rebuilds the top lists, from the admin page, at most once every 15 minutes; the role may invoke exactly that function. Empty: no button and no grant."
   default     = ""
 }
 

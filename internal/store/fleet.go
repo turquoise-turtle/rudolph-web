@@ -320,22 +320,38 @@ func (e *FleetRunTooSoonError) Error() string {
 // start's error.
 var ErrFleetRunNotStarted = errors.New("store: the fleet job could not be started")
 
-// FleetRunRetryAt returns when the fleet job may be run again and whether
-// that is still ahead at now, from the last request and the current
-// snapshot's GeneratedAt, either zero when there is none. Both stores decide
-// a refusal with it.
-func FleetRunRetryAt(now, lastRequest, generatedAt time.Time) (time.Time, bool) {
-	var retryAt time.Time
-	for _, t := range []time.Time{lastRequest, generatedAt} {
-		if t.IsZero() {
-			continue
-		}
-		if next := t.Add(FleetRunInterval); next.After(now) && next.After(retryAt) {
-			retryAt = next
-		}
-	}
-	return retryAt, !retryAt.IsZero()
+// ActionRankerRun and AuditTargetRanker are the audit entry of a ranker run
+// started from the web view. Like fleet.run it is the web view's own:
+// Rudolph's CLI starts no ranker.
+const (
+	ActionRankerRun   = "ranker.run"
+	AuditTargetRanker = "ranker"
+)
+
+// RankerRunInterval is how long RequestRankerRun refuses another run after
+// the last request or the current top lists. A run takes at most the ranker
+// function's 5-minute timeout, so one asked for has shown or failed well
+// within it; it is as long as FleetRunInterval so that both buttons say the
+// same thing, and a button cannot be used to read 90 days of counters over
+// and over.
+const RankerRunInterval = 15 * time.Minute
+
+// RankerRunTooSoonError is RequestRankerRun's refusal while the last ranker
+// request or the current top lists are younger than RankerRunInterval; a run
+// can be asked for again at RetryAt. It is a type of its own because the
+// ranker's guard and the fleet job's are separate: neither refuses the other.
+type RankerRunTooSoonError struct {
+	RetryAt time.Time
 }
+
+func (e *RankerRunTooSoonError) Error() string {
+	return "store: the ranker ran or was started too recently; it can be run again at " + e.RetryAt.UTC().Format(time.RFC3339)
+}
+
+// ErrRankerRunNotStarted is RequestRankerRun's error when the request was
+// accepted and its marker written, but starting the ranker failed. It wraps
+// the start's error.
+var ErrRankerRunNotStarted = errors.New("store: the ranker could not be started")
 
 // MaxCohortMacs is the most Macs AssignCohort takes in one request; bulk
 // work is the CLI's. Each Mac costs a point read of its readiness row and an

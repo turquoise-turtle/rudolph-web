@@ -1,6 +1,5 @@
 {{define "content"}}
 {{template "fleetnav" "health"}}
-{{if .RunStarted}}<p role="status"><strong>Started: the fleet lists update in a few minutes.</strong> Reload this page to see them; the time below changes when the run has finished.</p>{{end}}
 {{if .Age.Computed}}
 <p class="hint">Rudolph's fleet job walks every Mac once a day and lists the ones that need attention. Generated {{template "time" .Age.GeneratedAt}}: {{.Summary.Macs}} Macs, {{.Summary.Attention}} of them in at least one list below. A Mac can be in several lists.</p>
 {{template "fleetstale" .Age}}
@@ -23,12 +22,7 @@
 {{else}}
 {{template "fleetnotcomputed"}}
 {{end}}
-{{if .CanRun}}
-<form class="edit-form" method="post" action="/admin/fleet/run">
-  <button type="submit">Run the fleet job now</button>
-</form>
-<p class="hint">Rebuilds these lists and the Lockdown readiness figures now instead of at the job's next daily run, for instance after changing the stale threshold, a group or a client mode. A run takes from seconds to a few minutes. The job can be started once every 15 minutes, and not within 15 minutes of its last run.</p>
-{{end}}
+{{if .CanRun}}<p class="hint">The fleet job rebuilds these lists and the Lockdown readiness figures once a day. <a href="/admin#run-fleet">Run it now on the admin page</a>.</p>{{end}}
 <h2>Stale threshold</h2>
 {{with .Holiday}}
 {{if .Unread}}

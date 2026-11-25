@@ -39,9 +39,11 @@ module "rudolph_web" {
   dynamodb_kms_key_arn = var.dynamodb_kms_key_arn
   enable_editing       = var.enable_editing
 
-  # Rudolph's fleet Lambda (<rudolph prefix>_rudolph_fleet), which admins can then start from the fleet page; needs
-  # enable_editing. Empty leaves the button out and grants nothing.
-  fleet_function_name = var.fleet_function_name
+  # Rudolph's fleet Lambda (<rudolph prefix>_rudolph_fleet) and its ranker (<rudolph prefix>_rudolph_ranker), which
+  # admins can then start from the admin page; each needs enable_editing. Empty leaves that button out and grants
+  # nothing for it.
+  fleet_function_name  = var.fleet_function_name
+  ranker_function_name = var.ranker_function_name
 
   # Rudolph's execution events table, read-only. Empty leaves the events pages unavailable.
   events_dynamodb_table_name = var.events_dynamodb_table_name

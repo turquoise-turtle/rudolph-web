@@ -54,12 +54,17 @@ const (
 	EnvEditing = "RUDOLPH_WEB_EDITING"
 
 	// EnvFleetFunction names Rudolph's fleet Lambda (${prefix}_rudolph_fleet),
-	// which admins may then start from the fleet page instead of waiting for
+	// which admins may then start from the admin page instead of waiting for
 	// its daily run. Unset, there is no button and no route. It is a function
 	// name, not an ARN: the deployment grants lambda:InvokeFunction on the ARN
 	// it builds from the same name. It needs EnvEditing, since starting the
 	// job is an admin action.
 	EnvFleetFunction = "RUDOLPH_WEB_FLEET_FUNCTION"
+	// EnvRankerFunction names Rudolph's ranker Lambda
+	// (${prefix}_rudolph_ranker), which admins may then start from the admin
+	// page instead of waiting for its next scheduled run. It is checked as
+	// EnvFleetFunction is, and either can be set without the other.
+	EnvRankerFunction = "RUDOLPH_WEB_RANKER_FUNCTION"
 
 	// EnvCLIEnv is the Rudolph environment name the copy-and-paste CLI
 	// commands start with (ENV=<name> rudolph ...). Unset, they start with
@@ -102,9 +107,9 @@ const DefaultMinSantaVersion = "2026.9"
 // without quoting.
 var cliEnvRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`)
 
-// fleetFunctionRe matches a Lambda function name: no ARN, no account or
+// functionNameRe matches a Lambda function name: no ARN, no account or
 // region, and no version or alias after a colon.
-var fleetFunctionRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+var functionNameRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 
 var guidRe = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
@@ -126,6 +131,7 @@ type Config struct {
 	Editing               bool   // admins may write; needs TableName
 	MinSantaVersion       string // empty: no update needed marker
 	FleetFunction         string // empty: admins cannot start the fleet job; needs Editing
+	RankerFunction        string // empty: admins cannot start the ranker; needs Editing
 }
 
 // FromEnv reads and validates configuration. Error messages name variables
@@ -144,6 +150,7 @@ func FromEnv(getenv func(string) string) (Config, error) {
 		EventsTableName:       get(EnvEventsTableName),
 		CLIEnv:                get(EnvCLIEnv),
 		FleetFunction:         get(EnvFleetFunction),
+		RankerFunction:        get(EnvRankerFunction),
 		TopListStaleAfter:     defaultTopListStaleAfter,
 		FleetStaleAfter:       defaultFleetStaleAfter,
 	}
@@ -228,14 +235,16 @@ func FromEnv(getenv func(string) string) (Config, error) {
 	default:
 		errs = append(errs, fmt.Errorf("%s must be true, false or empty", EnvEditing))
 	}
-	switch {
-	case c.FleetFunction == "":
-	case !fleetFunctionRe.MatchString(c.FleetFunction):
-		errs = append(errs, fmt.Errorf("%s must be a Lambda function name, not an ARN: letters, digits, '-' or '_' (at most 64)", EnvFleetFunction))
-	case !c.Editing:
-		// An error rather than a button that is quietly missing: the
-		// deployment would believe admins can start the job.
-		errs = append(errs, fmt.Errorf("%s needs %s=true", EnvFleetFunction, EnvEditing))
+	for _, f := range []struct{ env, name string }{{EnvFleetFunction, c.FleetFunction}, {EnvRankerFunction, c.RankerFunction}} {
+		switch {
+		case f.name == "":
+		case !functionNameRe.MatchString(f.name):
+			errs = append(errs, fmt.Errorf("%s must be a Lambda function name, not an ARN: letters, digits, '-' or '_' (at most 64)", f.env))
+		case !c.Editing:
+			// An error rather than a button that is quietly missing: the
+			// deployment would believe admins can start the job.
+			errs = append(errs, fmt.Errorf("%s needs %s=true", f.env, EnvEditing))
+		}
 	}
 	if c.CLIEnv != "" && !cliEnvRe.MatchString(c.CLIEnv) {
 		errs = append(errs, fmt.Errorf("%s must be letters, digits, '.', '_' or '-' (at most 64)", EnvCLIEnv))

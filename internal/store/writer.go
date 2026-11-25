@@ -314,6 +314,15 @@ type Writer interface {
 	// and again, and nothing is recorded. A run that started is recorded as
 	// fleet.run on the fleet.
 	RequestFleetRun(ctx context.Context, actor Actor, now time.Time, start func(context.Context) error) error
+	// RequestRankerRun starts Rudolph's ranker with start, at most once every
+	// RankerRunInterval, exactly as RequestFleetRun starts the fleet job but
+	// with a guard of its own, so neither run refuses the other. It refuses
+	// with a *RankerRunTooSoonError while the last ranker request or the
+	// current top lists (the GeneratedAt of the blocked list over 1 day, the
+	// first pointer a ranker run moves) are younger than that at now. A start
+	// that fails is wrapped with ErrRankerRunNotStarted and keeps the marker;
+	// a run that started is recorded as ranker.run on the ranker.
+	RequestRankerRun(ctx context.Context, actor Actor, now time.Time, start func(context.Context) error) error
 }
 
 // GroupSettingsChange is a change to a group's settings. A nil setting is left

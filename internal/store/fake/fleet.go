@@ -325,42 +325,59 @@ func (s *Store) AssignCohort(_ context.Context, actor store.Actor, snapshot, gro
 	return len(cohort.MachineIDs), nil
 }
 
-// RequestFleetRun implements store.Writer. Unlike the writes above it takes
-// its clock from the caller, as the DynamoDB store does.
+// RequestFleetRun implements store.Writer.
 func (s *Store) RequestFleetRun(ctx context.Context, actor store.Actor, now time.Time, start func(context.Context) error) error {
+	return s.requestRun(ctx, rudolphrules.FleetRun, &s.fleetRunRequested, actor, now, start, func() time.Time {
+		if snap, ok := s.fleetSnapshots[s.fleetPointer]; ok {
+			return snap.Summary.GeneratedAt
+		}
+		return time.Time{}
+	})
+}
+
+// RequestRankerRun implements store.Writer. The lists' time is that of the
+// blocked list over 1 day, the pointer the DynamoDB store reads.
+func (s *Store) RequestRankerRun(ctx context.Context, actor store.Actor, now time.Time, start func(context.Context) error) error {
+	return s.requestRun(ctx, rudolphrules.RankerRun, &s.rankerRunRequested, actor, now, start, func() time.Time {
+		return s.topLists[store.TopFilter{Kind: store.TopKindBlocked, WindowDays: 1}].generatedAt
+	})
+}
+
+// requestRun guards, starts and records a run of one job. Unlike the writes
+// above it takes its clock from the caller, as the DynamoDB store does.
+// marker is the job's last accepted request, and resultsAt, called under the
+// lock, the time of its current results.
+func (s *Store) requestRun(ctx context.Context, job rudolphrules.JobRun, marker *time.Time, actor store.Actor, now time.Time,
+	start func(context.Context) error, resultsAt func() time.Time) error {
 	who, err := actor.AuditName()
 	if err != nil {
 		return err
 	}
-	if err := s.markFleetRun(now); err != nil {
+	if err := s.markRun(job, marker, now, resultsAt); err != nil {
 		return err
 	}
 	// The lock is not held here: a start that takes long must not hold up
 	// the requests it makes the store refuse.
 	if err := start(ctx); err != nil {
-		return fmt.Errorf("%w: %w", store.ErrFleetRunNotStarted, err)
+		return fmt.Errorf("%w: %w", job.NotStarted, err)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.recordAudit(who, store.ActionFleetRun, store.AuditTargetFleet, rudolphrules.FleetRunSummary)
+	s.recordAudit(who, job.Action, job.Target, job.Summary)
 	return nil
 }
 
-// markFleetRun decides a request under the lock, as the DynamoDB store's
+// markRun decides a request under the lock, as the DynamoDB store's
 // conditional write does: it is refused, or the marker moves to now.
-func (s *Store) markFleetRun(now time.Time) error {
+func (s *Store) markRun(job rudolphrules.JobRun, marker *time.Time, now time.Time, resultsAt func() time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.err != nil {
 		return s.err
 	}
-	var generatedAt time.Time
-	if snap, ok := s.fleetSnapshots[s.fleetPointer]; ok {
-		generatedAt = snap.Summary.GeneratedAt
+	if retryAt, soon := job.RetryAt(now, *marker, resultsAt()); soon {
+		return job.TooSoon(retryAt)
 	}
-	if retryAt, soon := store.FleetRunRetryAt(now, s.fleetRunRequested, generatedAt); soon {
-		return &store.FleetRunTooSoonError{RetryAt: retryAt}
-	}
-	s.fleetRunRequested = now
+	*marker = now
 	return nil
 }

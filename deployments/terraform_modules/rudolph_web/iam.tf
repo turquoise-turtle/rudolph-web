@@ -1,8 +1,8 @@
 #
 # IAM: read two parameters, decrypt them, read Rudolph's two tables, write its own logs. With enable_editing, also
 # write Rudolph's rules, device groups, a Mac's and the global configuration (including clean sync requests and
-# temporary client modes), the fleet job's holiday mode and the audit trail; and, with fleet_function_name as well,
-# start Rudolph's fleet job. Nothing else.
+# temporary client modes), the fleet job's holiday mode and the audit trail; and, with fleet_function_name or
+# ranker_function_name as well, start Rudolph's fleet job or its ranker. Nothing else.
 #
 
 resource "aws_iam_role" "web" {
@@ -120,9 +120,10 @@ data "aws_iam_policy_document" "web" {
   #                                group is assigned or removed (groups)
   #   EventCollection              the index of rules whose allowed executions are collected (eventcollection)
   #   FleetHealth                  the fleet job's stale threshold and its holiday mode (fleethealth), exactly, not as a
-  #                                prefix, and the web view's own marker of the last "Run the fleet job now"
-  #                                (FleetHealth / RunRequested, one conditional UpdateItem); the job's own rows are in
-  #                                the events table, which this role only reads
+  #                                prefix, and the web view's own markers of the last "Run the fleet job now" and
+  #                                "Run the ranker now" (FleetHealth / RunRequested and FleetHealth /
+  #                                RankerRunRequested, one conditional UpdateItem each); the jobs' own rows are in the
+  #                                events table, which this role only reads
   # The audit trail (one partition per UTC day) is a statement of its own with PutItem only, so no UpdateItem or
   # DeleteItem; but a PutItem can replace an entry with the same key, and what prevents that is Rudolph's conditional put
   # (attribute_not_exists(PK)), not IAM. The actions are in for_each so that they exist only when editing is on; each
@@ -197,6 +198,21 @@ data "aws_iam_policy_document" "web" {
 
     content {
       sid       = "RunRudolphFleetJob"
+      effect    = "Allow"
+      actions   = ["lambda:InvokeFunction"]
+      resources = [statement.value]
+    }
+  }
+
+  # "Run the ranker now" (enable_editing and ranker_function_name): the same for Rudolph's ranker Lambda, the function
+  # its schedule invokes every hour by default. A statement of its own, so that either function can be named without
+  # the other and each statement names exactly one. The ranker takes no input either, so all an invocation can do is
+  # rebuild the top lists once more; the app allows one every 15 minutes.
+  dynamic "statement" {
+    for_each = var.enable_editing && var.ranker_function_name != "" ? ["arn:aws:lambda:${var.region}:${var.aws_account_id}:function:${var.ranker_function_name}"] : []
+
+    content {
+      sid       = "RunRudolphRanker"
       effect    = "Allow"
       actions   = ["lambda:InvokeFunction"]
       resources = [statement.value]

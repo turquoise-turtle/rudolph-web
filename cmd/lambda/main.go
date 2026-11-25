@@ -60,16 +60,23 @@ func main() {
 	// enable_editing, which sets the variable.
 	if w, ok := reader.(store.Writer); ok && cfg.Editing {
 		opts.Writer = w
-		// Starting the fleet job is an admin action, so it comes with editing
-		// only; the role may invoke the function only when the deployment set
-		// both (fleet_function_name with enable_editing).
-		if cfg.FleetFunction != "" {
+		// Starting the fleet job or the ranker is an admin action, so it comes
+		// with editing only; the role may invoke a function only when the
+		// deployment set both (fleet_function_name or ranker_function_name
+		// with enable_editing).
+		if cfg.FleetFunction != "" || cfg.RankerFunction != "" {
 			awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
 			if err != nil {
 				log.Error("aws configuration", "err", err)
 				os.Exit(1)
 			}
-			opts.FleetRunner = awslambda.NewFleetRunner(lambdasdk.NewFromConfig(awsCfg), cfg.FleetFunction)
+			client := lambdasdk.NewFromConfig(awsCfg)
+			if cfg.FleetFunction != "" {
+				opts.FleetRunner = awslambda.NewFleetRunner(client, cfg.FleetFunction)
+			}
+			if cfg.RankerFunction != "" {
+				opts.RankerRunner = awslambda.NewRankerRunner(client, cfg.RankerFunction)
+			}
 		}
 	}
 	h, err := web.New(opts)

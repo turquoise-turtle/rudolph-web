@@ -64,8 +64,11 @@ type Store struct {
 	// fleetRunRequested is when RequestFleetRun last accepted a request: the
 	// marker item of the DynamoDB store.
 	fleetRunRequested time.Time
-	unknownCounts     map[string]store.UnknownCounts
-	unknownBinaries   map[string][]store.UnknownBinary
+	// rankerRunRequested is the same for RequestRankerRun, a marker of its
+	// own.
+	rankerRunRequested time.Time
+	unknownCounts      map[string]store.UnknownCounts
+	unknownBinaries    map[string][]store.UnknownBinary
 
 	calls []Call
 	err   error
