@@ -115,7 +115,8 @@ func (s *Store) FleetHealthConfig(ctx context.Context) (store.FleetHealthConfig,
 		return store.FleetHealthConfig{}, fmt.Errorf("dynamo: reading the fleet health setting: %w", err)
 	}
 	c := fleethealth.FromItem(out.Item)
-	return store.FleetHealthConfig{StaleDays: c.NormalStaleDays(), HolidayStaleDays: c.HolidayStaleDays, HolidayUntil: c.HolidayUntil}, nil
+	return store.FleetHealthConfig{StaleDays: c.NormalStaleDays(), HolidayStaleDays: c.HolidayStaleDays, HolidayUntil: c.HolidayUntil,
+		MinSantaVersion: c.MinSantaVersion}, nil
 }
 
 // ListFleetHealth implements store.FleetReader. The first page reads the

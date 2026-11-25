@@ -10,7 +10,7 @@ package web_test
 //     when it is older than Options.FleetStaleAfter (0 means web.DefaultFleetStaleAfter, 26 hours: the job is daily;
 //     negative is refused by web.New); the stale threshold the run used ("10 days") and, when the run was in holiday
 //     mode, that it was and until when; a "Warning" naming both versions when the snapshot's MinSantaVersion differs
-//     from Options.MinSantaVersion; a link to /fleet/readiness. "not been computed yet" without a pointer. Reads
+//     from the minimum Santa version in force (min_santa_version_test.go); a link to /fleet/readiness. "not been computed yet" without a pointer. Reads
 //     FleetSummary and FleetHealthConfig only (no list).
 //   - GET /fleet/health/{category}: the list, paged (one ListFleetHealth a page, Limit = page size, rows
 //     <tr data-row>, next link <a rel="next">), hostname linking to the Mac's page, the category's detail (never
@@ -79,7 +79,7 @@ func newFleetApp(t *testing.T, r store.Reader, w store.Writer, configure func(*w
 	if err != nil {
 		t.Fatal(err)
 	}
-	opts := web.Options{Auth: a, Store: r, PageSize: 10, Now: func() time.Time { return fixedNow }, MinSantaVersion: "2026.9"}
+	opts := web.Options{Auth: a, Store: r, PageSize: 10, Now: func() time.Time { return fixedNow }}
 	if w != nil {
 		opts.Writer = w
 	}
@@ -280,18 +280,6 @@ func TestNew_RejectsANegativeFleetStaleAfter(t *testing.T) {
 	if _, err := web.New(web.Options{Auth: a, Store: fake.New(), FleetStaleAfter: -time.Hour}); err == nil {
 		t.Error("New accepted a negative FleetStaleAfter")
 	}
-}
-
-func TestFleetPage_WarnsWhenMinVersionDiffers(t *testing.T) {
-	s := fake.New()
-	sum := fleetSummary()
-	sum.MinSantaVersion = "2026.8"
-	s.SetFleetSnapshot(fake.FleetSnapshot{Summary: sum})
-	_, body := newFleetApp(t, s, nil, nil).viewerGet(t, "/fleet")
-	mustContain(t, body, "Warning", "2026.8", "2026.9")
-
-	_, body = newFleetApp(t, s, nil, func(o *web.Options) { o.MinSantaVersion = "2026.8" }).viewerGet(t, "/fleet")
-	mustNotContain(t, body, "Warning")
 }
 
 func TestFleetPage_ThresholdAndHolidayOfTheRun(t *testing.T) {

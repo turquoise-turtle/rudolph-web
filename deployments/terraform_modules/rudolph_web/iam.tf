@@ -1,7 +1,7 @@
 #
 # IAM: read two parameters, decrypt them, read Rudolph's two tables, write its own logs. With enable_editing, also
 # write Rudolph's rules, device groups, a Mac's and the global configuration (including clean sync requests and
-# temporary client modes), the fleet job's holiday mode and the audit trail; and, with fleet_function_name or
+# temporary client modes), the fleet job's holiday mode and minimum Santa version, and the audit trail; and, with fleet_function_name or
 # ranker_function_name as well, start Rudolph's fleet job or its ranker. Nothing else.
 #
 
@@ -103,7 +103,7 @@ data "aws_iam_policy_document" "web" {
 
   # Admin writes (enable_editing), made with Rudolph's own packages, so exactly the writes of the CLI's rule add,
   # remove and update (collecting allowed executions), its config update and temporary client mode, its group
-  # create, update, delete, add and remove, and its fleet holiday: PutItem, UpdateItem and DeleteItem, also inside TransactWriteItems, which
+  # create, update, delete, add and remove, and its fleet holiday and fleet min-santa-version: PutItem, UpdateItem and DeleteItem, also inside TransactWriteItems, which
   # has no IAM action of its own, and BatchWriteItem, which has one and which groups.DeleteGroup uses to delete a
   # group's rules (group delete --force). Only on the store table itself (never an index or the events table), and
   # only to the partitions those writes touch:
@@ -119,7 +119,8 @@ data "aws_iam_policy_document" "web" {
   #   GroupMembers#*               a group's member rows, written in the same transaction as a Mac's Groups row when a
   #                                group is assigned or removed (groups)
   #   EventCollection              the index of rules whose allowed executions are collected (eventcollection)
-  #   FleetHealth                  the fleet job's stale threshold and its holiday mode (fleethealth), exactly, not as a
+  #   FleetHealth                  the fleet job's stale threshold, its holiday mode and the minimum Santa version, all
+  #                                attributes of the one FleetHealth / Config item (fleethealth), exactly, not as a
   #                                prefix, and the web view's own markers of the last "Run the fleet job now" and
   #                                "Run the ranker now" (FleetHealth / RunRequested and FleetHealth /
   #                                RankerRunRequested, one conditional UpdateItem each); the jobs' own rows are in the

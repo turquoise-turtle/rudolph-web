@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"slices"
 	"time"
+
+	"github.com/airbnb/rudolph/pkg/model/fleethealth"
 )
 
 // Fleet health and Lockdown readiness (Rudolph's docs/fleet-health.md).
@@ -231,6 +233,18 @@ type FleetHealthConfig struct {
 	StaleDays        int
 	HolidayStaleDays int
 	HolidayUntil     string
+	// MinSantaVersion is the stored minimum Santa version as Rudolph's
+	// fleethealth.FromItem reads it: a release such as 2026.10, "off", or ""
+	// when none is stored or the stored one cannot be used.
+	MinSantaVersion string
+}
+
+// MinSantaVersionInForce is the minimum Santa version the fleet job and every
+// page use, as Rudolph's fleethealth.Config.MinSantaVersionInForce says: the
+// stored value, or Rudolph's default when none is stored. off reports that
+// the check is turned off, and stored that version came from the setting.
+func (c FleetHealthConfig) MinSantaVersionInForce() (version string, off bool, stored bool) {
+	return fleethealth.Config{MinSantaVersion: c.MinSantaVersion}.MinSantaVersionInForce()
 }
 
 // FleetReader reads the fleet job's snapshot and a Mac's unknown binaries.
@@ -289,7 +303,10 @@ func (Unavailable) ListMachineUnknown(context.Context, string, PageRequest) (Pag
 // Holiday mode's audit entries, exactly as Rudolph's CLI records them.
 const (
 	ActionFleetHoliday = "fleet.holiday"
-	AuditTargetFleet   = "fleet"
+	// ActionFleetMinSantaVersion is the audit action of a change to the
+	// minimum Santa version, as rudolph fleet min-santa-version records it.
+	ActionFleetMinSantaVersion = "fleet.min-santa-version"
+	AuditTargetFleet           = "fleet"
 )
 
 // ActionFleetRun is the audit action of a fleet job run started from the web

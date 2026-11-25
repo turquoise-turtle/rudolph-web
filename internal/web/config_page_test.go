@@ -4,7 +4,7 @@ package web_test
 //   - GET /admin/config, for admins whether or not editing is on (like /admin/audit), shows every global setting
 //     Rudolph sends, one table row each: <tr data-setting="<Rudolph attribute name>">, with the value, or "not set"
 //     when the global config doesn't store it. Without a global config row at all, the page says Rudolph's defaults
-//     apply. One store call: GlobalConfig.
+//     apply. One store call: GlobalConfig, beside at most one FleetHealthConfig for the minimum Santa version.
 //   - A Mac's page gains a "Configuration" table with the same rows, each showing what the Mac gets: its own value,
 //     marked "(this Mac)", or the global one, marked "(global config)"; "not set" when neither stores it. The page
 //     reads the Mac's config from the GetMachine query it already makes, and the global config with one GlobalConfig
@@ -93,12 +93,16 @@ func TestConfigPage_ShowsEveryGlobalSetting(t *testing.T) {
 		mustNotContain(t, body, "secret", "abc123", "#frag")
 		mustContain(t, settingRow(t, body, "EventDetailURL"), "https://help.example.com/santa")
 
+		// The minimum Santa version section (min_santa_version_edit_test.go) reads the fleet health setting too.
 		var calls []string
-		for _, c := range s.Calls() {
+		for _, c := range withoutMinVersionReads(s.Calls()) {
 			calls = append(calls, c.Method)
 		}
 		if strings.Join(calls, ",") != "GlobalConfig" {
 			t.Errorf("editing %v: store calls %v, want one GlobalConfig", writable, calls)
+		}
+		if n := len(s.Calls()) - len(withoutMinVersionReads(s.Calls())); n > 1 {
+			t.Errorf("editing %v: %d FleetHealthConfig calls, want at most one", writable, n)
 		}
 	}
 }

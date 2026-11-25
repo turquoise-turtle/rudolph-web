@@ -22,6 +22,9 @@ func main() {
 		log.Error("invalid configuration", "err", err)
 		os.Exit(1)
 	}
+	for _, line := range config.IgnoredEnvironment(os.Getenv) {
+		log.Warn(line)
+	}
 	ac := cfg.AuthConfig()
 	ac.Logger = log
 	a, err := auth.New(ac)
@@ -32,7 +35,7 @@ func main() {
 	// The demo store is in memory, so editing is always on: admins see the
 	// forms, and changes last until the server stops.
 	demo := fake.NewDemo(time.Now())
-	h, err := web.New(web.Options{Auth: a, Store: demo, Writer: demo, Logger: log, CLIEnv: cfg.CLIEnv, TopListStaleAfter: cfg.TopListStaleAfter, MinSantaVersion: cfg.MinSantaVersion,
+	h, err := web.New(web.Options{Auth: a, Store: demo, Writer: demo, Logger: log, CLIEnv: cfg.CLIEnv, TopListStaleAfter: cfg.TopListStaleAfter,
 		FleetStaleAfter: cfg.FleetStaleAfter, FleetRunner: demoRunner{log, "fleet job"}, RankerRunner: demoRunner{log, "ranker"}})
 	if err != nil {
 		log.Error("web setup", "err", err)

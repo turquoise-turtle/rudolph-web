@@ -42,7 +42,8 @@ func main() {
 	}
 	fmt.Fprintf(os.Stderr, `
 The environment was probably created by make init-env from an older release, and a newer release has added to the
-example since. Terraform would plan without the missing settings and only warn about undeclared values.
+example, or removed a setting from it, since. Terraform would plan without the missing settings and only warn about
+undeclared values.
 
 Compare the environment with the example:
 
@@ -50,7 +51,8 @@ Compare the environment with the example:
   diff -u %[3]s %[4]s
 
 If the environment has no customisations of its own, copy the example's main.tf and _variables.tf over it. Otherwise
-add what is missing by hand. Then run the command again.
+add what is missing by hand. Remove a setting the list says was removed from wherever it names. Then run the command
+again.
 `,
 		short(filepath.Join(exampleDir, "main.tf")), short(filepath.Join(envDir, "main.tf")),
 		short(filepath.Join(exampleDir, "_variables.tf")), short(filepath.Join(envDir, "_variables.tf")))

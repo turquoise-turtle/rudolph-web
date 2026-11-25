@@ -49,8 +49,10 @@ func (s *Store) ExpireFleetSnapshot(id string) {
 	}
 }
 
-// SetFleetHealthConfig replaces the stored stale threshold and holiday. A
-// zero StaleDays is no threshold stored, read back as Rudolph's default.
+// SetFleetHealthConfig replaces the stored stale threshold, holiday and
+// minimum Santa version. A zero StaleDays is no threshold stored, read back
+// as Rudolph's default. MinSantaVersion is kept as the raw attribute, so a
+// test can store a value Rudolph cannot use; it reads back as none.
 func (s *Store) SetFleetHealthConfig(c store.FleetHealthConfig) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -98,13 +100,15 @@ func (s *Store) FleetHealthConfig(context.Context) (store.FleetHealthConfig, err
 	return s.fleetHealthConfig(), nil
 }
 
-// fleetHealthConfig is the stored setting with Rudolph's default threshold
-// when none is stored. The caller holds s.mu.
+// fleetHealthConfig is the stored setting as Rudolph reads it: its default
+// threshold when none is stored, and no minimum Santa version when the stored
+// one cannot be used. The caller holds s.mu.
 func (s *Store) fleetHealthConfig() store.FleetHealthConfig {
 	c := s.fleetConfig
 	if c.StaleDays == 0 {
 		c.StaleDays = rudolphrules.DefaultStaleDays
 	}
+	c.MinSantaVersion = rudolphrules.MinSantaVersionAsRead(c.MinSantaVersion)
 	return c
 }
 
@@ -379,5 +383,47 @@ func (s *Store) markRun(job rudolphrules.JobRun, marker *time.Time, now time.Tim
 		return job.TooSoon(retryAt)
 	}
 	*marker = now
+	return nil
+}
+
+// SetMinSantaVersion implements store.Writer.
+func (s *Store) SetMinSantaVersion(_ context.Context, actor store.Actor, version string) error {
+	who, err := actor.AuditName()
+	if err != nil {
+		return err
+	}
+	version, err = rudolphrules.CheckMinSantaVersion(version)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.err != nil {
+		return s.err
+	}
+	before := rudolphrules.MinSantaVersionAsRead(s.fleetConfig.MinSantaVersion)
+	s.fleetConfig.MinSantaVersion = version
+	s.recordAudit(who, store.ActionFleetMinSantaVersion, store.AuditTargetFleet, rudolphrules.SetMinSantaVersionSummary(version, before))
+	return nil
+}
+
+// ClearMinSantaVersion implements store.Writer. Like Rudolph it goes by the
+// raw attribute, so a stored value that cannot be used is removed too.
+func (s *Store) ClearMinSantaVersion(_ context.Context, actor store.Actor) error {
+	who, err := actor.AuditName()
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.err != nil {
+		return s.err
+	}
+	if s.fleetConfig.MinSantaVersion == "" {
+		return store.ErrNothingToChange
+	}
+	before := rudolphrules.MinSantaVersionAsRead(s.fleetConfig.MinSantaVersion)
+	s.fleetConfig.MinSantaVersion = ""
+	s.recordAudit(who, store.ActionFleetMinSantaVersion, store.AuditTargetFleet, rudolphrules.ClearMinSantaVersionSummary(before))
 	return nil
 }

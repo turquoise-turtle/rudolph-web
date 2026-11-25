@@ -1,9 +1,9 @@
 package web_test
 
-// A shorter "update needed" note on the machine page (owner request, 2026-11-25). A Mac below
-// web.Options.MinSantaVersion (RUDOLPH_WEB_MIN_SANTA_VERSION) showed "update needed (below the minimum, Santa 2026.9:
+// A shorter "update needed" note on the machine page (owner request, 2026-11-25). A Mac below the minimum Santa version
+// in force (Rudolph's stored setting since the minimum became editable; min_santa_version_test.go) showed "update needed (below the minimum, Santa 2026.9:
 // Santa 2026.9 fixed ways for a local user to pause enforcement)" next to its version. It now reads
-// "update needed (below <minimum>)", the configured minimum, such as "update needed (below 2026.9)". The full
+// "update needed (below <minimum>)", the minimum in force, such as "update needed (below 2026.9)". The full
 // explanation, naming the minimum and why it matters, moves to a title attribute on the element holding the "update
 // needed" marker: no script and no inline style, which the page's CSP refuses. The legacy client note is unchanged.
 //

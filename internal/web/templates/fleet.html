@@ -3,7 +3,7 @@
 {{if .Age.Computed}}
 <p class="hint">Rudolph's fleet job walks every Mac once a day and lists the ones that need attention. Generated {{template "time" .Age.GeneratedAt}}: {{.Summary.Macs}} Macs, {{.Summary.Attention}} of them in at least one list below. A Mac can be in several lists.</p>
 {{template "fleetstale" .Age}}
-{{if .VersionDiffers}}<p class="error" role="status"><strong>Warning:</strong> the fleet job lists Macs below Santa {{.Summary.MinSantaVersion}}, but this web view {{if .ViewMinVersion}}marks Macs below Santa {{.ViewMinVersion}}{{else}}marks no Mac as needing an update{{end}}. Set <code>FLEET_MIN_SANTA_VERSION</code> on Rudolph's fleet function and <code>min_santa_version</code> here to the same version.</p>{{end}}
+{{if .VersionDiffers}}<p class="error" role="status"><strong>Warning:</strong> the last fleet run {{if .RunOff}}had the minimum Santa version check off and listed no Mac under Version{{else}}listed Macs below Santa {{.Summary.MinSantaVersion}}{{end}}, but the minimum Santa version in force now is {{if .MinVersion.Off}}off{{else}}{{.MinVersion.Version}}{{end}}. The fleet's lists follow at the job's next run.</p>{{end}}
 <div class="scroll">
 <table>
 <thead><tr><th scope="col">List</th><th scope="col" class="num">Macs</th><th scope="col">A Mac is listed when</th></tr></thead>
@@ -49,5 +49,10 @@
 {{end}}
 {{end}}
 {{end}}
+{{end}}
+{{if not .Holiday.Unread}}
+<h2>Minimum Santa version</h2>
+{{with .MinVersion}}<p data-min-santa-version>{{if .Stored}}{{if .Off}}The minimum Santa version check is <strong>off</strong>, as set on the configuration page or with the CLI: no Mac is marked "update needed" or listed under Version.{{else}}The minimum Santa version is <strong>{{.Version}}</strong>, as set on the configuration page or with the CLI.{{end}}{{else}}The minimum Santa version is the default <strong>{{.Version}}</strong>; none is stored.{{end}}</p>{{end}}
+<p class="hint">A Mac reporting an older Santa release is marked "update needed" on the machine pages and listed under Version by the fleet job, which uses this setting from its next run.{{if .Edit.On}} <a href="/admin/config#min-santa-version">Change it on the configuration page</a>.{{end}}</p>
 {{end}}
 {{end}}

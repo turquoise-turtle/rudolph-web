@@ -12,17 +12,20 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/airbnb/rudolph/pkg/model/fleethealth"
+
 	"github.com/turquoise-turtle/rudolph-web/internal/store"
 	"github.com/turquoise-turtle/rudolph-web/internal/textsafe"
 )
 
 var (
-	sha256Re    = regexp.MustCompile(`^[0-9a-f]{64}$`)
-	cdhashRe    = regexp.MustCompile(`^[0-9a-f]{40}$`)
-	teamIDRe    = regexp.MustCompile(`^[A-Z0-9]{10}$`)
-	signingIDRe = regexp.MustCompile(`^(?:[A-Z0-9]{10}|platform):[A-Za-z0-9][A-Za-z0-9._-]{0,254}$`)
-	machineRe   = regexp.MustCompile(`^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$`)
-	durationRe  = regexp.MustCompile(`^[1-9][0-9]{0,4}[smh]$`)
+	sha256Re       = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	cdhashRe       = regexp.MustCompile(`^[0-9a-f]{40}$`)
+	teamIDRe       = regexp.MustCompile(`^[A-Z0-9]{10}$`)
+	signingIDRe    = regexp.MustCompile(`^(?:[A-Z0-9]{10}|platform):[A-Za-z0-9][A-Za-z0-9._-]{0,254}$`)
+	machineRe      = regexp.MustCompile(`^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$`)
+	durationRe     = regexp.MustCompile(`^[1-9][0-9]{0,4}[smh]$`)
+	plainReleaseRe = regexp.MustCompile(`^[0-9.]+$`)
 	// The environment name is written unquoted after ENV=, so it must not need quoting.
 	envRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`)
 )
@@ -239,4 +242,26 @@ func (b Builder) GroupFileAccessOverride(group, action string) (string, bool) {
 		return "", false
 	}
 	return b.join("config", "update", target, "--override-file-access-action", strings.ToLower(action), "--yes")
+}
+
+// FleetMinSantaVersion sets the minimum Santa version: a release, off, or
+// with version "" the default again (--default). The value is checked and
+// normalised by Rudolph's own rule, so nothing is built for one its CLI would
+// refuse. Rudolph's cli-examples.txt has no line for it; the format is its
+// docs/cli.md's.
+func (b Builder) FleetMinSantaVersion(version string) (string, bool) {
+	if version == "" {
+		return b.join("fleet", "min-santa-version", "--default", "--yes")
+	}
+	checked, err := fleethealth.ValidateMinSantaVersion(version)
+	if err != nil {
+		return "", false
+	}
+	// Rudolph accepts a release with a suffix in any printable ASCII, which a
+	// shell could split or expand; plain digits and dots, and off, need no
+	// quoting.
+	if checked != fleethealth.MinSantaVersionOff && !plainReleaseRe.MatchString(checked) {
+		checked = quote(checked)
+	}
+	return b.join("fleet", "min-santa-version", checked, "--yes")
 }

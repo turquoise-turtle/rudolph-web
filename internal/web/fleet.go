@@ -93,25 +93,6 @@ type holidayView struct {
 	Lapsed bool
 }
 
-// sameVersion reports whether two Santa versions name the same release, so
-// 2026.9 and 2026.09 do not warn; versions that cannot be read are compared
-// as written.
-func sameVersion(a, b string) bool {
-	pa, okA := store.ParseVersion(a)
-	pb, okB := store.ParseVersion(b)
-	if !okA || !okB {
-		return a == b
-	}
-	// A version's trailing zero parts name the same release.
-	for len(pa) > 0 && pa[len(pa)-1] == 0 {
-		pa = pa[:len(pa)-1]
-	}
-	for len(pb) > 0 && pb[len(pb)-1] == 0 {
-		pb = pb[:len(pb)-1]
-	}
-	return slices.Equal(pa, pb)
-}
-
 // fleet shows the counts of the latest run and the stored stale threshold.
 func (s *server) fleet(w http.ResponseWriter, r *http.Request) {
 	sum, err := s.store.FleetSummary(r.Context())
@@ -122,11 +103,16 @@ func (s *server) fleet(w http.ResponseWriter, r *http.Request) {
 	// The stored setting is what the next run will use, which the snapshot
 	// cannot say; the page is worth showing without it.
 	holiday := holidayView{}
+	// The minimum Santa version comes from this same read, not from the
+	// machine pages' cache, so the page is never behind a change.
+	var inForce minVersion
 	cfg, err := s.store.FleetHealthConfig(r.Context())
 	if err != nil {
 		s.log.Warn("reading the fleet health setting failed", "err", err)
 		holiday.Unread = true
 	} else {
+		inForce = minVersionOf(cfg)
+		s.minVersionCache.set(inForce, s.now())
 		holiday.FleetHealthConfig = cfg
 		holiday.Stored = cfg.HolidayStaleDays != 0 || cfg.HolidayUntil != ""
 		holiday.Lapsed = holiday.Stored && cfg.HolidayUntil < s.now().UTC().Format(time.DateOnly)
@@ -139,11 +125,13 @@ func (s *server) fleet(w http.ResponseWriter, r *http.Request) {
 		Age     fleetAge
 		Summary store.FleetSummary
 		Rows    []fleetCategoryRow
-		// VersionDiffers is set when the job lists Macs below another Santa
-		// version than this view marks; ViewMinVersion is the view's, "" when
-		// its marker is off.
+		// VersionDiffers is set when the last run listed Macs below another
+		// minimum Santa version than the one in force now, MinVersion; RunOff
+		// when that run had the check off. A snapshot that does not say which
+		// minimum it used is not compared.
 		VersionDiffers bool
-		ViewMinVersion string
+		RunOff         bool
+		MinVersion     minVersion
 		Holiday        holidayView
 		Edit           editForms
 		// CanRun is set for admins who can start the fleet job; the page
@@ -153,8 +141,9 @@ func (s *server) fleet(w http.ResponseWriter, r *http.Request) {
 		Age:            s.fleetAge(sum.GeneratedAt),
 		Summary:        sum,
 		Rows:           rows,
-		VersionDiffers: sum.MinSantaVersion != "" && !sameVersion(sum.MinSantaVersion, s.minSantaVersion),
-		ViewMinVersion: s.minSantaVersion,
+		VersionDiffers: sum.MinSantaVersion != "" && !holiday.Unread && !store.SameSantaRelease(sum.MinSantaVersion, inForce.Version),
+		RunOff:         sum.MinSantaVersion == rudolphrules.MinSantaVersionOff,
+		MinVersion:     inForce,
 		Holiday:        holiday,
 		Edit:           s.editForms(r),
 		CanRun:         s.fleetRunner != nil && s.canEdit(r),

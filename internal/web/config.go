@@ -497,12 +497,17 @@ func (s *server) globalConfig(w http.ResponseWriter, r *http.Request) {
 		s.storeError(w, r, err)
 		return
 	}
+	section, ok := s.minVersionSectionOf(w, r)
+	if !ok {
+		return
+	}
 	data := struct {
-		Exists bool
-		Rows   []configRow
-		Edit   bool
-		Form   configForm
-	}{Exists: global.Exists, Rows: globalConfigRows(global), Edit: s.canEdit(r)}
+		Exists     bool
+		Rows       []configRow
+		Edit       bool
+		Form       configForm
+		MinVersion minVersionSection
+	}{Exists: global.Exists, Rows: globalConfigRows(global), Edit: s.canEdit(r), MinVersion: section}
 	if data.Edit {
 		data.Form = configForm{Action: "/admin/config", Rows: withFields(globalConfigRows(global), global, false)}
 	}

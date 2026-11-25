@@ -125,6 +125,18 @@ func mustNotContain(t *testing.T, body string, subs ...string) {
 	}
 }
 
+// withoutMinVersionReads drops the read of the minimum Santa version in force (FleetHealthConfig, cached for 60
+// seconds; min_santa_version_test.go), which a page showing Santa versions makes beside its own reads.
+func withoutMinVersionReads(calls []fake.Call) []fake.Call {
+	var out []fake.Call
+	for _, c := range calls {
+		if c.Method != "FleetHealthConfig" {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
 func paginatedCalls(s *fake.Store) []fake.Call {
 	var out []fake.Call
 	for _, c := range s.Calls() {
@@ -349,7 +361,7 @@ func TestMachinesList_FiltersByHostnameAndSerialPrefix(t *testing.T) {
 	}
 	mustContain(t, body, "eng-mbp-1", "eng-mbp-2")
 	mustNotContain(t, body, "eng-mbp-3", "ops-mbp-1")
-	if calls := s.Calls(); len(calls) != 1 || calls[0].Filter != (store.MachineFilter{HostnamePrefix: "eng-"}) {
+	if calls := withoutMinVersionReads(s.Calls()); len(calls) != 1 || calls[0].Filter != (store.MachineFilter{HostnamePrefix: "eng-"}) {
 		t.Errorf("store calls %+v, want one ListMachines with HostnamePrefix eng-", calls)
 	}
 	// Filter value is echoed back into the form.
@@ -375,7 +387,7 @@ func TestMachinesList_FiltersByHostnameAndSerialPrefix(t *testing.T) {
 	}
 	mustContain(t, body, "C02XAAA", "C02XCCC")
 	mustNotContain(t, body, "FVFXBBB", "C02XDDD") // DDD is on page 2
-	if calls := s.Calls(); len(calls) != 1 || calls[0].Filter != (store.MachineFilter{SerialPrefix: "C02X"}) {
+	if calls := withoutMinVersionReads(s.Calls()); len(calls) != 1 || calls[0].Filter != (store.MachineFilter{SerialPrefix: "C02X"}) {
 		t.Errorf("store calls %+v, want one ListMachines with SerialPrefix C02X", calls)
 	}
 
@@ -788,10 +800,10 @@ func TestQueryBudget_OneBoundedPaginatedQueryPerList(t *testing.T) {
 		method        string
 		maxOtherCalls int // non-paginated point reads allowed (e.g. GetMachine)
 	}{
-		{"/machines", "ListMachines", 0},
-		{"/machines?hostname=host-", "ListMachines", 0},
-		{"/machines?serial=SER", "ListMachines", 0},
-		{"/machines/machine-001", "ListMachineRules", 4}, // GetMachine, GlobalConfig, ListGroups (a group may set the client mode) and MachineUnknown
+		{"/machines", "ListMachines", 1},                 // FleetHealthConfig, the minimum Santa version in force (cached)
+		{"/machines?hostname=host-", "ListMachines", 1},  // as above
+		{"/machines?serial=SER", "ListMachines", 1},      // as above
+		{"/machines/machine-001", "ListMachineRules", 5}, // GetMachine, GlobalConfig, ListGroups (a group may set the client mode), MachineUnknown and the minimum in force
 		{"/rules", "ListGlobalRules", 0},
 		{"/rules?type=BINARY&policy=ALLOWLIST", "ListGlobalRules", 0},
 		{"/events", "ListExecutionEvents", 0},

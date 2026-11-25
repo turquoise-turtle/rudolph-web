@@ -9,12 +9,15 @@ import (
 	"github.com/turquoise-turtle/rudolph-web/internal/store"
 )
 
-// Holiday mode and the cohort action, checked alike by the DynamoDB writer
+// Holiday mode, the minimum Santa version and the cohort action, checked alike by the DynamoDB writer
 // and the fake. Holiday mode's rules are Rudolph's own (pkg/model/fleethealth),
 // which its CLI uses too.
 
 // DefaultStaleDays is the fleet job's stale threshold when none is stored.
 const DefaultStaleDays = fleethealth.DefaultStaleDays
+
+// MinSantaVersionOff is the minimum Santa version that turns the check off.
+const MinSantaVersionOff = fleethealth.MinSantaVersionOff
 
 // CheckHoliday refuses a holiday as rudolph fleet holiday does, against the
 // normal threshold stored (0 for none) at now.
@@ -38,6 +41,49 @@ func EndHolidaySummary(staleDays int, until string, normalStaleDays int) string 
 		return fmt.Sprintf("ended the holiday; stale threshold back to %d days", normalStaleDays)
 	}
 	return fmt.Sprintf("ended the holiday of %d stale days until %s; stale threshold back to %d days", staleDays, until, normalStaleDays)
+}
+
+// CheckMinSantaVersion refuses a minimum Santa version as rudolph fleet
+// min-santa-version does, and returns it as Rudolph stores it: trimmed, off in
+// any case as off.
+func CheckMinSantaVersion(version string) (string, error) {
+	checked, err := fleethealth.ValidateMinSantaVersion(version)
+	if err != nil {
+		return "", store.Invalid("%v", err)
+	}
+	return checked, nil
+}
+
+// MinSantaVersionAsRead is a raw MinSantaVersion attribute as Rudolph's
+// fleethealth.FromItem reads it: "" when Rudolph cannot use it.
+func MinSantaVersionAsRead(raw string) string {
+	usable, _ := fleethealth.ValidateMinSantaVersion(raw)
+	return usable
+}
+
+// SetMinSantaVersionSummary is the CLI's audit summary of the minimum Santa
+// version being set to version (as stored), or turned off. before is the
+// stored value as it was read before the change, "" for none usable.
+func SetMinSantaVersionSummary(version, before string) string {
+	was, _, stored := fleethealth.Config{MinSantaVersion: before}.MinSantaVersionInForce()
+	if !stored {
+		was = "the default " + was
+	}
+	if version == fleethealth.MinSantaVersionOff {
+		return fmt.Sprintf("turned the minimum Santa version check off (was %s)", was)
+	}
+	return fmt.Sprintf("set the minimum Santa version to %s (was %s)", version, was)
+}
+
+// ClearMinSantaVersionSummary is the CLI's audit summary of the stored
+// minimum Santa version being removed. before is the removed value as it was
+// read, "" when what was stored could not be used.
+func ClearMinSantaVersionSummary(before string) string {
+	cleared := "an unusable value"
+	if before != "" {
+		cleared = before
+	}
+	return fmt.Sprintf("cleared the stored minimum Santa version (was %s); the default %s applies", cleared, fleethealth.DefaultMinSantaVersion)
 }
 
 // Cohort is a checked cohort assignment: the audit name of the actor, the

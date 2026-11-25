@@ -15,8 +15,9 @@ import (
 	"github.com/turquoise-turtle/rudolph-web/internal/store/rudolphrules"
 )
 
-// Holiday mode, as rudolph fleet holiday does, with Rudolph's
-// pkg/model/fleethealth and the CLI's audit entries; and the cohort action,
+// Holiday mode and the minimum Santa version, as rudolph fleet holiday and
+// rudolph fleet min-santa-version do, with Rudolph's pkg/model/fleethealth
+// and the CLI's audit entries; and the cohort action,
 // a bounded run of group assignments.
 
 var _ fleethealth.Writer = RudolphClient(nil)
@@ -162,4 +163,58 @@ func (s *Store) readyInSnapshot(ctx context.Context, snapshot, machineID string)
 		return false, fmt.Errorf("dynamo: reading the readiness of machine %s: %w", machineID, err)
 	}
 	return len(out.Item) > 0, nil
+}
+
+// SetMinSantaVersion implements store.Writer with Rudolph's
+// fleethealth.SetMinSantaVersion, which writes that one attribute.
+func (s *Store) SetMinSantaVersion(ctx context.Context, actor store.Actor, version string) error {
+	who, err := actor.AuditName()
+	if err != nil {
+		return err
+	}
+	// fleethealth.SetMinSantaVersion refuses the same values, but with an
+	// error that cannot be told from a failed read or write, so the value is
+	// checked here first, as the CLI checks it before asking for confirmation.
+	version, err = rudolphrules.CheckMinSantaVersion(version)
+	if err != nil {
+		return err
+	}
+	c, err := s.rudolph(ctx)
+	if err != nil {
+		return err
+	}
+	// The summary names the value in force before the change, which
+	// SetMinSantaVersion does not return.
+	before, err := fleethealth.Get(c, true)
+	if err != nil {
+		return fmt.Errorf("dynamo: %w", err)
+	}
+	stored, err := fleethealth.SetMinSantaVersion(c, version)
+	if err != nil {
+		return fmt.Errorf("dynamo: setting the minimum Santa version: %w", err)
+	}
+	return s.record(ctx, c, who, store.ActionFleetMinSantaVersion, store.AuditTargetFleet,
+		rudolphrules.SetMinSantaVersionSummary(stored.MinSantaVersion, before.MinSantaVersion))
+}
+
+// ClearMinSantaVersion implements store.Writer with Rudolph's
+// fleethealth.ClearMinSantaVersion.
+func (s *Store) ClearMinSantaVersion(ctx context.Context, actor store.Actor) error {
+	who, err := actor.AuditName()
+	if err != nil {
+		return err
+	}
+	c, err := s.rudolph(ctx)
+	if err != nil {
+		return err
+	}
+	before, err := fleethealth.ClearMinSantaVersion(c)
+	switch {
+	case errors.Is(err, fleethealth.ErrNoMinSantaVersion):
+		return store.ErrNothingToChange
+	case err != nil:
+		return fmt.Errorf("dynamo: clearing the minimum Santa version: %w", err)
+	}
+	return s.record(ctx, c, who, store.ActionFleetMinSantaVersion, store.AuditTargetFleet,
+		rudolphrules.ClearMinSantaVersionSummary(before.MinSantaVersion))
 }

@@ -5,6 +5,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/airbnb/rudolph/pkg/model/fleethealth"
+
 	"github.com/turquoise-turtle/rudolph-web/internal/store"
 	"github.com/turquoise-turtle/rudolph-web/internal/store/rudolphrules"
 )
@@ -112,7 +114,7 @@ func seedDemoFleet(s *Store, now time.Time) {
 
 	snap := FleetSnapshot{
 		Summary: store.FleetSummary{
-			Snapshot: generated.Format("20060102T150405.000000000Z") + "-0a1b2c3d", GeneratedAt: generated, MinSantaVersion: "2026.9",
+			Snapshot: generated.Format("20060102T150405.000000000Z") + "-0a1b2c3d", GeneratedAt: generated, MinSantaVersion: fleethealth.DefaultMinSantaVersion,
 			StaleDays: rudolphrules.DefaultStaleDays, Health: map[store.FleetCategory]int{}, ReadinessGroups: map[string]store.ReadinessCounts{},
 		},
 		Health:    map[store.FleetCategory][]store.FleetHealthRow{},
