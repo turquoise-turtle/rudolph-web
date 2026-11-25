@@ -3,6 +3,7 @@ package web
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"embed"
 	"encoding/base64"
@@ -117,6 +118,18 @@ type Options struct {
 	// fleet pages warn that the job may have stopped; 0 means
 	// DefaultFleetStaleAfter.
 	FleetStaleAfter time.Duration
+	// FleetRunner lets Rudolph.Admin start Rudolph's fleet job from the fleet
+	// page. Nil, or without Writer, there is no button and no route: starting
+	// the job is an admin action like the others, and its rerun guard and
+	// audit entry are the Writer's.
+	FleetRunner FleetRunner
+}
+
+// FleetRunner starts one run of Rudolph's fleet job and returns without
+// waiting for it; a run takes up to 15 minutes. In production it is an
+// asynchronous Lambda invocation (internal/awslambda).
+type FleetRunner interface {
+	Start(ctx context.Context) error
 }
 
 type server struct {
@@ -133,6 +146,9 @@ type server struct {
 	// compares with the fleet job's own minimum.
 	minSantaVersion string
 	writer          store.Writer
+	// fleetRunner is nil unless the fleet job can be started: Options.FleetRunner
+	// with a writer.
+	fleetRunner FleetRunner
 }
 
 // New returns the complete application handler: auth routes, static assets
@@ -190,6 +206,9 @@ func New(opts Options) (http.Handler, error) {
 		fleetStaleAfter:   opts.FleetStaleAfter,
 		minSantaVersion:   opts.MinSantaVersion,
 		writer:            opts.Writer,
+	}
+	if opts.Writer != nil {
+		s.fleetRunner = opts.FleetRunner
 	}
 
 	mux := http.NewServeMux()
@@ -272,6 +291,9 @@ func New(opts Options) (http.Handler, error) {
 		mux.Handle("POST /admin/fleet/holiday", admin(s.setFleetHoliday))
 		mux.Handle("POST /admin/fleet/holiday/end", admin(s.endFleetHoliday))
 		mux.Handle("POST /admin/fleet/cohort", admin(s.assignCohort))
+		if s.fleetRunner != nil {
+			mux.Handle("POST /admin/fleet/run", admin(s.runFleetJob))
+		}
 	}
 
 	csp := strings.Join([]string{

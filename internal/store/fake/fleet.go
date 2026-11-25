@@ -324,3 +324,43 @@ func (s *Store) AssignCohort(_ context.Context, actor store.Actor, snapshot, gro
 	}
 	return len(cohort.MachineIDs), nil
 }
+
+// RequestFleetRun implements store.Writer. Unlike the writes above it takes
+// its clock from the caller, as the DynamoDB store does.
+func (s *Store) RequestFleetRun(ctx context.Context, actor store.Actor, now time.Time, start func(context.Context) error) error {
+	who, err := actor.AuditName()
+	if err != nil {
+		return err
+	}
+	if err := s.markFleetRun(now); err != nil {
+		return err
+	}
+	// The lock is not held here: a start that takes long must not hold up
+	// the requests it makes the store refuse.
+	if err := start(ctx); err != nil {
+		return fmt.Errorf("%w: %w", store.ErrFleetRunNotStarted, err)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.recordAudit(who, store.ActionFleetRun, store.AuditTargetFleet, rudolphrules.FleetRunSummary)
+	return nil
+}
+
+// markFleetRun decides a request under the lock, as the DynamoDB store's
+// conditional write does: it is refused, or the marker moves to now.
+func (s *Store) markFleetRun(now time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.err != nil {
+		return s.err
+	}
+	var generatedAt time.Time
+	if snap, ok := s.fleetSnapshots[s.fleetPointer]; ok {
+		generatedAt = snap.Summary.GeneratedAt
+	}
+	if retryAt, soon := store.FleetRunRetryAt(now, s.fleetRunRequested, generatedAt); soon {
+		return &store.FleetRunTooSoonError{RetryAt: retryAt}
+	}
+	s.fleetRunRequested = now
+	return nil
+}

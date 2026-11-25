@@ -135,6 +135,7 @@ func (s *server) fleet(w http.ResponseWriter, r *http.Request) {
 	for _, c := range fleetCategories {
 		rows = append(rows, fleetCategoryRow{fleetCategory: c, URL: fleetHealthURL(c), Count: sum.Health[c.Category]})
 	}
+	canRun := s.fleetRunner != nil && s.canEdit(r)
 	s.render(w, r, http.StatusOK, "fleet", "Fleet health", "fleet", struct {
 		Age     fleetAge
 		Summary store.FleetSummary
@@ -146,6 +147,10 @@ func (s *server) fleet(w http.ResponseWriter, r *http.Request) {
 		ViewMinVersion string
 		Holiday        holidayView
 		Edit           editForms
+		// CanRun is set for admins who can start the fleet job, and RunStarted
+		// when they have just done so.
+		CanRun     bool
+		RunStarted bool
 	}{
 		Age:            s.fleetAge(sum.GeneratedAt),
 		Summary:        sum,
@@ -154,6 +159,8 @@ func (s *server) fleet(w http.ResponseWriter, r *http.Request) {
 		ViewMinVersion: s.minSantaVersion,
 		Holiday:        holiday,
 		Edit:           s.editForms(r),
+		CanRun:         canRun,
+		RunStarted:     canRun && r.URL.Query().Get("run") == "started",
 	})
 }
 
@@ -617,4 +624,47 @@ func (s *server) assignCohort(w http.ResponseWriter, r *http.Request) {
 		name = group
 	}
 	http.Redirect(w, r, groupMembersURL(name), http.StatusSeeOther)
+}
+
+// minutesText writes a wait as whole minutes, rounded up so that the time
+// named has passed when it is over: "15 minutes", "1 minute".
+func minutesText(d time.Duration) string {
+	n := max(int((d+time.Minute-1)/time.Minute), 1)
+	if n == 1 {
+		return "1 minute"
+	}
+	return strconv.Itoa(n) + " minutes"
+}
+
+// runFleetJob starts Rudolph's fleet job now instead of at its next daily
+// run. How often is the store's to say: its guard is one conditional write,
+// which holds across Lambda instances where a lock here would not.
+func (s *server) runFleetJob(w http.ResponseWriter, r *http.Request) {
+	// The form has no fields; parsing only bounds the body.
+	if !s.parseForm(w, r) {
+		return
+	}
+	now := s.now()
+	err := s.writer.RequestFleetRun(r.Context(), actorOf(r), now, s.fleetRunner.Start)
+	var soon *store.FleetRunTooSoonError
+	switch {
+	case errors.As(err, &soon):
+		s.renderError(w, r, http.StatusConflict, "Not started: the fleet job ran, or was started, less than "+
+			minutesText(store.FleetRunInterval)+" ago. It can be run again in "+minutesText(soon.RetryAt.Sub(now))+".")
+		return
+	case errors.Is(err, store.ErrFleetRunNotStarted):
+		// The AWS error says which function and why; that is for the log.
+		s.log.Error("starting the fleet job failed", "path", r.URL.Path, "err", err)
+		s.renderError(w, r, http.StatusInternalServerError, "The fleet job could not be started. It can be tried again in "+
+			minutesText(store.FleetRunInterval)+"; if it fails again, tell whoever looks after Rudolph.")
+		return
+	case errors.Is(err, store.ErrNotAudited):
+		s.log.Error("fleet job started but not audited", "path", r.URL.Path, "err", err)
+		s.renderError(w, r, http.StatusInternalServerError, "The fleet job was started, but that could not be recorded in the audit trail. Tell whoever looks after Rudolph.")
+		return
+	case err != nil:
+		s.writeError(w, r, err, "")
+		return
+	}
+	http.Redirect(w, r, "/fleet?run=started", http.StatusSeeOther)
 }

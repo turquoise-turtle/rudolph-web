@@ -1,7 +1,8 @@
 #
 # IAM: read two parameters, decrypt them, read Rudolph's two tables, write its own logs. With enable_editing, also
 # write Rudolph's rules, device groups, a Mac's and the global configuration (including clean sync requests and
-# temporary client modes), the fleet job's holiday mode and the audit trail. Nothing else.
+# temporary client modes), the fleet job's holiday mode and the audit trail; and, with fleet_function_name as well,
+# start Rudolph's fleet job. Nothing else.
 #
 
 resource "aws_iam_role" "web" {
@@ -119,7 +120,9 @@ data "aws_iam_policy_document" "web" {
   #                                group is assigned or removed (groups)
   #   EventCollection              the index of rules whose allowed executions are collected (eventcollection)
   #   FleetHealth                  the fleet job's stale threshold and its holiday mode (fleethealth), exactly, not as a
-  #                                prefix; the job's own rows are in the events table, which this role only reads
+  #                                prefix, and the web view's own marker of the last "Run the fleet job now"
+  #                                (FleetHealth / RunRequested, one conditional UpdateItem); the job's own rows are in
+  #                                the events table, which this role only reads
   # The audit trail (one partition per UTC day) is a statement of its own with PutItem only, so no UpdateItem or
   # DeleteItem; but a PutItem can replace an entry with the same key, and what prevents that is Rudolph's conditional put
   # (attribute_not_exists(PK)), not IAM. The actions are in for_each so that they exist only when editing is on; each
@@ -181,6 +184,22 @@ data "aws_iam_policy_document" "web" {
           values   = condition.value.values
         }
       }
+    }
+  }
+
+  # "Run the fleet job now" (enable_editing and fleet_function_name): one asynchronous Invoke of Rudolph's fleet
+  # Lambda, the function its schedule invokes once a day. Only that function and only unqualified, as the app invokes
+  # it: no wildcard, and no version or alias suffix, which would allow every published version. The function takes no
+  # input, so all an invocation can do is rebuild the fleet lists once more; the app allows one every 15 minutes. The
+  # function is in the same account, so the role's policy is enough and Rudolph's function needs no resource policy.
+  dynamic "statement" {
+    for_each = var.enable_editing && var.fleet_function_name != "" ? ["arn:aws:lambda:${var.region}:${var.aws_account_id}:function:${var.fleet_function_name}"] : []
+
+    content {
+      sid       = "RunRudolphFleetJob"
+      effect    = "Allow"
+      actions   = ["lambda:InvokeFunction"]
+      resources = [statement.value]
     }
   }
 
