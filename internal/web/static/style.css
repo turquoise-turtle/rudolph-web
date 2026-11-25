@@ -85,8 +85,18 @@ button.danger { color: var(--block); border: 1px solid var(--block); background:
 .cel-try label { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); }
 .cel-try label.wide { flex-basis: 100%; }
 .cel-try label.check { flex-direction: row; align-items: center; gap: 4px; }
+/* The expression box takes the row it has to itself, so a long expression wraps less; the others keep their cols. */
+.cel-try label.wide textarea { width: 100%; max-width: 120ch; }
+/* The answer is found at a glance after each try: a bar in the colour of the outcome, as the rules tables colour policies. */
+.cel-answer { max-width: 120ch; padding: 6px 10px; border-left: 3px solid var(--line); background: var(--head); }
 .cel-answer output { font-weight: 600; }
 .cel-result, .cel-cache { color: var(--fg); }
+.cel-answer[data-outcome="allow"] { border-left-color: var(--allow); }
+.cel-answer[data-outcome="allow"] .cel-result { color: var(--allow); }
+.cel-answer[data-outcome="block"], .cel-answer[data-outcome="error"] { border-left-color: var(--block); }
+.cel-answer[data-outcome="block"] .cel-result { color: var(--block); }
+/* The line a compile error names, with a caret under the place: monospaced so the caret lines up, and scrolled on its own in a narrow window. */
+.cel-where { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; margin: 4px 0 8px; padding: 4px 10px; overflow-x: auto; }
 .cel-error { color: var(--block); white-space: pre-wrap; }
 code.cel { white-space: pre-wrap; }
 .cel-example { margin: 12px 0 20px; }

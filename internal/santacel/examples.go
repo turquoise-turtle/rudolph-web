@@ -1,5 +1,7 @@
 package santacel
 
+import "time"
+
 // Example is a CEL rule worth starting from: the rule type and identifier to
 // add it on, and its expression.
 type Example struct {
@@ -10,6 +12,10 @@ type Example struct {
 	// says what to add it on.
 	Identifier string
 	Expression string
+	// Sample is an execution the expression blocks, for the help page's
+	// "Try it" link: trying the example then shows the case it exists for,
+	// with the sample filled in as a pattern for the person's own.
+	Sample Context
 }
 
 // Examples are the CEL rules the help page offers. Each passes Check.
@@ -26,6 +32,10 @@ var Examples = []Example{
 		RuleType:   "SIGNINGID",
 		Identifier: "platform:com.apple.profiles",
 		Expression: "args.exists(a, a in ['remove', '-R', '-D']) ? BLOCKLIST : ALLOWLIST",
+		Sample: Context{
+			SigningID: "platform:com.apple.profiles", PlatformBinary: true, Path: "/usr/bin/profiles",
+			Args: []string{"profiles", "remove", "-identifier", "com.example.wifi"},
+		},
 	},
 	{
 		Name: "Stop the spctl command turning Gatekeeper off",
@@ -37,6 +47,10 @@ var Examples = []Example{
 		RuleType:   "SIGNINGID",
 		Identifier: "platform:com.apple.spctl",
 		Expression: "args.exists(a, a in ['--global-disable', '--master-disable', '--disable', '--add', '--remove', 'enable-terminal']) ? BLOCKLIST : ALLOWLIST",
+		Sample: Context{
+			SigningID: "platform:com.apple.spctl", PlatformBinary: true, Path: "/usr/sbin/spctl",
+			Args: []string{"spctl", "--global-disable"},
+		},
 	},
 	{
 		Name: "Allow a team's binaries only when signed recently",
@@ -48,6 +62,10 @@ var Examples = []Example{
 		RuleType:   "TEAMID",
 		Identifier: "EQHXZ8M8AV",
 		Expression: "has(target.secure_signing_time) && target.secure_signing_time >= timestamp('2025-01-01T00:00:00Z')",
+		Sample: Context{
+			SigningID: "EQHXZ8M8AV:com.google.Chrome", TeamID: "EQHXZ8M8AV",
+			SecureSigningTime: time.Date(2024, time.June, 1, 0, 0, 0, 0, time.UTC),
+		},
 	},
 	{
 		Name: "Block Chrome started with remote debugging",
@@ -57,6 +75,12 @@ var Examples = []Example{
 		RuleType:   "SIGNINGID",
 		Identifier: "EQHXZ8M8AV:com.google.Chrome",
 		Expression: "args.exists(a, a.startsWith('--remote-debugging-port')) ? BLOCKLIST : ALLOWLIST",
+		Sample: Context{
+			SigningID: "EQHXZ8M8AV:com.google.Chrome", TeamID: "EQHXZ8M8AV",
+			Path: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+			Args: []string{"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "--remote-debugging-port=9222"},
+			EUID: 501,
+		},
 	},
 	{
 		Name: "Allow a tool for users, not as root",
@@ -64,5 +88,6 @@ var Examples = []Example{
 			"Add it on the signing ID or team ID of the tool; check them with codesign -dv on a Mac.",
 		RuleType:   "SIGNINGID",
 		Expression: "euid == 0 ? BLOCKLIST : ALLOWLIST",
+		Sample:     Context{Args: []string{"sometool"}, EUID: 0},
 	},
 }

@@ -269,21 +269,49 @@ func check(parsed *cel.Ast) (*cel.Ast, error) {
 	return checked, nil
 }
 
+// Position is where in an expression one of cel-go's errors is, both counted
+// from 1; Column counts characters.
+type Position struct {
+	Line   int
+	Column int
+}
+
+// positionedError is a compile error that knows where its errors are, so a
+// page can point at them in the expression as well as naming line and column.
+type positionedError struct {
+	msg string
+	at  []Position
+}
+
+func (e *positionedError) Error() string { return e.msg }
+
+// Positions are the places a compile error from Check, Evaluate or Try names,
+// in the order its message names them; nil for any other error.
+func Positions(err error) []Position {
+	var p *positionedError
+	if errors.As(err, &p) {
+		return p.at
+	}
+	return nil
+}
+
 // issuesError puts cel-go's errors on one line each, with where they are, in
 // place of its caret drawing, which needs a monospaced block to make sense.
 func issuesError(iss *cel.Issues) error {
 	var lines []string
+	var at []Position
 	for _, e := range iss.Errors() {
 		msg := e.Message
 		if loc := e.Location; loc != nil && loc.Line() > 0 {
 			msg = fmt.Sprintf("%s (line %d, column %d)", msg, loc.Line(), loc.Column()+1)
+			at = append(at, Position{Line: loc.Line(), Column: loc.Column() + 1})
 		}
 		lines = append(lines, msg)
 	}
 	if len(lines) == 0 {
 		return iss.Err()
 	}
-	return errors.New(strings.Join(lines, "; "))
+	return &positionedError{msg: strings.Join(lines, "; "), at: at}
 }
 
 func describe(names []string) string {
@@ -432,43 +460,52 @@ func Evaluate(expr string, c Context) (string, error) {
 // checking are most of what a long expression costs, so the try form does
 // them once.
 func Try(expr string, c Context) (result string, cacheableResult bool, err error) {
+	result, cacheableResult, _, err = TryCompiled(expr, c)
+	return result, cacheableResult, err
+}
+
+// TryCompiled is Try that also reports, when it fails, whether the expression
+// had passed the check Check makes: the failure is then one of running it on
+// this sample (or of the try form's own bounds), not a reason Santa would
+// skip the rule, and the try form says so.
+func TryCompiled(expr string, c Context) (result string, cacheableResult, compiled bool, err error) {
 	if negativeNumbers(expr) > maxTryNegativeNumbers {
-		return "", false, errTryNegativeCount
+		return "", false, false, errTryNegativeCount
 	}
 	parsed, err := parse(expr)
 	if err != nil {
-		return "", false, err
+		return "", false, false, err
 	}
 	if err := checkParsed(parsed.NativeRep().Expr()); err != nil {
-		return "", false, err
+		return "", false, false, err
 	}
 	checked, err := check(parsed)
 	if err != nil {
-		return "", false, err
+		return "", false, false, err
 	}
 	var guard tryGuard
 	prg, err := env.Program(checked, cel.CostLimit(costLimit), cel.InterruptCheckFrequency(interruptEvery), guard.programOption())
 	if err != nil {
-		return "", false, err
+		return "", false, true, err
 	}
 	vars, err := cel.ContextProtoVars(c.message())
 	if err != nil {
-		return "", false, err
+		return "", false, true, err
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), tryDeadline)
 	defer cancel()
 	out, _, err := prg.ContextEval(ctx, vars)
 	if err != nil {
 		if ctx.Err() != nil {
-			return "", false, errTryDeadline
+			return "", false, true, errTryDeadline
 		}
-		return "", false, err
+		return "", false, true, err
 	}
 	result, err = policy(out)
 	if err != nil {
-		return "", false, err
+		return "", false, true, err
 	}
-	return result, cacheable(checked), nil
+	return result, cacheable(checked), true, nil
 }
 
 func policy(out ref.Val) (string, error) {
