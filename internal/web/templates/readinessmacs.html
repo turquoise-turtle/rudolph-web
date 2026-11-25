@@ -16,7 +16,7 @@
 {{end}}{{end}}
 <div class="scroll">
 <table>
-<thead><tr>{{if .Cohort.Groups}}<th scope="col">Add</th>{{end}}<th scope="col">Hostname</th><th scope="col">Serial</th><th scope="col">Bucket</th><th scope="col">Pending, 30 days</th><th scope="col">Unknown, 30 days</th><th scope="col">Pending, 7 days</th><th scope="col">Unknown, 7 days</th><th scope="col">Reported mode</th><th scope="col">Intended mode</th><th scope="col">Days observed</th><th scope="col">Why</th></tr></thead>
+<thead><tr>{{if .Cohort.Groups}}<th scope="col">Add</th>{{end}}<th scope="col">Hostname</th><th scope="col">Serial</th><th scope="col">Bucket</th><th scope="col" class="num">Pending, 30 days</th><th scope="col" class="num">Unknown, 30 days</th><th scope="col" class="num">Pending, 7 days</th><th scope="col" class="num">Unknown, 7 days</th><th scope="col">Reported mode</th><th scope="col">Intended mode</th><th scope="col" class="num">Days observed</th><th scope="col">Why</th></tr></thead>
 <tbody>
 {{range .Rows}}
 <tr data-row>

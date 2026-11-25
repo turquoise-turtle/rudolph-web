@@ -6,7 +6,7 @@
 {{if .VersionDiffers}}<p class="error" role="status"><strong>Warning:</strong> the fleet job lists Macs below Santa {{.Summary.MinSantaVersion}}, but this web view {{if .ViewMinVersion}}marks Macs below Santa {{.ViewMinVersion}}{{else}}marks no Mac as needing an update{{end}}. Set <code>FLEET_MIN_SANTA_VERSION</code> on Rudolph's fleet function and <code>min_santa_version</code> here to the same version.</p>{{end}}
 <div class="scroll">
 <table>
-<thead><tr><th scope="col">List</th><th scope="col">Macs</th><th scope="col">A Mac is listed when</th></tr></thead>
+<thead><tr><th scope="col">List</th><th scope="col" class="num">Macs</th><th scope="col">A Mac is listed when</th></tr></thead>
 <tbody>
 {{range .Rows}}
 <tr data-category="{{.Category}}">

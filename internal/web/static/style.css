@@ -28,6 +28,7 @@ table { border-collapse: collapse; width: 100%; }
 th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
 th { background: var(--head); font-weight: 600; white-space: nowrap; }
 td.num { text-align: right; font-variant-numeric: tabular-nums; }
+th.num { /* over its right-aligned numbers, not over the next column's heading */ text-align: right; }
 td.block { color: var(--block); }
 td.allow { color: var(--allow); }
 code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; }

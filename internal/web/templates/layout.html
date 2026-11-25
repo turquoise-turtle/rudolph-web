@@ -47,6 +47,15 @@ the script adds the viewer's own zone in the browser. Zero shows a dash. */}}
   <a href="/fleet"{{if eq . "health"}} aria-current="page"{{end}}>Health</a>
   <a href="/fleet/readiness"{{if eq . "readiness"}} aria-current="page"{{end}}>Lockdown readiness</a>
 </nav>{{end}}
+{{/* The links between the pages of the Rules and the Events sections, as the Fleet section has them. */}}
+{{define "rulesnav"}}<nav class="choices" aria-label="Rules pages">
+  <a href="/rules"{{if eq . "rules"}} aria-current="page"{{end}}>All rules</a>
+  <a href="/rules/cel"{{if eq . "cel"}} aria-current="page"{{end}}>CEL help</a>
+</nav>{{end}}
+{{define "eventsnav"}}<nav class="choices" aria-label="Events pages">
+  <a href="/events"{{if eq . "executions"}} aria-current="page"{{end}}>Executions</a>
+  <a href="/events/file-access"{{if eq . "file-access"}} aria-current="page"{{end}}>File access</a>
+</nav>{{end}}
 {{define "fleetstale"}}{{if .Stale}}<p class="error" role="status"><strong>Warning:</strong> this was generated {{template "time" .GeneratedAt}}, more than {{.StaleHours}} {{if eq .StaleHours "1"}}hour{{else}}hours{{end}} ago. Rudolph's fleet job runs once a day; check that it is still running on its schedule.</p>{{end}}{{end}}
 {{define "fleetnotcomputed"}}<p>The fleet lists have not been computed yet. Rudolph's fleet job builds them once a day; check again after its first run.</p>{{end}}
 {{define "pager"}}
