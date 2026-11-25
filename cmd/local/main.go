@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 	"os"
@@ -32,7 +33,7 @@ func main() {
 	// forms, and changes last until the server stops.
 	demo := fake.NewDemo(time.Now())
 	h, err := web.New(web.Options{Auth: a, Store: demo, Writer: demo, Logger: log, CLIEnv: cfg.CLIEnv, TopListStaleAfter: cfg.TopListStaleAfter, MinSantaVersion: cfg.MinSantaVersion,
-		FleetStaleAfter: cfg.FleetStaleAfter})
+		FleetStaleAfter: cfg.FleetStaleAfter, FleetRunner: demoFleetRunner{log}})
 	if err != nil {
 		log.Error("web setup", "err", err)
 		os.Exit(1)
@@ -47,4 +48,16 @@ func main() {
 		log.Error("server stopped", "err", err)
 		os.Exit(1)
 	}
+}
+
+// demoFleetRunner stands in for Rudolph's fleet Lambda, which the demo has
+// none of: the button, its 15-minute guard and its audit entry work, and the
+// demo's fleet lists stay as they are.
+type demoFleetRunner struct {
+	log *slog.Logger
+}
+
+func (r demoFleetRunner) Start(context.Context) error {
+	r.log.Info("demo: the fleet job would be started here; the demo lists do not change")
+	return nil
 }

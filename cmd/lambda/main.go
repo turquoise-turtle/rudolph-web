@@ -11,8 +11,10 @@ import (
 	"github.com/aws/aws-lambda-go/lambda"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	lambdasdk "github.com/aws/aws-sdk-go-v2/service/lambda"
 
 	"github.com/turquoise-turtle/rudolph-web/internal/auth"
+	"github.com/turquoise-turtle/rudolph-web/internal/awslambda"
 	"github.com/turquoise-turtle/rudolph-web/internal/awsssm"
 	"github.com/turquoise-turtle/rudolph-web/internal/config"
 	"github.com/turquoise-turtle/rudolph-web/internal/lambdaadapter"
@@ -58,6 +60,17 @@ func main() {
 	// enable_editing, which sets the variable.
 	if w, ok := reader.(store.Writer); ok && cfg.Editing {
 		opts.Writer = w
+		// Starting the fleet job is an admin action, so it comes with editing
+		// only; the role may invoke the function only when the deployment set
+		// both (fleet_function_name with enable_editing).
+		if cfg.FleetFunction != "" {
+			awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
+			if err != nil {
+				log.Error("aws configuration", "err", err)
+				os.Exit(1)
+			}
+			opts.FleetRunner = awslambda.NewFleetRunner(lambdasdk.NewFromConfig(awsCfg), cfg.FleetFunction)
+		}
 	}
 	h, err := web.New(opts)
 	if err != nil {

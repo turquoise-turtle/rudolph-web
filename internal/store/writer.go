@@ -185,7 +185,7 @@ const MaxMovedRules = 50
 var ClientModes = []ClientMode{ClientModeMonitor, ClientModeLockdown, ClientModeStandalone}
 
 // Writer changes rules, temporary client modes, device groups and the fleet's holiday mode the way Rudolph's CLI does,
-// and records every change in Rudolph's audit trail with the actor. Invalid
+// and starts the fleet job, and records every change in Rudolph's audit trail with the actor. Invalid
 // input is refused with ErrInvalidArgument before anything is written, and
 // nothing is audited unless something was written.
 type Writer interface {
@@ -302,6 +302,18 @@ type Writer interface {
 	// is ErrSnapshotTooOld. A failure after a Mac was assigned is a
 	// *PartialCohortError.
 	AssignCohort(ctx context.Context, actor Actor, snapshot, group string, machineIDs []string) (int, error)
+	// RequestFleetRun starts Rudolph's fleet job with start, at most once
+	// every FleetRunInterval. It refuses with a *FleetRunTooSoonError, calling
+	// no start and recording nothing, while the last request or the current
+	// snapshot (FleetSummary.GeneratedAt) is younger than that at now; a
+	// refusal for the snapshot writes nothing. Otherwise it marks the request
+	// with a conditional write, which only one of several requests at once
+	// wins, and the winner calls start, holding no lock meanwhile. When start
+	// fails its error is returned wrapped with ErrFleetRunNotStarted; the
+	// marker stays, so a job that cannot be started is not asked for again
+	// and again, and nothing is recorded. A run that started is recorded as
+	// fleet.run on the fleet.
+	RequestFleetRun(ctx context.Context, actor Actor, now time.Time, start func(context.Context) error) error
 }
 
 // GroupSettingsChange is a change to a group's settings. A nil setting is left

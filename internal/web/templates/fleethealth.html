@@ -8,9 +8,9 @@
 <div class="scroll">
 <table>
 <thead><tr><th scope="col">Hostname</th><th scope="col">Serial</th><th scope="col">Last seen</th><th scope="col">Last completed sync</th>
-{{- if eq .Category.Slug "incomplete"}}<th scope="col">Syncs without postflight</th>
+{{- if eq .Category.Slug "incomplete"}}<th scope="col" class="num">Syncs without postflight</th>
 {{- else if eq .Category.Slug "mode"}}<th scope="col">Reported mode</th><th scope="col">Intended mode</th><th scope="col">Decided by</th>
-{{- else if eq .Category.Slug "rules"}}<th scope="col">Reason</th><th scope="col">Rules received</th><th scope="col">Rules processed</th><th scope="col">Rules hash</th><th scope="col">Hash of most Macs</th>
+{{- else if eq .Category.Slug "rules"}}<th scope="col">Reason</th><th scope="col" class="num">Rules received</th><th scope="col" class="num">Rules processed</th><th scope="col">Rules hash</th><th scope="col">Hash of most Macs</th>
 {{- else if eq .Category.Slug "sip"}}<th scope="col">SIP flags</th>
 {{- else if eq .Category.Slug "version"}}<th scope="col">Santa</th>{{end}}</tr></thead>
 <tbody>

@@ -6,7 +6,7 @@
 {{template "fleetstale" .Age}}
 <div class="scroll">
 <table>
-<thead><tr><th scope="col">Group</th><th scope="col">Macs</th>{{range .Buckets}}<th scope="col">{{.Title}}</th>{{end}}</tr></thead>
+<thead><tr><th scope="col">Group</th><th scope="col" class="num">Macs</th>{{range .Buckets}}<th scope="col" class="num">{{.Title}}</th>{{end}}</tr></thead>
 <tbody>
 {{range .Scopes}}
 <tr data-row>

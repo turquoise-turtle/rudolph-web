@@ -92,6 +92,12 @@ variable "enable_editing" {
   default     = true
 }
 
+variable "fleet_function_name" {
+  type        = string
+  description = "Name of Rudolph's fleet Lambda, <rudolph prefix>_rudolph_fleet such as production_rudolph_fleet. With enable_editing, Rudolph.Admin can then start the fleet job from the fleet page, at most once every 15 minutes; the role may invoke exactly that function. Empty: no button and no grant."
+  default     = ""
+}
+
 variable "create_ssm_parameters" {
   type        = bool
   description = "Create the two SecureString parameters with a placeholder value instead of creating them yourself"

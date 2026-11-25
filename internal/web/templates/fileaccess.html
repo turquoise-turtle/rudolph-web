@@ -1,4 +1,5 @@
 {{define "content"}}
+{{template "eventsnav" "file-access"}}
 <div class="filters">
   <form method="get" action="/events/file-access" role="search" aria-label="File access events by machine">
     <label>Machine ID <input name="machine" value="{{verbatim .Filter.MachineID}}" autocomplete="off"></label>

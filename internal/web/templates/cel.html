@@ -1,4 +1,5 @@
 {{define "content"}}
+{{template "rulesnav" "cel"}}
 <p>A rule with the CEL policy matches a binary like any other rule, by its binary hash, certificate, team ID, signing ID or CDHash, and then decides with a <a href="https://cel.dev">CEL</a> expression each time the binary runs. Santa evaluates it on the Mac, with the execution's arguments, environment and user, so one rule can allow a tool for most uses and block one of them.</p>
 <p>Rudolph talks to Santa with sync protocol v1, so Santa evaluates its CEL rules with CEL v1. The web view checks an expression the same way before saving it: an expression Santa could not compile is refused, as Santa would skip the rule on every Mac.</p>
 

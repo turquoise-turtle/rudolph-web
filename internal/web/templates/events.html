@@ -1,4 +1,5 @@
 {{define "content"}}
+{{template "eventsnav" "executions"}}
 <div class="filters">
   <form method="get" action="/events" role="search" aria-label="Events by machine">
     <label>Machine ID <input name="machine" value="{{verbatim .Filter.MachineID}}" autocomplete="off"></label>

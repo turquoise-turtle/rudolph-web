@@ -40,6 +40,11 @@ func EndHolidaySummary(staleDays int, until string, normalStaleDays int) string 
 	return fmt.Sprintf("ended the holiday of %d stale days until %s; stale threshold back to %d days", staleDays, until, normalStaleDays)
 }
 
+// FleetRunSummary is the audit summary of a fleet job run started from the
+// web view. Rudolph's CLI records nothing like it, so the words are the web
+// view's.
+const FleetRunSummary = "started the fleet job from the web view"
+
 // Cohort is a checked cohort assignment: the audit name of the actor, the
 // group's normalised name and the Macs, each once, in the order given.
 type Cohort struct {

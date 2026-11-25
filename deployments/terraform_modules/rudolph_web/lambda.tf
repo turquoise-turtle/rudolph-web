@@ -61,6 +61,10 @@ resource "aws_lambda_function" "web" {
 
       # Admin writes; the role is only granted them when this is true (iam.tf).
       RUDOLPH_WEB_EDITING = var.enable_editing
+
+      # Rudolph's fleet Lambda, which admins can then start from the fleet page. Empty without editing: the app refuses
+      # to start with a function it may not invoke, and the role is only granted the invoke with both (iam.tf).
+      RUDOLPH_WEB_FLEET_FUNCTION = var.enable_editing ? var.fleet_function_name : ""
     }
   }
 

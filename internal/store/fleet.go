@@ -292,6 +292,51 @@ const (
 	AuditTargetFleet   = "fleet"
 )
 
+// ActionFleetRun is the audit action of a fleet job run started from the web
+// view. Rudolph's CLI has no such command, so the entry is the web view's own.
+const ActionFleetRun = "fleet.run"
+
+// FleetRunInterval is how long RequestFleetRun refuses another run after the
+// last request or the current snapshot. It is the fleet function's timeout:
+// a run asked for takes at most that long to show or to fail, so nothing is
+// gained by a second one meanwhile, and a button cannot be used to run the
+// job, which walks every Mac, over and over.
+const FleetRunInterval = 15 * time.Minute
+
+// FleetRunTooSoonError is RequestFleetRun's refusal while the last request
+// or the current snapshot is younger than FleetRunInterval; a run can be
+// asked for again at RetryAt. It is not invalid input: the request was fine,
+// only early.
+type FleetRunTooSoonError struct {
+	RetryAt time.Time
+}
+
+func (e *FleetRunTooSoonError) Error() string {
+	return "store: the fleet job ran or was started too recently; it can be run again at " + e.RetryAt.UTC().Format(time.RFC3339)
+}
+
+// ErrFleetRunNotStarted is RequestFleetRun's error when the request was
+// accepted and its marker written, but starting the job failed. It wraps the
+// start's error.
+var ErrFleetRunNotStarted = errors.New("store: the fleet job could not be started")
+
+// FleetRunRetryAt returns when the fleet job may be run again and whether
+// that is still ahead at now, from the last request and the current
+// snapshot's GeneratedAt, either zero when there is none. Both stores decide
+// a refusal with it.
+func FleetRunRetryAt(now, lastRequest, generatedAt time.Time) (time.Time, bool) {
+	var retryAt time.Time
+	for _, t := range []time.Time{lastRequest, generatedAt} {
+		if t.IsZero() {
+			continue
+		}
+		if next := t.Add(FleetRunInterval); next.After(now) && next.After(retryAt) {
+			retryAt = next
+		}
+	}
+	return retryAt, !retryAt.IsZero()
+}
+
 // MaxCohortMacs is the most Macs AssignCohort takes in one request; bulk
 // work is the CLI's. Each Mac costs a point read of its readiness row and an
 // assignment of about five DynamoDB calls, one after another at roughly

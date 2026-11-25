@@ -1,12 +1,13 @@
 {{define "content"}}
 {{template "fleetnav" "health"}}
+{{if .RunStarted}}<p role="status"><strong>Started: the fleet lists update in a few minutes.</strong> Reload this page to see them; the time below changes when the run has finished.</p>{{end}}
 {{if .Age.Computed}}
 <p class="hint">Rudolph's fleet job walks every Mac once a day and lists the ones that need attention. Generated {{template "time" .Age.GeneratedAt}}: {{.Summary.Macs}} Macs, {{.Summary.Attention}} of them in at least one list below. A Mac can be in several lists.</p>
 {{template "fleetstale" .Age}}
 {{if .VersionDiffers}}<p class="error" role="status"><strong>Warning:</strong> the fleet job lists Macs below Santa {{.Summary.MinSantaVersion}}, but this web view {{if .ViewMinVersion}}marks Macs below Santa {{.ViewMinVersion}}{{else}}marks no Mac as needing an update{{end}}. Set <code>FLEET_MIN_SANTA_VERSION</code> on Rudolph's fleet function and <code>min_santa_version</code> here to the same version.</p>{{end}}
 <div class="scroll">
 <table>
-<thead><tr><th scope="col">List</th><th scope="col">Macs</th><th scope="col">A Mac is listed when</th></tr></thead>
+<thead><tr><th scope="col">List</th><th scope="col" class="num">Macs</th><th scope="col">A Mac is listed when</th></tr></thead>
 <tbody>
 {{range .Rows}}
 <tr data-category="{{.Category}}">
@@ -21,6 +22,12 @@
 <p>This run counted a Mac as not syncing after {{.Summary.StaleDays}} days without a completed sync{{if .Summary.Holiday}}: holiday mode was on{{with .Summary.HolidayUntil}}, until {{.}} (UTC){{end}}{{end}}.{{if .Summary.VersionUnknown}} {{.Summary.VersionUnknown}} {{if eq .Summary.VersionUnknown 1}}Mac reports{{else}}Macs report{{end}} no Santa version that can be read, and {{if eq .Summary.VersionUnknown 1}}is{{else}}are{{end}} in no list.{{end}}</p>
 {{else}}
 {{template "fleetnotcomputed"}}
+{{end}}
+{{if .CanRun}}
+<form class="edit-form" method="post" action="/admin/fleet/run">
+  <button type="submit">Run the fleet job now</button>
+</form>
+<p class="hint">Rebuilds these lists and the Lockdown readiness figures now instead of at the job's next daily run, for instance after changing the stale threshold, a group or a client mode. A run takes from seconds to a few minutes. The job can be started once every 15 minutes, and not within 15 minutes of its last run.</p>
 {{end}}
 <h2>Stale threshold</h2>
 {{with .Holiday}}

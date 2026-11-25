@@ -58,11 +58,14 @@ type Store struct {
 	topLists     map[store.TopFilter]topList
 	// fleetPointer is the ID of the latest snapshot in fleetSnapshots, "" until
 	// the first SetFleetSnapshot.
-	fleetSnapshots  map[string]*fleetSnapshot
-	fleetPointer    string
-	fleetConfig     store.FleetHealthConfig
-	unknownCounts   map[string]store.UnknownCounts
-	unknownBinaries map[string][]store.UnknownBinary
+	fleetSnapshots map[string]*fleetSnapshot
+	fleetPointer   string
+	fleetConfig    store.FleetHealthConfig
+	// fleetRunRequested is when RequestFleetRun last accepted a request: the
+	// marker item of the DynamoDB store.
+	fleetRunRequested time.Time
+	unknownCounts     map[string]store.UnknownCounts
+	unknownBinaries   map[string][]store.UnknownBinary
 
 	calls []Call
 	err   error
