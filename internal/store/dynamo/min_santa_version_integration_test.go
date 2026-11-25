@@ -135,8 +135,13 @@ func TestMinSantaVersion_SetOffAndClearThroughRudolph(t *testing.T) {
 			"set the minimum Santa version to 2026.10.1 (was the default 2026.9)"},
 	}
 	for i, step := range steps {
+		// Counted around the write alone: the checks below read the audit trail with Query.
+		ddblocal.ResetCounts()
 		if err := step.do(); err != nil {
 			t.Fatalf("%s: %v", step.name, err)
+		}
+		if c := ddblocal.Counts(); c["Scan"] != 0 || c["Query"] != 0 {
+			t.Errorf("%s: calls %v; the setting is read and written by key only", step.name, c)
 		}
 		got, ok := storedAttribute(t)
 		if (step.stored == "") == ok || got != step.stored {
@@ -160,9 +165,6 @@ func TestMinSantaVersion_SetOffAndClearThroughRudolph(t *testing.T) {
 		if e.Target != "fleet" || e.Summary != step.summary || !strings.HasPrefix(e.Actor, "web:") || !strings.Contains(e.Actor, "admin@example.com") {
 			t.Errorf("%s: audit entry %+v; want target fleet by the web actor, summary %q", step.name, e, step.summary)
 		}
-	}
-	if c := ddblocal.Counts(); c["Scan"] != 0 || c["Query"] != 0 {
-		t.Errorf("calls %v; the setting is read and written by key only", c)
 	}
 }
 
