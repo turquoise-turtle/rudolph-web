@@ -39,7 +39,7 @@
   </label>
 </fieldset>
 <fieldset>
-  <legend>A sample execution <span class="hint">(what Santa sees when a program runs; the expression is tried against it)</span></legend>
+  <legend>A sample execution <span class="hint">(what Santa sees when a program the rule covers runs; the expression is tried against it)</span></legend>
   <div class="cel-sample">
   <label>args <span class="hint">(arguments, one per line, the command first)</span>
     <textarea name="args" rows="4" cols="36" autocomplete="off" spellcheck="false">{{verbatim .Try.Args}}</textarea>
@@ -75,7 +75,8 @@
 </form>
 {{if .Try.Tried}}
 <p class="cel-answer" data-outcome="{{.Try.Outcome}}">{{if .Try.SampleError}}Not tried: <output class="cel-error">{{lines .Try.SampleError}}</output>{{else if and .Try.Error .Try.Compiled}}Santa can compile this, but it failed on this sample execution: <output class="cel-error">{{lines .Try.Error}}</output>{{else if .Try.Error}}Santa would not apply this: <output class="cel-error">{{lines .Try.Error}}</output>{{else}}Santa would apply <output class="cel-result">{{.Try.Result}}</output>, and the result is <output class="cel-cache">{{if .Try.Cacheable}}cached{{else}}not cached{{end}}</output>: the expression reads {{if .Try.Cacheable}}only <code>target</code>{{else}}<code>args</code>, <code>envs</code>, <code>euid</code>, <code>cwd</code> or <code>path</code>{{end}} (<a href="#caching">caching</a>).{{end}}</p>
-{{range .Try.Where}}<pre class="cel-where">{{.Line}}
+{{if not (or .Try.SampleError .Try.Error)}}<p class="hint cel-scope">This is the answer for a program the rule covers{{with .Try.SigningID}}, here one with signing ID <code>{{.}}</code>{{else}}{{with .Try.TeamID}}, here one with team ID <code>{{.}}</code>{{end}}{{end}}. Santa runs the expression only for programs that match the rule's identifier (the binary, signing ID, team ID or certificate the rule is for), so it never touches any other program, whatever its arguments.</p>
+{{end}}{{range .Try.Where}}<pre class="cel-where">{{.Line}}
 {{.Caret}}</pre>
 {{end}}{{if and .Try.Error .Try.Compiled}}<p class="hint">An expression that fails while it runs on a Mac decides nothing: Santa goes on to the binary's other rules and then its client mode, or blocks it on a Mac set to fail closed.</p>
 {{end}}{{with .Try.AddURL}}<p><a href="{{.}}">Add a global rule for this sample's signing ID or team ID</a>: copy the expression first, then choose the CEL policy on the form and paste it into the CEL expression box.</p>
