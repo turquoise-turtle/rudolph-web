@@ -78,12 +78,17 @@ form.inline { margin: 0; }
 .config-form td .hint { margin: 2px 0 0; max-width: 40em; }
 .inline-forms { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin: 8px 0; }
 button.danger { color: var(--block); border: 1px solid var(--block); background: var(--bg); border-radius: 3px; white-space: nowrap; }
-/* CEL: the add-rule form's expression box takes a whole row, as expressions are long; the try form lays its sample execution out like the edit forms. */
+/* CEL: the add-rule form's expression box takes a whole row, as expressions are long; the try form puts the expression and the sample execution in boxes of their own. */
 .edit-form label.cel-expr { flex-basis: 100%; }
 .edit-form textarea, .cel-try textarea { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; padding: 4px 6px; max-width: 100%; }
-.cel-try { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: end; margin: 8px 0; }
-.cel-try label { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); }
-.cel-try label.wide { flex-basis: 100%; }
+.cel-try { margin: 8px 0; }
+/* Two boxes, so the expression is not mistaken for one of the sample's fields. */
+.cel-try fieldset { margin: 0 0 8px; padding: 6px 12px 10px; border: 1px solid var(--line); border-radius: 4px; min-width: 0; }
+.cel-try legend { padding: 0 4px; font-weight: 600; }
+/* A grid, not a wrapping flex row: in a laptop-width window the flex row ran past the window's edge (euid, path, cwd, target.signing_id) instead of wrapping. Grid cells shrink with the window. */
+.cel-sample { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr)); gap: 8px 16px; align-items: end; }
+.cel-try label { display: flex; flex-direction: column; min-width: 0; font-size: 12px; color: var(--muted); }
+.cel-sample input:not([type="checkbox"]), .cel-sample textarea { width: 100%; box-sizing: border-box; }
 .cel-try label.check { flex-direction: row; align-items: center; gap: 4px; }
 /* The expression box takes the row it has to itself, so a long expression wraps less; the others keep their cols. */
 .cel-try label.wide textarea { width: 100%; max-width: 120ch; }
