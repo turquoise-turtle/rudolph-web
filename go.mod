@@ -59,4 +59,4 @@ require (
 
 // Rudolph's module path is github.com/airbnb/rudolph; the web view uses the fork's commit with the audit trail and
 // web contract (docs/deploy.md, "Updating the Rudolph pin").
-replace github.com/airbnb/rudolph => github.com/turquoise-turtle/rudolph v0.0.0-20261125121342-05f9516413e6
+replace github.com/airbnb/rudolph => github.com/turquoise-turtle/rudolph v0.0.0-20261126200442-07c5afcd3889
